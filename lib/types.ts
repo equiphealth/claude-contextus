@@ -136,6 +136,8 @@ export interface ContextusConfig {
     projectDocs: SourceConfig;
     userMemory: SourceConfig;
     userDocs: SourceConfig;
+    /** Additional custom sources (e.g., parent repo, sibling projects) */
+    custom?: SourceConfig[];
   };
   /** ChromaDB settings */
   chroma: {

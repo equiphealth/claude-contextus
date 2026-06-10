@@ -943,3 +943,160 @@ fi
 5. **File-based ChromaDB**: Committed to git, no server needed
 
 See README.md for user-facing documentation.
+
+## Multi-Project Sources (Parent/Submodule)
+
+### Use Case: Submodule with Parent Context
+
+```
+/monorepo/               # Parent repo with general patterns
+  .claude/memory/        # Shared patterns
+  automation/            # Submodule (or subdirectory)
+    .claude/memory/      # Automation-specific patterns
+```
+
+Working in `automation/`, you want context from BOTH:
+- `automation/.claude/memory/` (local, specific)
+- `../​.claude/memory/` (parent, shared)
+
+### Configuration
+
+**Manual (explicit):**
+```json
+{
+  "claudeContextus": {
+    "sources": {
+      "projectMemory": {
+        "path": ".claude/memory",
+        "enabled": true
+      },
+      "custom": [
+        {
+          "type": "memory",
+          "scope": "project",
+          "path": "../​.claude/memory",
+          "enabled": true,
+          "indexFile": "MEMORY.md",
+          "label": "parent-repo"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Auto-detection (future):**
+```javascript
+// Check for parent .claude/memory/ automatically
+const cwd = process.cwd();
+const parent = path.resolve(cwd, '../​');
+if (fs.existsSync(path.join(parent, '.claude/memory'))) {
+  // Auto-add parent as custom source
+}
+```
+
+### Query Behavior
+
+All sources searched together:
+1. Project memory (automation-specific)
+2. Project docs (automation docs)
+3. Parent memory (if configured)
+4. Parent docs (if configured)  
+5. User memory (cross-project)
+6. User docs (cross-project)
+
+Results merged by similarity, labeled by source:
+```
+Top matches:
+  1. [automation] testing/feedback_wdio_patterns.md (0.94)
+  2. [parent] framework/feedback_typescript_strict.md (0.89)
+  3. [user] ~/​.claude/memory/general/feedback_git_workflow.md (0.85)
+```
+
+### Use Cases
+
+**1. Monorepo with submodules:**
+- Parent: Shared team conventions
+- Submodule: Project-specific patterns
+
+**2. Related projects:**
+```json
+"custom": [
+  {
+    "path": "../​backend/.claude/memory",
+    "label": "backend"
+  },
+  {
+    "path": "../​frontend/.claude/memory", 
+    "label": "frontend"
+  }
+]
+```
+Working on mobile, reference backend/frontend patterns.
+
+**3. Template/library repos:**
+```json
+"custom": [
+  {
+    "path": "~/​src/my-framework/.claude/memory",
+    "label": "framework-patterns"
+  }
+]
+```
+Every project using the framework pulls its patterns.
+
+### Configuration via /configure
+
+```bash
+# Add custom source
+/configure add-source ../​.claude/memory --label parent
+
+# Remove custom source
+/configure remove-source parent
+
+# List all sources
+/configure list-sources
+
+# Output:
+✓ projectMemory: .claude/memory (64 files)
+✓ projectDocs: docs (23 files)
+✓ custom[parent]: ../​.claude/memory (87 files)
+✓ userMemory: ~/.claude/memory (12 files)
+✓ userDocs: ~/.claude/docs (8 files)
+
+Total: 194 knowledge files indexed
+```
+
+### ChromaDB Collection Strategy
+
+**Option A: Single collection, source metadata**
+```javascript
+{
+  id: "automation/testing/feedback_example.md",
+  metadata: { source: "projectMemory", ... }
+}
+{
+  id: "parent/framework/feedback_example.md", 
+  metadata: { source: "custom:parent", ... }
+}
+```
+
+**Option B: Multiple collections, union query**
+- `automation-memory` collection
+- `parent-memory` collection
+- Query both, merge results
+
+**Decision: Option A** (simpler, single collection with source metadata)
+
+### Rebuild Behavior
+
+```bash
+/rebuild-embeddings
+
+→ Scans all configured sources
+→ Embeds: projectMemory, projectDocs, custom sources, userMemory, userDocs
+→ 194 files total
+→ Time: ~15-20 seconds
+```
+
+Automatic rebuild triggers on file changes in ANY source (if watched).
