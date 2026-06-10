@@ -1575,3 +1575,59 @@ Same isolation, different storage backend.
 ```
 
 **Default stays file mode** — simpler, no dependencies.
+
+## Future Improvements
+
+### Vector Store Abstraction
+
+Currently hardcoded to ChromaDB. Could abstract to support multiple vector databases:
+
+```typescript
+// lib/vector-store.ts
+interface VectorStore {
+  upsert(id: string, embedding: number[], metadata: object): Promise<void>;
+  query(embedding: number[], topK: number): Promise<Match[]>;
+  delete(id: string): Promise<void>;
+  count(): Promise<number>;
+}
+
+// Implementations:
+class ChromaStore implements VectorStore { ... }
+class PineconeStore implements VectorStore { ... }
+class QdrantStore implements VectorStore { ... }
+class WeaviateStore implements VectorStore { ... }
+class PGVectorStore implements VectorStore { ... }
+```
+
+**Configuration:**
+```json
+{
+  "vectorStore": {
+    "provider": "chroma",  // or "pinecone", "qdrant", "weaviate", "pgvector"
+    "config": {
+      // Provider-specific config
+    }
+  }
+}
+```
+
+**Benefits:**
+- Users can choose their preferred vector DB
+- Cloud-hosted options (Pinecone, Weaviate Cloud)
+- Integrate with existing infrastructure (PostgreSQL + pgvector)
+- Performance comparison across providers
+
+**Implementation priority:** Low (v2+)
+- ChromaDB (file + server) covers most use cases
+- Abstraction adds complexity without clear demand yet
+- Add when users request specific providers
+
+### Other Potential Improvements
+
+- **Hybrid search**: Combine semantic + keyword matching
+- **Re-ranking**: Use cross-encoder for better top-k selection
+- **Clustering**: Group related memories for better organization
+- **Memory versioning**: Track changes over time, rollback support
+- **Collaborative filtering**: "Users who found X useful also found Y useful"
+- **Multi-language support**: Embeddings for non-English memories
+- **Memory analytics**: Usage stats, which memories are most retrieved
