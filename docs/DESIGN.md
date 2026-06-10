@@ -1100,3 +1100,192 @@ Total: 194 knowledge files indexed
 ```
 
 Automatic rebuild triggers on file changes in ANY source (if watched).
+
+## Auto-Detection of Custom Sources
+
+### Discovery Strategy
+
+When `/configure discover` is run (or on first plugin load):
+
+```javascript
+async function discoverMemorySources(cwd: string): Promise<DiscoveredSource[]> {
+  const discovered: DiscoveredSource[] = [];
+  
+  // 1. Check parent directories (up to git root or 3 levels)
+  let current = path.resolve(cwd, '..');
+  let depth = 0;
+  while (depth < 3 && !isGitRoot(current)) {
+    const memPath = path.join(current, '.claude/memory');
+    if (fs.existsSync(memPath)) {
+      discovered.push({
+        type: 'parent',
+        path: path.relative(cwd, memPath),
+        label: `parent${depth > 0 ? `-${depth}` : ''}`,
+        fileCount: countFiles(memPath)
+      });
+    }
+    current = path.resolve(current, '..');
+    depth++;
+  }
+  
+  // 2. Check sibling directories (same parent)
+  const parent = path.resolve(cwd, '..');
+  const siblings = fs.readdirSync(parent, { withFileTypes: true })
+    .filter(d => d.isDirectory() && d.name !== path.basename(cwd));
+  
+  for (const sibling of siblings) {
+    const memPath = path.join(parent, sibling.name, '.claude/memory');
+    if (fs.existsSync(memPath)) {
+      discovered.push({
+        type: 'sibling',
+        path: path.relative(cwd, memPath),
+        label: sibling.name,
+        fileCount: countFiles(memPath)
+      });
+    }
+  }
+  
+  // 3. Check for common framework locations (optional)
+  const commonPaths = [
+    '~/src/my-framework/.claude/memory',
+    '~/src/shared-patterns/.claude/memory'
+  ];
+  
+  for (const commonPath of commonPaths) {
+    const expanded = expandHome(commonPath);
+    if (fs.existsSync(expanded)) {
+      discovered.push({
+        type: 'framework',
+        path: commonPath,
+        label: path.basename(path.dirname(expanded)),
+        fileCount: countFiles(expanded)
+      });
+    }
+  }
+  
+  return discovered;
+}
+```
+
+### Interactive Setup
+
+```bash
+/configure discover
+
+# Output:
+🔍 Scanning for nearby memory sources...
+
+Found 4 memory sources:
+
+[1] Parent: ../​.claude/memory
+    87 files (framework patterns, team conventions)
+    
+[2] Sibling (backend): ../​backend/.claude/memory  
+    42 files (API patterns, database schemas)
+    
+[3] Sibling (frontend): ../​frontend/.claude/memory
+    31 files (UI patterns, component guidelines)
+    
+[4] Framework: ~/​src/my-framework/.claude/memory
+    156 files (framework-specific patterns)
+
+Enable which sources?
+  [1-4] - specific numbers
+  [all] - enable all
+  [none] - skip
+
+Your choice: 1,2
+```
+
+Result:
+```
+✓ Enabled parent: ../​.claude/memory
+✓ Enabled backend: ../​backend/.claude/memory
+
+Run /rebuild-embeddings to index new sources.
+```
+
+### Configuration Storage
+
+Added sources appear in `.claude/settings.json`:
+
+```json
+{
+  "claudeContextus": {
+    "sources": {
+      "projectMemory": { ... },
+      "projectDocs": { ... },
+      "custom": [
+        {
+          "type": "memory",
+          "scope": "project",
+          "path": "../​.claude/memory",
+          "enabled": true,
+          "label": "parent",
+          "indexFile": "MEMORY.md"
+        },
+        {
+          "type": "memory",
+          "scope": "project",
+          "path": "../​backend/.claude/memory",
+          "enabled": true,
+          "label": "backend",
+          "indexFile": "MEMORY.md"
+        }
+      ]
+    }
+  }
+}
+```
+
+### Manual Override
+
+Still support explicit paths:
+
+```bash
+# Add specific source
+/configure add-source ~/​external/project/.claude/memory --label external
+
+# Remove discovered source
+/configure remove-source parent
+
+# Re-scan for changes
+/configure discover --rescan
+```
+
+### Memory Creation with Multiple Sources
+
+When creating memories, context from all sources but writes go to appropriate location:
+
+```bash
+# Default: project memory (always)
+/create-memory "pattern discovered"
+→ Checks: parent, backend, user memory for duplicates
+→ Writes to: .claude/memory/ (this project)
+
+# User memory (cross-project)
+/create-memory "pattern discovered" --global
+→ Checks: all sources for duplicates
+→ Writes to: ~/.claude/memory/
+
+# Custom sources: READ-ONLY
+# To edit parent patterns, navigate to parent and work there
+```
+
+### First-Run Experience
+
+```bash
+# User starts in submodule/child project
+cd ~/​src/monorepo/automation
+
+# Plugin loads, detects parent .claude/memory/
+🔍 Detected parent memory source: ../​.claude/memory (87 files)
+
+Enable parent source for richer context? [Y/n]: y
+
+✓ Enabled parent source
+✓ Indexing 151 files (64 project + 87 parent)...
+✓ Ready! Context from both project and parent available.
+```
+
+This makes multi-project setup automatic instead of manual.
