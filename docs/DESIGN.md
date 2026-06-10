@@ -1359,3 +1359,147 @@ This keeps the mental model simple:
 - **Your project** = can read + write
 - **Your global settings** = can read + write (with `--global`)
 - **Everything else** = read-only reference
+
+## ChromaDB Location: Project vs User
+
+### Configuration
+
+```json
+{
+  "chroma": {
+    "mode": "project",  // or "user"
+    "path": ".claude/memory-db"  // project mode
+    // OR
+    "path": "~/.claude/memory-db"  // user mode
+  }
+}
+```
+
+### Project Mode (Default)
+
+**Location:** `.claude/memory-db/` in project directory
+
+**Use when:**
+- Working on a team (shared embeddings via git)
+- Want deterministic, portable setup
+- Each project is independent
+
+**Pros:**
+- Git-committable (team can share exact embeddings)
+- Portable (clone repo → embeddings included)
+- Isolated (project changes don't affect others)
+
+**Cons:**
+- Duplicate embeddings when multiple projects reference same sources
+- More disk space (each project has full DB)
+- Rebuild needed in each project
+
+**Example:**
+```
+monorepo/
+  .claude/memory/          # Parent patterns
+  .claude/memory-db/       # Parent embeddings
+  automation/
+    .claude/memory/        # Child patterns  
+    .claude/memory-db/     # Child + parent embeddings (duplicate)
+  backend/
+    .claude/memory/        # Backend patterns
+    .claude/memory-db/     # Backend + parent embeddings (duplicate)
+```
+
+Parent embedded 3x (once per project).
+
+### User Mode
+
+**Location:** `~/.claude/memory-db/` (global, outside projects)
+
+**Use when:**
+- Solo developer
+- Working across many interconnected projects (5+)
+- Frequently referencing shared sources (parent, framework)
+- Want fast setup for new projects
+
+**Pros:**
+- No duplication (parent embedded once)
+- Faster new project setup (just config, no rebuild)
+- Less disk space (shared embeddings)
+- Consistent across all projects
+
+**Cons:**
+- Not git-committable (personal only)
+- Not portable (teammates must rebuild)
+- Global state (rebuild affects all projects)
+
+**Example:**
+```
+~/.claude/memory-db/      # Single global DB
+  → Contains all sources from all projects
+
+monorepo/
+  .claude/memory/         # Parent patterns
+  automation/
+    .claude/memory/       # Child patterns
+  backend/
+    .claude/memory/       # Backend patterns
+```
+
+Parent embedded once, referenced by all.
+
+### Hybrid Approach (Future)
+
+```json
+{
+  "chroma": {
+    "mode": "hybrid",
+    "projectPath": ".claude/memory-db",    // Project-specific only
+    "userPath": "~/.claude/memory-db"      // Shared sources
+  }
+}
+```
+
+- Project/user memory → project DB (git-committable)
+- Custom sources → user DB (shared, efficient)
+
+Best of both: portability + efficiency.
+
+### Migration Between Modes
+
+```bash
+# Switch to user mode
+/configure chroma-mode user
+
+# Migrate existing embeddings
+/rebuild-embeddings --migrate
+→ Moves .claude/memory-db → ~/.claude/memory-db
+→ Updates config
+
+# Switch back to project mode
+/configure chroma-mode project
+/rebuild-embeddings --migrate
+→ Moves ~/.claude/memory-db → .claude/memory-db
+→ Updates config
+```
+
+### Recommendation
+
+**Default:** `project` mode (safe, portable)
+
+**Suggest `user` mode if:**
+- User has 5+ projects configured
+- Custom sources detected (parent/siblings)
+- Same custom source used across multiple projects
+- Disk space >100MB across all project DBs
+
+Prompt:
+```
+💡 Detected 3 projects using parent source: ../​.claude/memory
+
+Switch to user mode for shared embeddings?
+  - Saves ~180MB disk space
+  - Faster setup for new projects
+  - Not git-committable (personal only)
+  
+Switch? [y/n]: 
+```
+
+This makes advanced users more efficient without complicating simple cases.
