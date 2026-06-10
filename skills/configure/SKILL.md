@@ -69,6 +69,18 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
   - `propose` (default) - Claude suggests with footer, you approve via `/create-memory`
   - `auto` - Claude writes memories automatically (more autonomous, less control)
 
+### ChromaDB Location
+
+- `chroma-mode <project|user>` - Where to store embeddings:
+  - `project` (default) - `.claude/memory-db/` (git-committable, team sharing)
+  - `user` - `~/.claude/memory-db/` (global, efficient for multiple projects)
+
+Use `user` mode when:
+- Working across 5+ interconnected projects
+- Multiple projects reference same custom sources
+- Want to avoid duplicate embeddings (saves disk space)
+- Solo developer (not shareable with team)
+
 ### Other
 
 - `auto-rebuild <on|off>` - Auto-rebuild embeddings on file changes (default: on)
@@ -87,6 +99,9 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 
 # Get more results
 /configure top-k 10
+
+# Switch to global DB (power users with many projects)
+/configure chroma-mode user
 
 # Show current configuration
 /configure show
