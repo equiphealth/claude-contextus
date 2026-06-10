@@ -46,7 +46,8 @@
       }
     },
     "chroma": {
-      "path": "~/.claude/contextus/dbs/{project-name}"
+      "mode": "file",
+      "path": "~/.claude/contextus/data/{project-name}"
     },
     "embedding": {
       "model": "Xenova/all-MiniLM-L6-v2",

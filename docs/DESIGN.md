@@ -1428,7 +1428,7 @@ git clone automation
 cd automation
 
 # First prompt triggers auto-build
-→ Building ~/.claude/contextus/dbs/automation/
+→ Building ~/.claude/contextus/data/automation/
 → Indexing 151 files (64 project + 87 parent + user)
 → ✓ Ready! (~15-20 seconds)
 ```
@@ -1439,7 +1439,7 @@ cd automation
 // No mode needed! Just derive from project name
 {
   "chroma": {
-    "path": "~/.claude/contextus/dbs/{project-name}"
+    "path": "~/.claude/contextus/data/{project-name}"
   }
 }
 ```
@@ -1464,8 +1464,8 @@ User memories (`~/.claude/memory/`) are embedded in **every project DB**.
 vim ~/.claude/memory/feedback_git.md
 
 # File watcher detects change
-→ Rebuilding automation: ~/.claude/contextus/dbs/automation/
-→ Rebuilding backend: ~/.claude/contextus/dbs/backend/
+→ Rebuilding automation: ~/.claude/contextus/data/automation/
+→ Rebuilding backend: ~/.claude/contextus/data/backend/
 → ✓ All projects updated (2-3 sec each)
 ```
 
@@ -1481,7 +1481,7 @@ If you have multiple projects with the same name:
 }
 ```
 
-DB becomes `~/.claude/contextus/dbs/automation-mobile/`.
+DB becomes `~/.claude/contextus/data/automation-mobile/`.
 
 Rare, but handled.
 
@@ -1504,3 +1504,74 @@ Embeddings live in `~/.claude/`, never in project. Source files (`.claude/memory
 | **Personal** | Your sources, your DB, no team conflicts |
 | **Fast** | Single query, all context together |
 | **Predictable** | Same behavior for everyone |
+
+## Server Mode (Optional)
+
+For users who prefer or already run a ChromaDB server (like claude-mem does):
+
+### Configuration
+
+```json
+{
+  "chroma": {
+    "mode": "server",
+    "host": "localhost",
+    "port": 8000,
+    "collection": "{project-name}-contextus"
+  }
+}
+```
+
+### Behavior
+
+**File mode (default):**
+```
+~/.claude/contextus/data/
+  automation/       # File-based ChromaDB instance
+  backend/          # File-based ChromaDB instance
+```
+
+**Server mode:**
+```
+ChromaDB server (localhost:8000)
+  Collections:
+    - automation-contextus
+    - backend-contextus
+```
+
+Same isolation, different storage backend.
+
+### When to Use Server Mode
+
+**File mode is preferred for most users:**
+- ✅ No separate server to manage
+- ✅ Portable (just files)
+- ✅ Fast enough for typical use
+
+**Use server mode if:**
+- Already running ChromaDB server for other tools
+- Want to share embeddings across machines (network access)
+- Managing 50+ projects (server may handle better)
+- Prefer centralized management
+
+### Migration
+
+```bash
+# Switch to server mode
+/configure chroma-mode server --host localhost --port 8000
+
+# Migrate existing data
+/rebuild-embeddings --migrate
+→ Uploads ~/.claude/contextus/data/{project}/ to server
+→ Collection: {project}-contextus
+→ ✓ Migrated to server
+
+# Switch back to file mode
+/configure chroma-mode file
+/rebuild-embeddings --migrate
+→ Downloads collection {project}-contextus
+→ Writes to ~/.claude/contextus/data/{project}/
+→ ✓ Migrated to file mode
+```
+
+**Default stays file mode** — simpler, no dependencies.

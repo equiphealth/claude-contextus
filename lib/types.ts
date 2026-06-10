@@ -141,8 +141,16 @@ export interface ContextusConfig {
   };
   /** ChromaDB settings */
   chroma: {
-    /** Path to ChromaDB directory (uses {project-name} placeholder) */
-    path: string;
+    /** Storage mode */
+    mode: 'file' | 'server';
+    /** Path to ChromaDB directory (file mode, uses {project-name} placeholder) */
+    path?: string;
+    /** Server host (server mode) */
+    host?: string;
+    /** Server port (server mode) */
+    port?: number;
+    /** Collection name pattern (server mode, uses {project-name} placeholder) */
+    collection?: string;
     /** Optional project ID override for name collisions */
     projectId?: string;
   };
