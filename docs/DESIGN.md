@@ -1289,3 +1289,73 @@ Enable parent source for richer context? [Y/n]: y
 ```
 
 This makes multi-project setup automatic instead of manual.
+
+## Custom Sources: Read vs Write
+
+**Key Design Decision:** Custom sources (parent, siblings, frameworks) are **READ-ONLY** for retrieval but not for creation/updates.
+
+### Rationale
+
+1. **Prevent unintended modifications**
+   - Child projects shouldn't modify parent patterns
+   - Sibling projects shouldn't cross-contaminate
+   - Framework repos shouldn't be edited from consuming projects
+
+2. **Clear ownership**
+   - Project memory belongs to the project
+   - User memory belongs to the user
+   - Parent/sibling memory belongs to parent/sibling
+
+3. **Deliberate edits**
+   - Want to edit parent? Navigate to parent and work there
+   - Ensures you see full context when modifying shared patterns
+
+### Implementation
+
+```typescript
+// When creating memory
+async function getWriteTarget(scope: 'project' | 'user'): Promise<string> {
+  if (scope === 'user') {
+    return config.sources.userMemory.path;  // ~/.claude/memory
+  }
+  return config.sources.projectMemory.path;  // .claude/memory
+}
+
+// Custom sources never returned as write targets
+// They only appear in read queries
+async function getAllReadSources(): Promise<SourceConfig[]> {
+  const sources = [
+    config.sources.projectMemory,
+    config.sources.projectDocs,
+    config.sources.userMemory,
+    config.sources.userDocs
+  ];
+  
+  if (config.sources.custom) {
+    sources.push(...config.sources.custom.filter(s => s.enabled));
+  }
+  
+  return sources;
+}
+```
+
+### User Experience
+
+```bash
+# Scenario: Working in submodule, want to update parent pattern
+
+# ❌ Won't work (custom sources read-only)
+cd ~/​src/monorepo/automation
+/update-memory parent/framework/feedback_example.md
+→ Error: Custom sources are read-only. Navigate to parent to edit.
+
+# ✓ Correct approach
+cd ~/​src/monorepo
+/update-memory framework/feedback_example.md
+→ Opens editor, updates parent memory
+```
+
+This keeps the mental model simple:
+- **Your project** = can read + write
+- **Your global settings** = can read + write (with `--global`)
+- **Everything else** = read-only reference

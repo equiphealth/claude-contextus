@@ -15,6 +15,9 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 # Interactive configuration
 /configure
 
+# Discover nearby sources (parent/siblings)
+/configure discover
+
 # Set specific options
 /configure memory-path .memory
 /configure docs-path documentation
@@ -22,6 +25,12 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 /configure threshold 0.8
 /configure enable user-docs
 /configure disable project-docs
+
+# Manage custom sources
+/configure add-source ../​.claude/memory --label parent
+/configure add-source ~/​src/framework/.claude/memory --label framework
+/configure remove-source parent
+/configure list-sources
 ```
 
 ## Configuration Options
@@ -82,6 +91,86 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 # Show current configuration
 /configure show
 ```
+
+## Custom Sources (Multi-Project)
+
+### Auto-Discovery
+
+```bash
+/configure discover
+```
+
+Automatically scans for nearby memory sources:
+- **Parent directories** (up to 3 levels or git root)
+- **Sibling directories** (same parent)
+- **Common framework paths** (optional)
+
+Example output:
+```
+🔍 Scanning for nearby memory sources...
+
+Found 3 memory sources:
+
+[1] Parent: ../​.claude/memory
+    87 files (framework patterns, team conventions)
+    
+[2] Sibling (backend): ../​backend/.claude/memory  
+    42 files (API patterns, database schemas)
+    
+[3] Sibling (frontend): ../​frontend/.claude/memory
+    31 files (UI patterns, component guidelines)
+
+Enable which sources?
+  [1-3] - specific numbers
+  [all] - enable all
+  [none] - skip
+
+Your choice: 1,2
+
+✓ Enabled parent: ../​.claude/memory
+✓ Enabled backend: ../​backend/.claude/memory
+
+Run /rebuild-embeddings to index new sources.
+```
+
+### Manual Management
+
+```bash
+# Add custom source
+/configure add-source <path> --label <name>
+/configure add-source ../​.claude/memory --label parent
+/configure add-source ~/​src/my-framework/.claude/memory --label framework
+
+# Remove custom source
+/configure remove-source <label>
+/configure remove-source parent
+
+# List all sources (including custom)
+/configure list-sources
+```
+
+Example list output:
+```
+Current sources:
+
+✓ projectMemory: .claude/memory (64 files)
+✓ projectDocs: docs (23 files)
+✓ custom[parent]: ../​.claude/memory (87 files)
+✓ custom[backend]: ../​backend/.claude/memory (42 files)
+✗ userMemory: ~/.claude/memory (disabled)
+✓ userDocs: ~/.claude/docs (8 files)
+
+Total: 224 knowledge files
+```
+
+### Custom Source Behavior
+
+- **Read:** All enabled custom sources searched for context
+- **Write:** Custom sources are READ-ONLY
+  - `/create-memory` writes to project or user memory only
+  - To edit parent patterns, navigate to parent directory
+- **Discovery:** First-run auto-detects parent if found
+- **Configuration:** Stored in `.claude/settings.json` under `sources.custom[]`
 
 ## Output
 
