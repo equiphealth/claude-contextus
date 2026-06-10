@@ -105,6 +105,162 @@ Inject into context before Claude responds
 Claude: "Use getLogger() from ~/helpers/logger..."
 ```
 
+## Embedding Providers
+
+Contextus supports multiple embedding strategies with automatic fallback:
+
+### Provider Hierarchy (Best → Fallback)
+
+1. **Transformers.js** (Default, Recommended)
+   - Pure JavaScript, runs in-process
+   - No external dependencies or servers
+   - Fast (~50-100ms per query after model load)
+   - Works offline
+   - Small footprint (~10-50MB cached models)
+   - CPU-only is perfectly fine for <200 documents
+   - **Default model**: `Xenova/all-MiniLM-L6-v2` (384 dim, 80MB, proven)
+   - **Alternative**: `nomic-ai/nomic-embed-text-v1.5` (768 dim, 138MB, higher quality)
+   
+   ```typescript
+   import { pipeline } from '@xenova/transformers';
+   const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+   const embedding = await embedder(text, { pooling: 'mean', normalize: true });
+   ```
+
+2. **Ollama** (Opt-in, Power Users)
+   - Higher quality embeddings
+   - Requires Ollama running locally
+   - Slightly slower (~100-200ms per query)
+   - User configures in settings
+   
+   ```typescript
+   // User enables via config
+   {
+     "embedding": {
+       "provider": "ollama",
+       "model": "nomic-embed-text",
+       "endpoint": "http://localhost:11434"
+     }
+   }
+   ```
+
+3. **Claude Semantic Matching** (Fallback)
+   - No embeddings, uses Haiku sub-agent
+   - Expands query → grep with synonyms → AI ranking
+   - Slower (~2-5s) but always works
+   - Useful if embedding models fail or quota exhausted
+   
+   ```typescript
+   // Query expansion with Haiku
+   "fixing flaky tests" → ["flaky", "intermittent", "unstable", "timing", "waitForExist"]
+   // Grep + rank results by relevance
+   ```
+
+4. **Keyword Search** (Ultimate Fallback)
+   - Plain grep if everything else fails
+   - Fast but dumb
+   - No semantic understanding
+
+### Provider Selection Algorithm
+
+```typescript
+async function search(query: string): Promise<Result[]> {
+  // Try vector search first (Transformers.js or Ollama)
+  if (await hasVectorDB()) {
+    const provider = config.embedding.provider || 'transformers';
+    if (provider === 'transformers' && await transformersAvailable()) {
+      return vectorSearch(query, 'transformers');
+    }
+    if (provider === 'ollama' && await ollamaAvailable()) {
+      return vectorSearch(query, 'ollama');
+    }
+  }
+  
+  // Fall back to Claude semantic matching
+  if (await claudeAvailable()) {
+    return claudeSemanticSearch(query);
+  }
+  
+  // Ultimate fallback: keyword grep
+  return keywordSearch(query);
+}
+```
+
+### Configuration
+
+**Config schema**:
+```json
+{
+  "embedding": {
+    "provider": "transformers",  // "transformers" | "ollama" | "claude" | "keyword"
+    "model": "Xenova/all-MiniLM-L6-v2",          // Default (384 dim, 80MB, proven)
+    // Alternative: "nomic-ai/nomic-embed-text-v1.5" (768 dim, 138MB, higher quality)
+    "ollama_model": "nomic-embed-text",          // If provider=ollama
+    "ollama_endpoint": "http://localhost:11434",
+    "dimensions": 384,  // Match your model: 384 for all-MiniLM, 768 for nomic
+    "batchSize": 32
+  },
+  "search": {
+    "enabled": true,
+    "similarity_threshold": 0.7,
+    "max_results": 10,
+    "fallback_enabled": true  // Auto-fallback to Claude if embeddings fail
+  }
+}
+```
+
+### Storage: Chroma Vector Database
+
+All providers store results in Chroma:
+
+```typescript
+// Structure:
+.claude/memory/
+├── .embeddings/
+│   └── chroma_db/           // Chroma SQLite + index
+│       ├── chroma.sqlite3
+│       └── index/
+
+// Chroma handles:
+- Vector storage
+- Cosine similarity search  
+- Metadata (file path, hash, last_updated)
+- Change detection (only re-embed if hash changed)
+
+// Example:
+chroma.add({
+  id: "framework/feedback_use_lsp.md",
+  embedding: [0.1, 0.2, ...],  // 384 or 768 dimensional (matches model)
+  metadata: {
+    hash: "abc123",
+    category: "framework",
+    type: "feedback",
+    last_updated: "2026-06-10T15:00:00Z"
+  }
+});
+```
+
+### Performance Characteristics
+
+| Provider | Initial Index | Query | Offline | Quality |
+|----------|--------------|-------|---------|---------|
+| Transformers.js | 20s (200 files) | 55ms | ✅ Yes | Good |
+| Ollama | 30s (200 files) | 100ms | ✅ Yes* | Better |
+| Claude Semantic | N/A | 2-5s | ❌ No | Good |
+| Keyword | N/A | 10ms | ✅ Yes | Poor |
+
+*Requires Ollama running locally
+
+### Why CPU-Only is Fine
+
+For `.claude/memory/` use case:
+- **Small corpus**: 50-200 markdown files
+- **One-time indexing**: ~20 seconds on first run
+- **Cached forever**: Only re-embed changed files
+- **Fast queries**: Single embedding (~50ms) + vector search (~5ms)
+
+GPU only helps with 10,000+ documents or real-time re-indexing.
+
 ## Plugin vs Standalone Implementation
 
 This memory RAG system can be implemented as either:
@@ -269,7 +425,11 @@ The plugin's `hooks.json` adds:
       "path": ".claude/memory-db"
     },
     "embedding": {
-      "model": "Xenova/all-MiniLM-L6-v2",
+      "provider": "transformers",
+      "model": "Xenova/all-MiniLM-L6-v2",  // Default: fast, proven, 80MB
+      // Alternative: "nomic-ai/nomic-embed-text-v1.5" for higher quality (768 dim, 138MB)
+      "ollama_model": "nomic-embed-text",
+      "dimensions": 384,  // 768 if using nomic
       "batchSize": 32
     },
     "retrieval": {
