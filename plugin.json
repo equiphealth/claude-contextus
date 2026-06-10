@@ -12,16 +12,34 @@
   "config": {
     "enabled": true,
     "sources": {
-      "memory": {
+      "projectMemory": {
         "type": "memory",
+        "scope": "project",
         "path": ".claude/memory",
         "enabled": true,
         "indexFile": "MEMORY.md",
         "exclude": ["**/MEMORY.md", "**/README.md"]
       },
-      "docs": {
+      "projectDocs": {
         "type": "doc",
+        "scope": "project",
         "path": "docs",
+        "enabled": true,
+        "indexFile": "DOCS.md",
+        "exclude": ["**/DOCS.md", "**/README.md"]
+      },
+      "userMemory": {
+        "type": "memory",
+        "scope": "user",
+        "path": "~/.claude/memory",
+        "enabled": true,
+        "indexFile": "MEMORY.md",
+        "exclude": ["**/MEMORY.md", "**/README.md"]
+      },
+      "userDocs": {
+        "type": "doc",
+        "scope": "user",
+        "path": "~/.claude/docs",
         "enabled": true,
         "indexFile": "DOCS.md",
         "exclude": ["**/DOCS.md", "**/README.md"]

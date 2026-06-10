@@ -110,7 +110,9 @@ export interface CollectionStats {
 export interface SourceConfig {
   /** Source type */
   type: 'memory' | 'doc';
-  /** Path to source directory */
+  /** Scope: project or user (global) */
+  scope: 'project' | 'user';
+  /** Path to source directory (can use ~/ for user home) */
   path: string;
   /** Whether this source is enabled */
   enabled: boolean;
@@ -128,10 +130,12 @@ export interface SourceConfig {
 export interface ContextusConfig {
   /** Whether plugin is enabled */
   enabled: boolean;
-  /** Knowledge sources (memories, docs) */
+  /** Knowledge sources (memories, docs, both project and user-level) */
   sources: {
-    memory: SourceConfig;
-    docs: SourceConfig;
+    projectMemory: SourceConfig;
+    projectDocs: SourceConfig;
+    userMemory: SourceConfig;
+    userDocs: SourceConfig;
   };
   /** ChromaDB settings */
   chroma: {
