@@ -168,8 +168,13 @@ export interface ContextusConfig {
   };
   /** Auto-rebuild embeddings on file changes */
   autoRebuild: boolean;
-  /** Enable memory awareness prompt */
-  memoryAwareness: boolean;
+  /** Memory capture mode */
+  memoryCapture: {
+    /** Enable memory capture prompts */
+    enabled: boolean;
+    /** Capture mode: 'propose' = suggest with footer, 'auto' = write automatically */
+    mode: 'propose' | 'auto';
+  };
 }
 
 /**

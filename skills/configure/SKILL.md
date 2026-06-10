@@ -53,10 +53,16 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 - `embedding-model <model>` - Transformer model to use (default: `Xenova/all-MiniLM-L6-v2`)
 - `batch-size <number>` - Batch size for embedding (default: 32)
 
+### Memory Capture
+
+- `memory-capture <on|off>` - Enable/disable automatic memory capture (default: on)
+- `capture-mode <propose|auto>` - How to capture memories:
+  - `propose` (default) - Claude suggests with footer, you approve via `/create-memory`
+  - `auto` - Claude writes memories automatically (more autonomous, less control)
+
 ### Other
 
 - `auto-rebuild <on|off>` - Auto-rebuild embeddings on file changes (default: on)
-- `memory-awareness <on|off>` - Enable memory creation prompts (default: on)
 
 ## Examples
 

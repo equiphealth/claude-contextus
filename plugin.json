@@ -60,7 +60,10 @@
       "mergeStrategy": "interleaved"
     },
     "autoRebuild": true,
-    "memoryAwareness": true
+    "memoryCapture": {
+      "enabled": true,
+      "mode": "propose"
+    }
   },
   "hooks": "hooks/hooks.json",
   "skills": [
