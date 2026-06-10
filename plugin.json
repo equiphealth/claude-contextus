@@ -1,0 +1,57 @@
+{
+  "name": "claude-contextus",
+  "version": "0.1.0",
+  "description": "Context-aware memory system with automatic semantic retrieval",
+  "author": "Anthony Dawson",
+  "repository": "github:yourusername/claude-contextus",
+  "license": "MIT",
+  "engines": {
+    "claude": ">=1.0.0",
+    "node": ">=18.0.0"
+  },
+  "config": {
+    "enabled": true,
+    "sources": {
+      "memory": {
+        "type": "memory",
+        "path": ".claude/memory",
+        "enabled": true,
+        "indexFile": "MEMORY.md",
+        "exclude": ["**/MEMORY.md", "**/README.md"]
+      },
+      "docs": {
+        "type": "doc",
+        "path": "docs",
+        "enabled": true,
+        "indexFile": "DOCS.md",
+        "exclude": ["**/DOCS.md", "**/README.md"]
+      }
+    },
+    "chroma": {
+      "mode": "file",
+      "path": ".claude/memory-db"
+    },
+    "embedding": {
+      "model": "Xenova/all-MiniLM-L6-v2",
+      "batchSize": 32
+    },
+    "retrieval": {
+      "topK": 5,
+      "similarityThreshold": 0.7,
+      "maxTokens": 3000,
+      "mergeStrategy": "interleaved"
+    },
+    "autoRebuild": true,
+    "memoryAwareness": true
+  },
+  "hooks": "hooks/hooks.json",
+  "skills": [
+    "skills/create-memory",
+    "skills/rebuild-embeddings",
+    "skills/search-memory",
+    "skills/debug-memory",
+    "skills/create-doc",
+    "skills/add-patterns",
+    "skills/audit-memory"
+  ]
+}
