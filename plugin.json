@@ -70,10 +70,12 @@
     "skills/configure",
     "skills/create-memory",
     "skills/create-doc",
+    "skills/update-memory",
     "skills/add-patterns",
     "skills/rebuild-embeddings",
     "skills/search-memory",
     "skills/debug-memory",
-    "skills/audit-memory"
+    "skills/audit-memory",
+    "skills/audit-stale"
   ]
 }
