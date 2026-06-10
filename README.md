@@ -4,15 +4,15 @@
 
 ## Overview
 
-**claude-contextus** makes your knowledge base work for you instead of the other way around. Store patterns, decisions, and documentation in markdown — the plugin **automatically** surfaces what's relevant on every prompt. No manual queries, no "remember to search" — just natural, proactive context injection.
+**claude-contextus** makes your knowledge base work for you instead of the other way around. Store patterns, decisions, and documentation in markdown — the plugin **automatically** surfaces relevant context on every prompt AND captures new patterns as you discover them. No manual queries, no "remember to search," no "did I write that down?" — just proactive retrieval and capture.
 
-**Unlike other RAG tools**, claude-contextus doesn't wait for you to ask. It:
-- **Watches every prompt** you send
-- **Searches semantically** across memories and docs
-- **Injects relevant context** automatically
-- **Reminds you to capture** new patterns
+**Unlike other RAG tools**, claude-contextus doesn't wait for you to act. It:
+- **Surfaces relevant context** automatically on every prompt (no queries needed)
+- **Captures new patterns** automatically by prompting Claude to propose memories
+- **Searches semantically** across project + user memories and docs
+- **Rebuilds embeddings** automatically when files change
 
-Think of it as a memory system that reads your mind.
+Think of it as a memory system that reads your mind — and reminds you to write things down.
 
 ## Features
 
