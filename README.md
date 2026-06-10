@@ -1,19 +1,40 @@
 # claude-contextus
 
-> Context-aware memory system: markdown-based pattern storage with automatic semantic retrieval for Claude Code
+> **Proactive context for Claude Code**: Stop searching for patterns — let them find you.
 
 ## Overview
 
-**claude-contextus** is a Claude Code plugin that provides intelligent context injection from your project's `.claude/memory/` directory using semantic search. Store patterns, decisions, and learnings in markdown files — the plugin automatically finds and injects relevant memories based on what you're working on.
+**claude-contextus** makes your knowledge base work for you instead of the other way around. Store patterns, decisions, and documentation in markdown — the plugin **automatically** surfaces what's relevant on every prompt. No manual queries, no "remember to search" — just natural, proactive context injection.
+
+**Unlike other RAG tools**, claude-contextus doesn't wait for you to ask. It:
+- **Watches every prompt** you send
+- **Searches semantically** across memories and docs
+- **Injects relevant context** automatically
+- **Reminds you to capture** new patterns
+
+Think of it as a memory system that reads your mind.
 
 ## Features
 
-- 🧠 **Semantic Retrieval**: Automatic context injection via vector embeddings
-- 📝 **Markdown-Based**: Human-readable, git-trackable memory files
-- 🔍 **Smart Search**: Finds relevant memories by meaning, not just keywords
-- 🔄 **Auto-Rebuild**: Embeddings stay fresh as memories change
-- 🛠️ **Management Skills**: Create, validate, and organize memories
-- 🚀 **Team-Friendly**: File-based ChromaDB committed with your project
+### 🎯 Proactive (Not Reactive)
+- **Zero-query context injection**: Relevant memories appear automatically on every prompt
+- **Memory awareness prompts**: Reminds Claude to capture new patterns as you discover them
+- **Automatic rebuilds**: Embeddings stay fresh as your knowledge grows
+
+### 🧠 Smart Retrieval
+- **Semantic search**: Finds by meaning, not keywords ("How do I debug?" → matches Logger patterns)
+- **Multi-source**: Searches project memory, project docs, user memory, and user docs simultaneously
+- **Configurable relevance**: Tune similarity threshold and top-k per your needs
+
+### 📝 Team-Friendly
+- **Markdown-based**: Human-readable, easy to edit, git-trackable
+- **File-based ChromaDB**: Embeddings committed with your repo (no server needed)
+- **Merge-friendly**: Rebuild on conflict, deterministic results
+
+### 🛠️ Integrated Workflow
+- **Management skills**: `/create-memory`, `/create-doc`, `/configure`, `/audit-memory`
+- **Auto-hooks**: Captures file changes, triggers rebuilds, injects context
+- **User + project scope**: Personal patterns persist across all projects
 
 ## Installation
 
