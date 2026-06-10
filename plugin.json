@@ -64,12 +64,13 @@
   },
   "hooks": "hooks/hooks.json",
   "skills": [
+    "skills/configure",
     "skills/create-memory",
+    "skills/create-doc",
+    "skills/add-patterns",
     "skills/rebuild-embeddings",
     "skills/search-memory",
     "skills/debug-memory",
-    "skills/create-doc",
-    "skills/add-patterns",
     "skills/audit-memory"
   ]
 }
