@@ -46,8 +46,7 @@
       }
     },
     "chroma": {
-      "mode": "file",
-      "path": ".claude/memory-db"
+      "path": "~/.claude/contextus/dbs/{project-name}"
     },
     "embedding": {
       "model": "Xenova/all-MiniLM-L6-v2",

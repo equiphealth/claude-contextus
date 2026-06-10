@@ -1360,146 +1360,147 @@ This keeps the mental model simple:
 - **Your global settings** = can read + write (with `--global`)
 - **Everything else** = read-only reference
 
-## ChromaDB Location: Project vs User
+## ChromaDB Location: Named Per-Project DBs
+
+### The Simple Model
+
+**Always use per-project databases in user space:**
+
+```
+~/.claude/<project-name>-memory-db/
+```
+
+No modes, no switching, no complexity. Just one pattern that works for everyone.
+
+### Structure
+
+```
+~/.claude/contextus/
+  dbs/
+    automation/                   # automation project context
+    backend/                      # backend project context  
+    my-personal-site/             # personal site context
+```
+
+Each database contains:
+- Project memories (`.claude/memory/`)
+- Project docs (`docs/`)
+- Custom sources (if configured: parent, siblings, frameworks)
+- User memories (`~/.claude/memory/`)
+- User docs (`~/.claude/docs/`)
+
+**All in one database, one query, simple.**
+
+### Why This Works
+
+**✅ Clean project directories:**
+```
+automation/
+  .claude/
+    memory/              # Git-tracked, team-shared
+    settings.json        # Personal config (gitignored)
+  docs/                  # Git-tracked, team-shared
+```
+
+No `.claude/memory-db/` cluttering the project. Just the source files.
+
+**✅ Context isolation:**
+```bash
+cd automation
+# Query: ~/.claude/automation-memory-db/
+# Results: automation + my-equip-mobile + user memories
+
+cd backend
+# Query: ~/.claude/backend-memory-db/
+# Results: backend + frontend + user memories
+
+# No cross-contamination!
+```
+
+**✅ Personal configuration:**
+- Your custom sources, your DB
+- Teammate has different sources? Different DB
+- No git conflicts, no team coordination needed
+
+**✅ Fast rebuild:**
+```bash
+git clone automation
+cd automation
+
+# First prompt triggers auto-build
+→ Building ~/.claude/contextus/dbs/automation/
+→ Indexing 151 files (64 project + 87 parent + user)
+→ ✓ Ready! (~15-20 seconds)
+```
 
 ### Configuration
 
 ```json
+// No mode needed! Just derive from project name
 {
   "chroma": {
-    "mode": "project",  // or "user"
-    "path": ".claude/memory-db"  // project mode
-    // OR
-    "path": "~/.claude/memory-db"  // user mode
+    "path": "~/.claude/contextus/dbs/{project-name}"
   }
 }
 ```
 
-### Project Mode (Default)
+Project name derived from:
+1. Git repo name (preferred)
+2. Directory basename (fallback)
+3. User override via config (edge cases)
 
-**Location:** `.claude/memory-db/` in project directory
+### Handling User Memories
 
-**Use when:**
-- Working on a team (shared embeddings via git)
-- Want deterministic, portable setup
-- Each project is independent
+User memories (`~/.claude/memory/`) are embedded in **every project DB**.
 
-**Pros:**
-- Git-committable (team can share exact embeddings)
-- Portable (clone repo → embeddings included)
-- Isolated (project changes don't affect others)
+**Why duplicate instead of separate DB?**
+- ✅ Single query per prompt (fast)
+- ✅ Simple implementation
+- ✅ Disk is cheap (~5-10MB per project)
+- ✅ Auto-rebuild keeps them in sync
 
-**Cons:**
-- Duplicate embeddings when multiple projects reference same sources
-- More disk space (each project has full DB)
-- Rebuild needed in each project
+**When user memory changes:**
+```bash
+vim ~/.claude/memory/feedback_git.md
 
-**Example:**
-```
-monorepo/
-  .claude/memory/          # Parent patterns
-  .claude/memory-db/       # Parent embeddings
-  automation/
-    .claude/memory/        # Child patterns  
-    .claude/memory-db/     # Child + parent embeddings (duplicate)
-  backend/
-    .claude/memory/        # Backend patterns
-    .claude/memory-db/     # Backend + parent embeddings (duplicate)
+# File watcher detects change
+→ Rebuilding automation: ~/.claude/contextus/dbs/automation/
+→ Rebuilding backend: ~/.claude/contextus/dbs/backend/
+→ ✓ All projects updated (2-3 sec each)
 ```
 
-Parent embedded 3x (once per project).
+### Edge Case: Name Collisions
 
-### User Mode
-
-**Location:** `~/.claude/memory-db/` (global, outside projects)
-
-**Use when:**
-- Solo developer
-- Working across many interconnected projects (5+)
-- Frequently referencing shared sources (parent, framework)
-- Want fast setup for new projects
-
-**Pros:**
-- No duplication (parent embedded once)
-- Faster new project setup (just config, no rebuild)
-- Less disk space (shared embeddings)
-- Consistent across all projects
-
-**Cons:**
-- Not git-committable (personal only)
-- Not portable (teammates must rebuild)
-- Global state (rebuild affects all projects)
-
-**Example:**
-```
-~/.claude/memory-db/      # Single global DB
-  → Contains all sources from all projects
-
-monorepo/
-  .claude/memory/         # Parent patterns
-  automation/
-    .claude/memory/       # Child patterns
-  backend/
-    .claude/memory/       # Backend patterns
-```
-
-Parent embedded once, referenced by all.
-
-### Hybrid Approach (Future)
+If you have multiple projects with the same name:
 
 ```json
 {
   "chroma": {
-    "mode": "hybrid",
-    "projectPath": ".claude/memory-db",    // Project-specific only
-    "userPath": "~/.claude/memory-db"      // Shared sources
+    "projectId": "automation-mobile"  // Override default
   }
 }
 ```
 
-- Project/user memory → project DB (git-committable)
-- Custom sources → user DB (shared, efficient)
+DB becomes `~/.claude/contextus/dbs/automation-mobile/`.
 
-Best of both: portability + efficiency.
+Rare, but handled.
 
-### Migration Between Modes
+### What's NOT Stored in Git
 
-```bash
-# Switch to user mode
-/configure chroma-mode user
-
-# Migrate existing embeddings
-/rebuild-embeddings --migrate
-→ Moves .claude/memory-db → ~/.claude/memory-db
-→ Updates config
-
-# Switch back to project mode
-/configure chroma-mode project
-/rebuild-embeddings --migrate
-→ Moves ~/.claude/memory-db → .claude/memory-db
-→ Updates config
+```gitignore
+# .gitignore (always include)
+.claude/settings.json       # Personal config (sources, preferences)
 ```
 
-### Recommendation
+Embeddings live in `~/.claude/`, never in project. Source files (`.claude/memory/`) are git-tracked, team-shared.
 
-**Default:** `project` mode (safe, portable)
+### Benefits Summary
 
-**Suggest `user` mode if:**
-- User has 5+ projects configured
-- Custom sources detected (parent/siblings)
-- Same custom source used across multiple projects
-- Disk space >100MB across all project DBs
-
-Prompt:
-```
-💡 Detected 3 projects using parent source: ../​.claude/memory
-
-Switch to user mode for shared embeddings?
-  - Saves ~180MB disk space
-  - Faster setup for new projects
-  - Not git-committable (personal only)
-  
-Switch? [y/n]: 
-```
-
-This makes advanced users more efficient without complicating simple cases.
+| Aspect | Benefit |
+|--------|---------|
+| **Simplicity** | One pattern, no modes or switching |
+| **Clean repos** | No DB files in project directories |
+| **Isolation** | Each project has its own context bubble |
+| **Personal** | Your sources, your DB, no team conflicts |
+| **Fast** | Single query, all context together |
+| **Predictable** | Same behavior for everyone |

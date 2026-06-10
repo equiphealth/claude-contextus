@@ -141,14 +141,10 @@ export interface ContextusConfig {
   };
   /** ChromaDB settings */
   chroma: {
-    /** Mode: 'file' for local, 'server' for remote */
-    mode: 'file' | 'server';
-    /** Path to ChromaDB directory (file mode) */
+    /** Path to ChromaDB directory (uses {project-name} placeholder) */
     path: string;
-    /** Server host (server mode) */
-    host?: string;
-    /** Server port (server mode) */
-    port?: number;
+    /** Optional project ID override for name collisions */
+    projectId?: string;
   };
   /** Embedding settings */
   embedding: {
