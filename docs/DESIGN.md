@@ -105,6 +105,74 @@ Inject into context before Claude responds
 Claude: "Use getLogger() from ~/helpers/logger..."
 ```
 
+## Document Chunking Strategy
+
+**Decision**: Chunk longer documents to avoid truncation. Standard memories are typically short enough to embed whole.
+
+**Rationale**: The default embedding model (`all-MiniLM-L6-v2`) has a 256-token context window and silently truncates longer content. For docs and longer memories, chunking with overlap preserves semantic completeness. (Note: different models have different context windows — this will be tuned based on model benchmarking.)
+
+**Chunking Parameters:**
+- Chunk size: 512 tokens (2× model context to ensure full coverage after overlap)
+- Overlap: 64 tokens (maintains context continuity across boundaries)
+- Boundary preference: Split on markdown headers (`##`, `###`) when possible, fall back to token boundaries
+
+**Chunk Metadata:**
+```javascript
+{
+  id: "docs/DESIGN.md#chunk-3",
+  document: "... chunk content ...",
+  metadata: {
+    parent_file: "docs/DESIGN.md",
+    chunk_index: 2,           // 0-indexed
+    chunk_total: 8,           // Total chunks for this file
+    source: "projectDocs",
+    type: "doc"
+  }
+}
+```
+
+**Retrieval Strategy: Inject Chunk + Breadcrumb**
+
+When a chunk matches:
+```markdown
+### [Docs] DESIGN.md (chunk 3/8, similarity: 0.89)
+
+> ## Daemon Architecture
+> 
+> The daemon pattern solves the model warm-up problem by keeping
+> a persistent process that loads the embedding model once...
+
+**Full document**: `docs/DESIGN.md` (245 tokens total)
+```
+
+**Benefits:**
+- Compact injection (only matching chunk, not full parent doc)
+- Breadcrumb gives Claude path to deep-dive with Read if needed
+- Deduplication: if multiple chunks from same file match, consolidate under one breadcrumb
+
+**Multiple Chunks from Same File:**
+```markdown
+### [Docs] DESIGN.md (3 matches, similarity: 0.89)
+
+**Chunk 3/8**: Architecture section
+> ... content ...
+
+**Chunk 5/8**: Configuration section  
+> ... content ...
+
+**Chunk 7/8**: Examples section
+> ... content ...
+
+**Full document**: `docs/DESIGN.md`
+```
+
+**When NOT to Chunk:**
+- Standard memory files (<500 tokens) — embed whole
+- Short docs (<500 tokens) — embed whole
+- Code snippets in memories — typically already excerpted
+
+**Implementation Note**: Store relative path from project root in metadata (e.g., `docs/DESIGN.md`, not absolute path) so `formatMemoriesForInjection` can dedupe breadcrumbs across chunks and paths remain portable across machines.
+
 ## Embedding Providers
 
 Contextus supports multiple embedding strategies with automatic fallback:
@@ -355,7 +423,7 @@ The plugin's `hooks.json` adds:
     },
     {
       "hooks": [{
-        "command": "echo '{\"hookSpecificOutput\": {\"additionalContext\": \"Memory awareness: For substantial responses, end with footer: Memory: used: filename(s) | Memory: propose: topic-name. Omit if brief/trivial. CRITICAL: If propose: in footer, MUST invoke /create-memory before sending response.\"}}'",
+        "command": "node $PLUGIN_PATH/scripts/awareness-hook.js",
         "type": "command"
       }],
       "matcher": ".*"
@@ -373,9 +441,29 @@ The plugin's `hooks.json` adds:
 
 **Hook Purposes:**
 
-1. **Query Hook**: Semantic search + inject relevant memories
+1. **Query Hook**: Semantic search + inject relevant memories (HTTP call to daemon)
 2. **Awareness Hook**: Remind Claude to propose new memories proactively
-3. **Watch Hook**: Auto-rebuild embeddings when memory files change
+3. **Watch Hook**: Auto-rebuild embeddings when memory files change (HTTP call to daemon)
+
+**Important: Awareness Hook as Separate Script**
+
+Instead of inline `echo` with complex JSON escaping (fragile across platforms), use a dedicated script:
+
+```javascript
+// scripts/awareness-hook.js
+console.log(JSON.stringify({
+  continue: true,
+  hookSpecificOutput: {
+    additionalContext: 
+      "Memory awareness: Unless this response is purely trivial " +
+      "(e.g. a one-line answer, yes/no, or acknowledgment), append footer: " +
+      "Memory: propose: topic-name if ANY new pattern, detail, or context " +
+      "was discussed. Omit only if truly nothing reusable was covered."
+  }
+}));
+```
+
+This avoids shell quote escaping issues entirely and works identically on Windows/Unix/macOS.
 
 ### Option B: Standalone Scripts
 
@@ -536,7 +624,23 @@ const { pipeline } = require('@xenova/transformers');
 async function embedMemories({ rebuild = false, verbose = false }) {
   // 1. Initialize file-based Chroma
   const client = new ChromaClient({ path: '.claude/memory-db' });
-  const collection = await client.getOrCreateCollection('manual-memory');
+  const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';  // From config
+  const collection = await client.getOrCreateCollection('manual-memory', {
+    metadata: {
+      embeddingModel: EMBEDDING_MODEL,  // Store model name for validation
+      createdAt: new Date().toISOString()
+    }
+  });
+  
+  // Validate embedding model matches
+  const collectionMeta = await collection.metadata();
+  if (collectionMeta.embeddingModel && collectionMeta.embeddingModel !== EMBEDDING_MODEL) {
+    throw new Error(
+      `Collection was built with ${collectionMeta.embeddingModel}, ` +
+      `but current config specifies ${EMBEDDING_MODEL}. ` +
+      `Run /rebuild-embeddings to regenerate.`
+    );
+  }
   
   // 2. Find all memory files
   const memoryFiles = glob.sync('.claude/memory/**/*.md', {
@@ -604,8 +708,14 @@ async function queryHook(userPrompt) {
   });
   
   // 4. Filter by threshold
+  // Note: Chroma returns results as parallel arrays (ids, documents, metadatas, distances)
   const relevant = results.distances[0]
-    .map((dist, i) => ({ ...results[i], similarity: 1 - dist }))
+    .map((dist, i) => ({
+      id: results.ids[0][i],
+      document: results.documents[0][i],
+      metadata: results.metadatas[0][i],
+      similarity: 1 - dist  // cosine distance → similarity
+    }))
     .filter(r => r.similarity >= config.memoryRag.similarityThreshold);
   
   // 5. Format injection
@@ -684,47 +794,363 @@ function formatMemoriesForInjection(memories) {
 - Store full file content as document (not just description)
 - Metadata includes category from MEMORY.md for debugging
 
-### Phase 2: Query Hook
+### Phase 2: Daemon + HTTP Architecture
 
-**Goal**: Add semantic retrieval to UserPromptSubmit hook
+**Decision**: Use persistent daemon with HTTP API instead of stateless hooks.
 
+**Rationale**: `@xenova/transformers` model loading takes 2-5 seconds due to WASM initialization — far exceeding the <100ms latency target. A fresh Node process per hook invocation makes this unavoidable.
+
+**Architecture:**
+
+```
+SessionStart hook
+  → ensure daemon is running (start if not)
+  → daemon loads embedding model, initializes Chroma client
+
+UserPromptSubmit hook (thin HTTP client)
+  → POST { prompt } to localhost:PORT/query
+  → return { additionalContext: ... } from response
+
+PostToolUse hook (Write|Edit, thin HTTP client)  
+  → POST { file, content } to localhost:PORT/notify
+  → daemon triggers incremental re-embed if memory file changed
+```
+
+**Benefits:**
+- ✅ Model loaded once per session, warm for all subsequent queries
+- ✅ Chroma client lifecycle owned by daemon (connection pooling, caching)
+- ✅ HTTP boundary = clean versioning separation between hook format and daemon logic
+- ✅ Hooks become dumb thin clients — resilient to Claude Code hook API changes
+- ✅ Daemon can be curled directly during development for retrieval testing
+
+**Daemon Responsibilities:**
+- Model loading and warm-up
+- Chroma client and collection management
+- Query execution (embed → search → filter → format)
+- Incremental re-embed on file change notifications
+- Session state tracking
+- Source management (project, user, custom sources)
+
+**Hook Responsibilities:**
+- Serialize event JSON
+- POST to daemon
+- Return daemon response to Claude Code
+
+**SessionStart Hook:**
 ```bash
-# Script: ~/.claude/scripts/claude-contextus-hook.js
-# Input: User prompt (from UserPromptSubmit event)
-# Process:
-#   1. Embed user prompt
-#   2. Query Chroma for top-k (k=5) similar memories
-#   3. Filter by similarity threshold (e.g., >0.7)
-#   4. Read matched memory files
-#   5. Format as injection payload
-# Output: JSON with memory contents for context injection
+# Check if daemon running, start if not
+if ! curl -sf http://localhost:PORT/health > /dev/null; then
+  node $PLUGIN_PATH/daemon/server.js &
+  sleep 1  # brief warm-up
+fi
 ```
 
-**Hook integration:**
-```json
+**Validated by**: The `claude-recall` plugin already uses this pattern — auto-starting a worker service on `SessionStart`.
+
+### Daemon Lifecycle Management
+
+**Daemon Shutdown:**
+
+Options for when to kill the daemon:
+
+1. **Keep warm between sessions (Recommended)**
+   - Daemon stays alive until explicitly killed or machine restart
+   - Best latency: next session has warm model immediately
+   - Small memory footprint (~100-200MB)
+   - Auto-cleanup: kill stale daemons on SessionStart if PID file exists but process is dead
+
+2. **Kill on SessionEnd**
+   - Clean shutdown when Claude session ends
+   - Frees memory between sessions
+   - Adds 2-5s latency to every session start
+   - Hook: `SessionEnd` → `POST /shutdown` to daemon
+
+3. **TTL-based (Hybrid)**
+   - Daemon shuts down after N minutes of inactivity
+   - Balances memory vs latency
+   - Daemon tracks last query timestamp, auto-exits after TTL
+
+**Recommendation**: Start with option 1 (keep warm) — simpler, better UX. Add TTL later if users complain about memory.
+
+### Multiple Session Handling
+
+**Question**: One daemon per session, or shared daemon across sessions/projects?
+
+**Options:**
+
+#### Option A: Single Shared Daemon (Recommended)
+
+**One daemon for all Claude sessions, all projects.**
+
+**Rationale:**
+- ✅ Model loaded once (~100-200MB), shared across everything
+- ✅ Simplest: one port, one PID, one daemon to manage
+- ✅ First Claude session (any project) pays startup cost, all others instant
+- ✅ Project isolation via request parameter, not process isolation
+- ✅ No port conflicts or allocation logic needed
+
+**Architecture:**
+
+```
+~/.claude/contextus/
+  data/
+    automation/          # Project A DB
+    backend/             # Project B DB
+  runtime/
+    daemon.pid          # Single daemon PID
+    daemon.port         # Fixed port (e.g., 37800)
+```
+
+**API Contract:**
+```javascript
+// Request includes project context
+POST http://localhost:37800/query
 {
-  "UserPromptSubmit": [
-    {
-      "hooks": [
-        {
-          "command": "node ~/.claude/scripts/claude-contextus-hook.js",
-          "type": "command"
-        }
-      ],
-      "matcher": ".*"
-    }
-  ]
+  "project": "automation",  // Which DB to query
+  "prompt": "How do I debug tests?"
 }
+
+// Daemon routes to correct ChromaDB
+const dbPath = `~/.claude/contextus/data/${req.body.project}/`;
+const client = new ChromaClient({ path: dbPath });
+// ... query and return
 ```
 
-**Output format:**
-```json
-{
-  "continue": true,
-  "hookSpecificOutput": {
-    "additionalContext": "# Relevant Memories\n\n[Logger Helper]\n...\n\n[Test Artifacts]\n..."
+**Session Lifecycle:**
+
+```
+Session 1 starts in automation/
+  → ensureDaemonRunning() checks ~/.claude/contextus/runtime/daemon.pid
+  → Daemon not running, starts it on fixed port 37800
+  → Daemon loads model, ready
+
+Session 2 starts in automation/ (concurrent)
+  → ensureDaemonRunning() checks daemon.pid
+  → Daemon running, health check passes
+  → Shares daemon (instant)
+
+Session 3 starts in backend/ (different project)
+  → ensureDaemonRunning() checks daemon.pid
+  → Daemon running, health check passes
+  → Shares daemon, query specifies project: "backend"
+  → Daemon opens/caches backend DB, routes correctly
+```
+
+**Benefits:**
+- Maximum efficiency: one model, shared everywhere
+- Simplest port management (fixed port)
+- Zero cross-contamination if API is clean (project param required)
+- Daemon stays warm across all work
+
+**Trade-offs:**
+- Single point of failure (crash affects all sessions)
+- Port 37800 must be available
+- Slightly larger memory footprint if caching multiple project DBs
+
+---
+
+#### Option B: One Daemon Per Project
+
+**Separate daemon for each project.**
+
+**Rationale:**
+- ✅ Project isolation via separate processes
+- ✅ Crash in one project doesn't affect others
+- ✅ Can tune memory/resources per project
+
+**Architecture:**
+
+```
+~/.claude/contextus/runtime/
+  automation.pid       # Daemon for automation
+  automation.port      # Port 37801
+  backend.pid          # Daemon for backend
+  backend.port         # Port 37802
+```
+
+**Benefits:**
+- Process-level isolation
+- Independent daemon lifecycle per project
+- Crash blast radius limited to one project
+
+**Trade-offs:**
+- More complex port management
+- Multiple model instances (~100-200MB each)
+- Multiple daemons to monitor/clean up
+- Slower: each project pays first-session startup cost
+
+---
+
+**Recommendation: Option A (Single Shared Daemon)**
+
+Start with the simplest model. Contamination isn't a risk if the API requires `project` parameter — isolation is enforced at the query level, not the process level. The memory savings and simplicity are worth it.
+
+**Critical Constraint: Embedding Model Must Be Consistent**
+
+A shared daemon only works if all projects use the **same embedding model**. Different models produce incompatible embedding spaces — you can't embed with `all-MiniLM-L6-v2` and query a DB built with `nomic-embed-text`.
+
+**Strategy:**
+1. **Global default model** (recommended): Set one embedding model in `~/.claude/contextus/config.json`, used by all projects
+2. **Validate on startup**: Daemon checks each project DB's metadata for model mismatch
+3. **Fail fast**: If project DB was built with different model, return error + instructions to rebuild
+
+```javascript
+// Daemon validates model compatibility
+async function validateProjectDB(projectName: string): Promise<void> {
+  const dbPath = `~/.claude/contextus/data/${projectName}/`;
+  const collection = await chromaClient.getCollection('contextus');
+  const metadata = await collection.metadata();
+  
+  if (metadata.embeddingModel !== DAEMON_MODEL) {
+    throw new Error(
+      `Project '${projectName}' was built with ${metadata.embeddingModel}, ` +
+      `but daemon is running ${DAEMON_MODEL}. ` +
+      `Run /rebuild-embeddings to regenerate with current model.`
+    );
   }
 }
+```
+
+**Per-Project Model Override (forces Option B):**
+
+If a user explicitly configures a different model for a specific project:
+
+```json
+// automation/.claude/settings.json
+{
+  "embedding": {
+    "model": "nomic-embed-text"  // Different from global default
+  }
+}
+```
+
+Daemon startup logic:
+```javascript
+if (projectHasCustomEmbeddingModel(projectName)) {
+  // Fall back to per-project daemon
+  console.log('Project uses custom embedding model, launching dedicated daemon');
+  return launchPerProjectDaemon(projectName);
+}
+```
+
+**Migration path**: If users hit issues (model conflicts, port conflicts, want per-project isolation), add config flag:
+
+```json
+{
+  "daemon": {
+    "mode": "shared"  // or "per-project"
+  }
+}
+```
+
+**Default**: Shared daemon with global model (simplest, covers 95% of users).
+
+**Crash Recovery:**
+
+**Key insight**: `SessionStart` fires once at session start, not on every prompt. If the daemon crashes mid-session, the `UserPromptSubmit` hook must handle recovery.
+
+**Strategy: Fire-and-Forget Restart**
+
+```javascript
+// Shared utility: lib/ensure-daemon.js
+async function ensureDaemonRunning(): Promise<boolean> {
+  // Check PID file
+  if (fs.existsSync(PID_PATH)) {
+    const pid = fs.readFileSync(PID_PATH, 'utf8');
+    if (processExists(pid)) {
+      // Check health endpoint
+      try {
+        const response = await fetch('http://localhost:PORT/health', { timeout: 1000 });
+        if (response.ok) return true;  // Daemon healthy
+      } catch (err) {
+        // PID exists but health check failed — clean up
+        try { process.kill(pid, 0); } catch { /* ignore */ }
+      }
+    }
+    // Stale PID file
+    fs.unlinkSync(PID_PATH);
+  }
+  
+  // Start daemon
+  spawn('node', [DAEMON_PATH], {
+    detached: true,
+    stdio: 'ignore'
+  }).unref();
+  
+  return false;  // Started but not yet warm
+}
+
+// UserPromptSubmit hook
+async function queryHook(prompt: string) {
+  try {
+    const response = await fetch('http://localhost:PORT/query', {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+      timeout: 5000
+    });
+    return await response.json();
+  } catch (err) {
+    // Daemon unreachable — restart in background, proceed without context
+    ensureDaemonRunning();  // Fire-and-forget
+    
+    return { continue: true };  // Graceful degradation
+  }
+}
+
+// SessionStart hook
+async function sessionStartHook() {
+  const wasRunning = await ensureDaemonRunning();
+  if (!wasRunning) {
+    // Wait briefly for model warm-up
+    await sleep(2000);
+  }
+  return { continue: true };
+}
+```
+
+**Recovery Behavior:**
+- Daemon crash costs **one missed injection** (the current prompt)
+- Daemon restarts in background (fire-and-forget)
+- Next prompt gets full context again (~2-5s after restart)
+- Session never blocks or fails
+
+**Graceful Degradation:**
+- Hook timeout → empty context (Claude proceeds without RAG)
+- Daemon crash → trigger restart, proceed without context
+- Never block the user's prompt from reaching Claude
+- Claude falls back to manual memory scanning if needed
+
+**PID File Management:**
+```bash
+# Daemon writes PID on startup
+echo $$ > ~/.claude/contextus/daemon.pid
+
+# SessionStart checks health
+if [ -f ~/.claude/contextus/daemon.pid ]; then
+  PID=$(cat ~/.claude/contextus/daemon.pid)
+  if ! ps -p $PID > /dev/null; then
+    # Stale PID file, clean up
+    rm ~/.claude/contextus/daemon.pid
+  fi
+fi
+
+# Start if not running
+if ! curl -sf http://localhost:PORT/health > /dev/null; then
+  node $PLUGIN_PATH/daemon/server.js &
+fi
+```
+
+**Health Endpoint:**
+```javascript
+// Daemon health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    modelLoaded: embedder !== null,
+    chromaConnected: await chromaClient.heartbeat()
+  });
+});
 ```
 
 ### Phase 3: Incremental Updates
@@ -847,77 +1273,61 @@ In `.claude/settings.json` (project-level):
 3. Keep MEMORY.md as human-readable index only
 4. Fallback: manual `/memory-search` skill if needed
 
-## Git Integration & Merge Strategy
+## Git Integration & Storage
 
-### File-Based ChromaDB in Git
+### ChromaDB Storage Location
 
-**Approach**: Store ChromaDB files in `.claude/memory-db/` and commit them.
+**Decision**: ChromaDB files are stored in `~/.claude/contextus/data/{project}/` (per-user, per-project), **NOT** committed to git.
 
-**Benefits:**
-- ✅ Team sharing: Everyone gets embeddings on clone
-- ✅ Portability: No Chroma server required
-- ✅ Version control: Embeddings tracked with memories
-- ✅ Atomic updates: Memory + embedding in same commit
+**Rationale**: 
+- ✅ Avoids binary SQLite merge conflicts entirely
+- ✅ Keeps project directories clean (only source `.md` files in git)
+- ✅ Per-user configuration (custom sources don't conflict with teammates)
+- ✅ Derived artifacts belong in user space, not version control
 
 **Structure:**
 ```
+# In project (git-tracked)
 .claude/
-├── memory/
+├── memory/              # Committed: source memory files
 │   ├── MEMORY.md
 │   ├── sdk/
 │   ├── testing/
 │   └── framework/
-└── memory-db/              # Committed to git
-    ├── chroma.sqlite3      # Binary SQLite
-    └── <uuid>/             # Vector data
+└── settings.json        # Gitignored: personal config
+
+# In user space (not in git)
+~/.claude/contextus/data/
+└── {project-name}/      # Per-project ChromaDB instance
+    ├── chroma.sqlite3
+    └── index/
 ```
 
-### Handling Merge Conflicts
+### Initial Setup
 
-**Problem**: Binary SQLite files don't merge cleanly.
-
-**Solution: Rebuild on Conflict** (Recommended)
-
-Treat ChromaDB as a **derived artifact** (like `package-lock.json`):
-- Commit it for convenience (fast clone)
-- On conflict, rebuild from source (`.md` files)
-- Embeddings are deterministic → rebuild = correct
-
-**Implementation:**
-
+On first session in a project:
 ```bash
-# .gitattributes
-.claude/memory-db/* merge=ours
-
-# .git/hooks/post-merge
-#!/bin/bash
-if git diff --name-only ORIG_HEAD HEAD | grep -q "\.claude/memory/.*\.md"; then
-  echo "Memory files changed, rebuilding embeddings..."
-  npm run rebuild-memory-embeddings
-fi
+cd automation
+# First prompt triggers auto-build
+→ Building ~/.claude/contextus/data/automation/
+→ Indexing 151 files (64 project + 87 parent + user)
+→ ✓ Ready! (~15-20 seconds)
 ```
 
-**Workflow:**
-1. **Develop**: Update memory files, embeddings auto-rebuild
-2. **Commit**: Both `.md` and `.memory-db/` changes committed
-3. **PR/Merge**: If conflict on ChromaDB, rebuild wins
-4. **Post-merge hook**: Detects `.md` changes, rebuilds if needed
+**No manual setup required** — embeddings build automatically from source files.
 
-**Alternative: Gitignore ChromaDB**
+### Handling Changes
 
-If merge conflicts are too frequent:
-```gitignore
-.claude/memory-db/
-```
-
-Add SessionStart hook to rebuild if missing:
+When memory files change:
 ```bash
-if [ ! -d ".claude/memory-db" ]; then
-  npm run rebuild-memory-embeddings
-fi
+# File watcher (PostToolUse hook) detects change
+vim .claude/memory/testing/feedback_new.md
+
+→ Incremental re-embed: ~/.claude/contextus/data/automation/
+→ ✓ Updated (2-3 seconds)
 ```
 
-**Tradeoff**: First session after clone takes ~5-10s to rebuild.
+**Note on git-committed DB section in original design**: This approach has been **superseded** by the user-space model. See [DESIGN ADDENDUM.md](./DESIGN%20ADDENDUM.md) §1 for details.
 
 ### Rebuild Script
 
@@ -1940,3 +2350,36 @@ class PGVectorStore implements VectorStore { ... }
 - **Collaborative filtering**: "Users who found X useful also found Y useful"
 - **Multi-language support**: Embeddings for non-English memories
 - **Memory analytics**: Usage stats, which memories are most retrieved
+
+---
+
+## Design Review Summary
+
+This document has been updated to incorporate decisions from the design review captured in [DESIGN ADDENDUM.md](./DESIGN%20ADDENDUM.md).
+
+**Key architectural decisions:**
+
+1. **Storage location**: ChromaDB in `~/.claude/contextus/data/{project}/` (user space), not git-committed
+2. **Daemon architecture**: Persistent HTTP daemon instead of stateless hooks (solves model warm-up latency)
+3. **Daemon lifecycle**: Single shared daemon across all projects (one embedding model), graceful degradation on crash
+4. **Chunking strategy**: Chunk long docs with breadcrumb injection, relative paths for portability
+5. **Embedding model validation**: Store model name in collection metadata, validate on query to prevent silent failures
+6. **Awareness hook**: Opt-out framing ("omit only if trivial"), separate script for cross-platform safety
+7. **Result destructuring**: Correct Chroma parallel array handling (ids/documents/metadatas/distances)
+
+**Pre-implementation checklist** (see addendum §9 for full details):
+
+Before implementation:
+- [ ] Benchmark embedding models (MiniLM vs mpnet vs voyage-code-2)
+- [ ] Design daemon API contract (endpoints, request/response shapes)
+- [ ] Confirm chunk size/overlap strategy for different models
+- [ ] Test awareness hook wording in real sessions
+
+During implementation:
+- [ ] Add `/health` endpoint to daemon for startup checks
+- [ ] Implement `ensureDaemonRunning()` shared utility (SessionStart + crash recovery)
+- [ ] Handle chunked results with breadcrumb deduplication in `formatMemoriesForInjection`
+- [ ] Store embedding model in Chroma metadata, validate on every query
+- [ ] Wire PostToolUse hook to daemon `/notify` for incremental re-embed
+
+See [DESIGN ADDENDUM.md](./DESIGN%20ADDENDUM.md) for full rationale and additional context on each decision.
