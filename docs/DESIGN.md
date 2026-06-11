@@ -1060,6 +1060,155 @@ fi
    - Add negative sampling if needed
    - Consider re-ranking if quality issues
 
+## Architectural Refinements
+
+Based on design review feedback, these refinements should be prioritized during implementation:
+
+### 1. Source-Aware Weighting
+
+**Problem**: With multiple memory sources (local project, parent repo, user memory), parent/global patterns can drown out local nuance.
+
+**Solution**: Add source field to Chroma metadata and apply weighting:
+
+```typescript
+// Scoring hierarchy
+const sourceWeights = {
+  'projectMemory': 1.0,    // Local patterns (highest priority)
+  'projectDocs': 0.9,      // Local documentation
+  'parentMemory': 0.7,     // Parent repo patterns
+  'userMemory': 0.8,       // Personal notes
+  'userDocs': 0.7          // Personal documentation
+};
+
+// Apply during retrieval
+const weightedScore = cosineSimilarity * sourceWeights[doc.metadata.source];
+```
+
+**Benefits**:
+- Local patterns get priority
+- Parent patterns don't overshadow project-specific knowledge
+- Explicit in `/memory-debug` output
+
+### 2. Thin Re-Ranking Layer
+
+**Problem**: Pure cosine similarity doesn't account for memory type, recency, or usage patterns.
+
+**Solution**: Lightweight post-retrieval scoring using frontmatter metadata:
+
+```typescript
+function rerank(results: SearchResult[]): SearchResult[] {
+  return results.map(r => ({
+    ...r,
+    finalScore: r.similarity 
+      * sourceWeight(r.source)
+      * typeBoost(r.metadata.type)      // feedback > reference > decision
+      * freshnessDecay(r.metadata.updated)  // slight penalty for old
+      * usageBoost(r.metadata.accessCount)  // optional: boost frequently used
+  })).sort((a, b) => b.finalScore - a.finalScore);
+}
+
+const typeBoosts = {
+  'feedback': 1.2,    // Actionable patterns get priority
+  'reference': 1.0,   // Neutral
+  'decision': 0.9,    // Context, less immediately actionable
+  'project': 0.8      // Status updates
+};
+```
+
+**Avoids**:
+- Full LLM re-ranking (expensive)
+- Complex ML models (overkill for <200 docs)
+
+**Keeps**:
+- Fast (<5ms overhead)
+- Cheap (no API calls)
+- Tunable (config-driven weights)
+
+### 3. Formalize Staleness Handling
+
+**Problem**: Embedding freshness is implicit, hard to debug, and inconsistently handled.
+
+**Solution**: Make staleness a first-class health metric:
+
+```typescript
+interface EmbeddingMetadata {
+  contentHash: string;        // SHA-256 of file content
+  lastEmbedded: string;       // ISO timestamp
+  fileModified: string;       // File mtime
+  isStale: boolean;          // Computed: hash mismatch or mtime > lastEmbedded
+}
+
+// Health check command
+async function auditStaleness(): Promise<StaleReport> {
+  const allDocs = await chroma.collection.get();
+  const stale = allDocs.filter(doc => {
+    const currentHash = hashFile(doc.metadata.filePath);
+    return currentHash !== doc.metadata.contentHash;
+  });
+  
+  return {
+    total: allDocs.length,
+    stale: stale.length,
+    files: stale.map(d => d.metadata.filePath)
+  };
+}
+```
+
+**Expose in `/memory-debug`**:
+```
+Memory Health:
+  Total embeddings: 64
+  Stale embeddings: 3 (4.7%)
+  Files needing re-embed:
+    - .claude/memory/testing/feedback_new_pattern.md
+    - .claude/memory/framework/reference_updated.md
+```
+
+**Repair strategies**:
+- On-demand: detect during query, re-embed before returning results
+- Batch: `/rebuild-embeddings --stale-only`
+- Automatic: PostToolUse hook on Write/Edit to memory files
+
+### 4. Standardize Injection Format
+
+**Problem**: Injected memory format is inconsistent, hard to parse, and doesn't scale to many results.
+
+**Solution**: Define a Memory Block schema:
+
+```markdown
+## 📝 Relevant Memories (3 found)
+
+### [Framework] Use Logger Helper (similarity: 0.92)
+**Source**: `.claude/memory/framework/feedback_use_logger_helper.md`  
+**Type**: feedback | **Updated**: 2026-05-15
+
+> Always use `getLogger()` from `~/helpers/logger` instead of `console.log`.
+> This ensures consistent log formatting and makes it easy to filter logs...
+
+[Full content available - 245 tokens]
+
+---
+
+### [Testing] Test Session Artifacts (similarity: 0.78)
+**Source**: `.claude/memory/testing/reference_test_session_artifacts.md`  
+**Type**: reference | **Updated**: 2026-04-20
+
+> Session artifacts are stored in `results/sessions/{sessionId}/`...
+
+---
+
+_Memory retrieval: 55ms | Injected: 1,240 tokens | Sources: projectMemory(2), userMemory(1)_
+```
+
+**Benefits**:
+- Structured, scannable format
+- Shows similarity scores (helps debug retrieval quality)
+- Source attribution (know where knowledge comes from)
+- Token count (helps manage context budget)
+- Excerpt mode when context is tight
+
+**Future**: Allow Claude to request "excerpt only" mode when approaching context limits.
+
 ## References
 
 - [Global Memory System](global-memory.md) — Current manual system
