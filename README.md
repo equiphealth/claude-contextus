@@ -252,12 +252,15 @@ See `examples/` directory for:
 - [ ] Phase 4: Testing & tuning (Week 4)
 - [ ] Phase 5: Documentation & publish (Week 5)
 
-## Related Projects
+## Do You Need Another Memory System?
 
-- [claude-mem](https://github.com/thedotmack/claude-mem) - Observation-based memory (temporal, what you did)
-- **claude-contextus** - Context patterns (timeless, what you learned)
+**Short answer: probably not.**
 
-**Difference**: claude-mem captures *what you did* (observations with timestamps), claude-contextus stores *what you learned* (timeless patterns and decisions).
+claude-contextus handles workflow patterns, decisions, and documentation — the knowledge that actually guides your work. For most users, that's sufficient.
+
+**Power user combo**: [claude-mem](https://github.com/thedotmack/claude-mem) adds temporal observation tracking (*"what we tried last sprint"*) if you need historical recall across sessions. It's complementary, not required — contextus is proactive and automatic, claude-mem is manual and search-based.
+
+If you're not sure, start with contextus. Add claude-mem later if you find yourself needing to recall specific past sessions.
 
 ## License
 
