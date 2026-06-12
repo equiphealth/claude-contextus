@@ -8,17 +8,19 @@
 
 **Unlike other RAG tools**, claude-contextus doesn't wait for you to act. It:
 - **Surfaces relevant context** automatically on every prompt (no queries needed)
-- **Captures new patterns** automatically by prompting Claude to propose context patterns
+- **Proposes new patterns** as you work, calibrating to what matters in your project
 - **Searches semantically** across project + user context patterns and docs
+- **Learns what's useful** by tracking which patterns actually help (retrieval quality feedback loop)
 - **Rebuilds embeddings** automatically when files change
 
-Think of it as a context system that reads your mind — and reminds you to write things down.
+Think of it as a context system that reads your mind — captures what you learn, surfaces what you need, tunes itself to your workflow.
 
 ## Features
 
 ### 🎯 Proactive (Not Reactive)
 - **Zero-query context injection**: Relevant context patterns appear automatically on every prompt
-- **Context awareness prompts**: Reminds Claude to capture new patterns as you discover them
+- **Calibrated pattern capture**: System proposes new patterns as you work, learns what's worth remembering
+- **Automatic quality tuning**: Tracks which patterns are actually useful vs. just retrieved
 - **Automatic rebuilds**: Embeddings stay fresh as your knowledge grows
 
 ### 🧠 Smart Retrieval
@@ -108,14 +110,24 @@ Claude: [Sees relevant "TypeScript strict mode" context pattern injected]
 {
   "claudeContextus": {
     "enabled": true,
-    "autoRebuild": true,
     "retrieval": {
       "topK": 5,
       "similarityThreshold": 0.7,
+      "dedupThreshold": 0.85,
       "maxTokens": 3000
     },
+    "capture": {
+      "mode": "propose"  // propose | auto | manual
+    },
     "embedding": {
-      "model": "Xenova/all-MiniLM-L6-v2"
+      "provider": "transformers.js",
+      "model": "nomic-ai/nomic-embed-text-v1.5"
+    },
+    "sources": {
+      "projectContext": { "enabled": true, "path": ".claude/context" },
+      "projectDocs": { "enabled": true, "path": "docs" },
+      "userContext": { "enabled": true },
+      "userDocs": { "enabled": true }
     }
   }
 }
@@ -123,11 +135,14 @@ Claude: [Sees relevant "TypeScript strict mode" context pattern injected]
 
 ## How It Works
 
-1. **Context Pattern Creation**: Write markdown files in `.claude/context/` with frontmatter
-2. **Embedding**: Files are embedded using a local transformer model (no API keys)
-3. **Storage**: Embeddings stored in file-based ChromaDB (`~/.claude/contextus/data/{project}/`)
-4. **Retrieval**: On every prompt, semantic search finds top-k relevant context patterns
-5. **Injection**: Matched context patterns injected into Claude's context automatically
+1. **Daemon**: Persistent HTTP server keeps embedding model warm (~100-200ms per query)
+2. **Auto-injection**: Every prompt triggers semantic search → top-k patterns injected automatically
+3. **Pattern proposals**: System suggests new patterns as you work ("Context: propose: topic-name")
+4. **Calibration**: Tracks hit counts, learns which patterns are useful, tunes retrieval over time
+5. **Multi-source**: Searches project context, project docs, user context, user docs simultaneously
+6. **Compression**: Retrieved patterns compressed before injection (lean-ctx style, ~60% reduction)
+
+**No API keys needed**: Uses local transformers.js or Ollama for embeddings.
 
 ## Context Pattern File Format
 
@@ -176,20 +191,28 @@ On merge conflicts in context patterns, resolve like any markdown file. Embeddin
 ## Architecture
 
 ```
-UserPromptSubmit
+UserPromptSubmit Hook
     ↓
-Embed user prompt
+HTTP request → Daemon (warm model)
     ↓
-Query ChromaDB (semantic search)
+Embed prompt (50-100ms)
     ↓
-Filter by similarity threshold
+Query ChromaDB (5-20ms)
     ↓
-Inject top-k context patterns into context
+Re-rank by source/type/freshness/hits (<5ms)
     ↓
-Claude responds with relevant context patterns
+Compress patterns (~60% reduction, <5ms)
+    ↓
+Inject into Claude context
+    ↓
+Claude responds (context-aware)
+    ↓
+Track hit counts → learn what's useful
 ```
 
-**Local, no API keys**: Uses `@xenova/transformers` for embeddings (runs in Node.js, no external API).
+**Total latency**: 100-200ms typical (p50), 300-500ms worst case (p95)
+
+**Storage**: `~/.claude/contextus/data/{project}/` — per-user, per-project ChromaDB instances. No git conflicts, automatic rebuilds on context file changes.
 
 ## Development
 

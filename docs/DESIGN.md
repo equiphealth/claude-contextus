@@ -17,6 +17,8 @@ This document describes how to implement automatic semantic retrieval for the `.
 |**Purpose**        |Inject curated `.claude/context/` patterns        |Track tool use observations (memory)|
 |**Source**         |Hand-written markdown files + docs                |Auto-generated from PostToolUse hook|
 |**Scope**          |Normative rules/patterns (context)                |Historical activity log (memory)    |
+|**Retrieval Mode** |**Automatic** (every prompt, no commands)         |**Manual** (`/mem-search`, `timeline()`) |
+|**User Experience**|Proactive, ambient, zero-query                    |Reactive, explicit search required  |
 |**Chroma Mode**    |File-based (`~/.claude/contextus/data/{project}/`)|Server-based (`localhost:8000`)     |
 |**Version Control**|Source files committed; DB in user space          |Stored in `~/.claude-mem/`          |
 |**Config**         |`CONTEXTUS_RAG_*` env vars                        |`CLAUDE_MEM_*` env vars             |
@@ -39,6 +41,30 @@ These decisions are settled. Do not re-litigate without strong evidence.
 1. **Proposal format**: Footer includes slug + novelty signal derived from injected context already present — no extra daemon round trip on UserPromptSubmit.
 1. **Retrieval frequency tracking**: Increment hit counter in Chroma metadata on every retrieval. Used for re-ranking and calibration dashboard.
 1. **Dedup and retrieval thresholds**: Tuned independently. Dedup threshold (creation) and retrieval threshold (query) serve different purposes and should not share a value.
+
+## Vision: Proactive Context, Not Search
+
+The killer feature isn't "better search" — it's **no search at all**.
+
+**Traditional RAG** is reactive:
+- User asks question → searches manually → retrieves results → applies to task
+- Requires remembering *what* to search for and *when* to search
+- Context retrieval is an interruption, not an enhancement
+
+**claude-contextus** is proactive:
+- Context appears automatically on every prompt (no `/search` commands)
+- System proposes what to capture as you work (no "did I document that?" anxiety)  
+- Learns which patterns are useful vs. noise (self-tuning retrieval quality)
+- Calibrates to your project over time (hit tracking + feedback loop)
+
+**The user experience**:
+1. **Zero cognitive load**: You never think "I should search for that pattern." It's just there.
+2. **Automatic capture**: Claude says "Context: propose: error-handling" when you solve something novel.
+3. **Self-improving**: The more you use it, the better it gets at knowing what matters.
+
+This transforms knowledge management from **"I hope I remember to search"** to **"it just works."**
+
+The technical implementation below (embeddings, re-ranking, compression) exists to make this seamless experience possible at <200ms latency with high precision.
 
 ## The Core Workflow
 
