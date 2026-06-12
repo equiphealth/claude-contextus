@@ -1,6 +1,13 @@
-# claude-contextus
+<p align="center">
+  <img src="assets/logo.png" width="140" alt="contextus logo">
+</p>
 
-> **Proactive context for Claude Code**: Stop searching for patterns — let them find you.
+<h1 align="center">claude-contextus</h1>
+
+<p align="center">
+  <strong>Proactive context for Claude Code</strong><br>
+  Stop searching for patterns — let them find you.
+</p>
 
 ## Overview
 
