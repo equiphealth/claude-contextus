@@ -807,7 +807,7 @@ async function detectAvailableModels(): Promise<ModelOption[]> {
 - **Entry-level** (M1, older GPUs): ~3-5s per eval
 - **CPU-only** (no GPU acceleration): ~8-15s per eval
 
-**Model size matters**: Times above assume Llama 3 8B. Larger models (70B) or smaller (3B) scale accordingly.
+**Model size matters**: Times above assume Llama 3.1 8B. Smaller models (3B) are faster, larger models (70B full/quantized) are slower but higher quality. Note: Llama 3/3.1 lineup is 3B, 8B, 70B (no 13B variant like Llama 2).
 
 This makes Ollama **acceptable for low-frequency background tasks** across all hardware:
 - Calibration (100 evals over 2 weeks):
@@ -834,10 +834,12 @@ This makes Ollama **acceptable for low-frequency background tasks** across all h
 - **Consistent performance**: Not subject to API rate limits or variable latency
 
 **Example: M4 Pro 48GB**:
-- Llama 3 8B: ~500ms-1s per eval (comparable to Haiku API call)
-- Llama 3.1 13B: ~1-2s per eval (better quality, still fast)
-- 48GB RAM handles models + embeddings + daemon without swap
-- Calibration (100 evals): ~1-2 minutes total, barely noticeable
+- `llama3.1:8b`: ~500ms-1s per eval (comparable to Haiku API call)
+- `llama3.1:70b-q4` (quantized): ~2-4s per eval (better quality, still tractable)
+- `llama3.1:70b` (full): ~3-8s per eval (highest quality, slow for high-frequency)
+- 48GB RAM handles quantized 70B + embeddings + daemon without swap
+- Calibration with 8B (100 evals): ~1-2 minutes total
+- Calibration with 70B-q4 (100 evals): ~3-7 minutes total
 
 **Trade-offs**:
 - **Setup overhead**: Each developer installs Ollama + downloads models (~5-10 min one-time)
