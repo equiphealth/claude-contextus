@@ -347,12 +347,179 @@ These can't be fully answered until we have working code:
 
 ---
 
+## V2 Architecture Questions
+
+These extend the quality measurement infrastructure beyond POC scope:
+
+### 11. Harmful Stale Pattern Detection (V2) ❓
+
+**Question**: How do we detect patterns that are retrieved, used, but *wrong*?
+
+**The gap**: Current design handles zero-hit stale and low-use stale, but not the hardest case:
+```
+retrieved → used → wrong
+```
+
+**Proposed approach**: Natural correction detection via Stop hook
+
+**Detection logic**:
+1. Stop hook sees conversation turn
+2. Check user message for correction signals: "actually", "that's wrong", "outdated", "don't do that", "deprecated"
+3. Cross-reference with patterns injected in previous turn
+4. If correction references pattern topic → flag pattern + log correction incident
+
+**Infrastructure**: Shares eval worker (new job type: `correction_detection`)
+
+**Data captured**:
+```json
+{
+  "type": "correction_detected",
+  "pattern": "error-handling.md",
+  "user_correction": "Actually, we stopped using that approach...",
+  "flagged_for_review": true,
+  "incident_count": 3
+}
+```
+
+**Workflow**:
+1. Pattern flagged after first correction
+2. Downweight in retrieval (similarity × 0.5) until reviewed
+3. Surface in `/context-calibrate --report` under "Flagged patterns needing review"
+4. User can fix, archive, or clear flag
+
+**Open questions**:
+- What correction signals are reliable? (need to validate false positive rate)
+- Should we downweight immediately or wait for 2-3 corrections?
+- How long should downweighting last?
+
+---
+
+### 12. Usefulness Scoring Rubric (V2) 🚧
+
+**Question**: What's the exact prompt and rubric for calibration evaluation?
+
+**Current state**: Gestures at "Haiku judges usefulness" but no concrete prompt
+
+**Proposed rubric**:
+
+```
+You are evaluating whether injected context patterns were useful.
+
+Original prompt:
+{user_prompt}
+
+Injected patterns:
+1. logger-helper.md (snippet: "Log retry attempts...")
+2. test-data-setup.md (snippet: "Use fixtures...")
+3. error-handling.md (snippet: "Wrap async calls...")
+
+Claude's thinking:
+{preceding_reasoning}
+
+Claude's response:
+{assistant_message}
+
+For each pattern, rate its usefulness:
+- critical (1.0): Response would be wrong/incomplete without it
+- helpful (0.7): Improved answer quality or saved time
+- mentioned (0.3): Referenced but not essential
+- unused (0.0): Injected but not used
+
+Look for:
+- Explicit references in thinking ("the logger-helper pattern shows...")
+- Implicit usage (advice matches pattern without naming it)
+- Contradictions (response contradicts pattern → flag for review)
+
+Output format (one per line):
+1:helpful
+2:unused
+3:critical
+```
+
+**Validation metrics**:
+- Inter-rater reliability (Haiku vs Sonnet on 20 samples)
+- Explicit vs implicit usage detection accuracy
+- Contradiction detection precision/recall
+
+**Implementation**: Belongs in `daemon/eval-worker.js` evaluation prompt
+
+---
+
+### 13. Adaptive Injection Floor (V2) ❓
+
+**Question**: Should the injection floor self-optimize over time?
+
+**Current design**: Manual threshold (0.7), periodic recalibration, human adjustment
+
+**Self-optimization dimensions**:
+
+**A. Rolling window adaptation**
+- Track last 100 calibration evals
+- Calculate optimal floor (maximize weighted_score - injection_cost)
+- Recommend adjustment if delta > 0.05
+
+**B. Per-category floors**
+```json
+{
+  "injectionFloor": 0.7,  // global default
+  "perCategory": {
+    "tests": 0.75,        // higher bar
+    "architecture": 0.65   // lower bar (high-value, rare matches)
+  }
+}
+```
+
+**C. Per-model floors**
+- Different embedding models → different similarity distributions
+- nomic-embed-text-v1.5 calibrated at 0.7
+- all-MiniLM-L6-v2 might need 0.65
+
+**D. Per-project floors**
+- Sensitive projects (payments, security) → higher bar
+- Experimental projects → lower bar
+
+**E. Decay curves**
+- Pattern unused for 30 days → raise floor by 0.05
+- Pattern consistently high-rated → lower floor by 0.05
+
+**Data structures** (v1 schema, v2 logic):
+```json
+{
+  "injectionFloor": 0.7,
+  "adaptiveFloors": {
+    "enabled": false,  // v2 feature flag
+    "perCategory": {},
+    "rollingWindow": {
+      "samples": 100,
+      "recommendedFloor": 0.72,
+      "confidence": 0.85
+    },
+    "decayCurves": {
+      "unused_penalty": 0.05,
+      "high_rated_bonus": -0.05
+    }
+  }
+}
+```
+
+**Algorithm** (v2):
+After each calibration batch:
+1. Calculate floor that would maximize (quality_score - injection_overhead)
+2. If recommended floor differs by >0.05 → prompt user
+3. Track adjustment history (prevent oscillation)
+
+**Open questions**:
+- Is optimization objective right? (maximize quality - cost)
+- How to prevent overfitting to recent calibration samples?
+- Should adaptation be automatic or always user-approved?
+
+---
+
 ## Deferred to Post-MVP
 
 These are good ideas but not blockers:
 
 - Pattern compression (DESIGN.md: deferred to v2)
-- Per-category similarity thresholds (DESIGN.md: v2)
 - Hybrid semantic + keyword search (DESIGN.md: future)
 - Context versioning / rollback (DESIGN.md: future)
 - Collaborative corpus sharing (DESIGN.md: Phase 3)
