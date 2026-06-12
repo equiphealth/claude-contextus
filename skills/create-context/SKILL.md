@@ -5,6 +5,7 @@ Smart context management: creates new context files or updates existing ones aut
 ## When to Use
 
 Anytime you want to capture a pattern, decision, or learning. The skill automatically:
+
 - Checks if similar context exists
 - Routes to update if found
 - Creates new if not found
@@ -45,7 +46,7 @@ You don't choose — it chooses for you.
 ```
 /create-context "new sdx pattern" "SDK users need encryption..."
 
-→ Semantic search existing context files  
+→ Semantic search existing context files
 → No similar context found (best match: 0.42)
 → Decision: CREATE new
 → Creates sdk/feedback_sdk_encryption.md
@@ -53,11 +54,11 @@ You don't choose — it chooses for you.
 
 ### 3. Threshold Logic
 
-| Similarity | Action | Reason |
-|-----------|--------|---------|
-| ≥ 0.90 | **Update** existing | Very similar, definitely same topic |
-| 0.75-0.89 | **Ask user** | Similar, might be same or related |
-| < 0.75 | **Create** new | Different enough to warrant new context file |
+| Similarity | Action              | Reason                                       |
+| ---------- | ------------------- | -------------------------------------------- |
+| ≥ 0.90     | **Update** existing | Very similar, definitely same topic          |
+| 0.75-0.89  | **Ask user**        | Similar, might be same or related            |
+| < 0.75     | **Create** new      | Different enough to warrant new context file |
 
 ## Interactive Disambiguation
 
@@ -69,13 +70,14 @@ Found similar context:
   "TypeScript conventions and best practices"
   Last modified: 2 months ago
 
-Is this about the same topic? 
+Is this about the same topic?
   [Update existing] [Create new] [Show me both]
 ```
 
 ## Automatic Routing
 
 **Update path:**
+
 ```
 /create-context "logger usage" "Use getLogger()..."
 
@@ -86,6 +88,7 @@ Is this about the same topic?
 ```
 
 **Create path:**
+
 ```
 /create-context "new pattern" "..."
 
@@ -114,6 +117,7 @@ Context: propose: typescript-strict-mode
 ```
 
 Use when:
+
 - You KNOW it's a new topic
 - Similar context exists but covers different angle
 - Want to split a broad context into specific ones
@@ -124,9 +128,9 @@ Use when:
 {
   "claudeContextus": {
     "contextCapture": {
-      "similarityThreshold": 0.75,  // When to consider "similar"
-      "autoUpdateThreshold": 0.90,  // When to auto-update without asking
-      "checkSimilarity": true        // Can disable to always create
+      "similarityThreshold": 0.75, // When to consider "similar"
+      "autoUpdateThreshold": 0.9, // When to auto-update without asking
+      "checkSimilarity": true // Can disable to always create
     }
   }
 }

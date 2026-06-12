@@ -5,8 +5,9 @@ _Last updated: June 10, 2026_
 ## Context
 
 Contextus requires an embedding model for semantic memory search. The choice impacts:
+
 - Plugin download size
-- First-run initialization time  
+- First-run initialization time
 - Runtime memory footprint
 - Offline capability
 
@@ -15,6 +16,7 @@ Contextus requires an embedding model for semantic memory search. The choice imp
 ### 1. Transformers.js (In-Process, Default)
 
 **Pros:**
+
 - ✅ Works offline (no external services)
 - ✅ No server/daemon required
 - ✅ Deterministic (same model, same results)
@@ -22,11 +24,13 @@ Contextus requires an embedding model for semantic memory search. The choice imp
 - ✅ Small models available (~80MB for all-MiniLM-L6-v2)
 
 **Cons:**
+
 - ⚠️ Adds ~90MB total footprint (package + model)
 - ⚠️ First-run model download (~20s)
 - ⚠️ Uses CPU (not GPU-accelerated in Node.js)
 
 **Footprint:**
+
 - Package: ~5MB (`@xenova/transformers`)
 - Model cache: ~80MB (all-MiniLM-L6-v2) or ~138MB (nomic-embed-text)
 - Total: ~85-143MB
@@ -34,46 +38,55 @@ Contextus requires an embedding model for semantic memory search. The choice imp
 ### 2. Ollama (Opt-in Enhancement)
 
 **Pros:**
+
 - ✅ Higher quality embeddings
 - ✅ GPU acceleration (if available)
 - ✅ User controls lifecycle
 
 **Cons:**
+
 - ❌ Requires Ollama running (external dependency)
 - ❌ Not available on all systems
 - ❌ Slower if not GPU-accelerated (~200ms vs 50ms)
 
 **Footprint:**
+
 - Plugin: 0MB (user installs Ollama separately)
 - Model: ~274MB (nomic-embed-text, managed by Ollama)
 
 ### 3. Claude Semantic Matching (Fallback)
 
 **Pros:**
+
 - ✅ No embedding model needed
 - ✅ Understands natural language nuance
 - ✅ Always available (if Claude API accessible)
 
 **Cons:**
+
 - ❌ Requires API call (~2-5s latency)
 - ❌ Token cost per search
 - ❌ Doesn't work offline
 
 **Footprint:**
+
 - Plugin: 0MB (uses existing Claude API)
 
 ### 4. Keyword-Only (Ultimate Fallback)
 
 **Pros:**
+
 - ✅ Zero dependencies
 - ✅ Instant (~10ms)
 - ✅ Works everywhere
 
 **Cons:**
+
 - ❌ No semantic understanding
 - ❌ Misses synonyms and related concepts
 
 **Footprint:**
+
 - Plugin: 0MB (plain grep)
 
 ## Decision
@@ -102,21 +115,25 @@ Contextus requires an embedding model for semantic memory search. The choice imp
 ### Implementation Strategy
 
 **Phase 1 (MVP)**: Ship with Transformers.js, no lazy-loading
+
 - User gets full semantic search out of box
 - Model downloads on plugin install (one-time)
 
 **Phase 2 (Optimization)**: Add lazy-loading
+
 - Ship plugin without model (~5MB)
 - Download model on first search invocation
 - Show progress: "Downloading embedding model (80MB)... 45%"
 
 **Phase 3 (Advanced)**: Optional lite mode
+
 - `"embedding": { "provider": "keyword" }` skips model entirely
 - Falls back to grep-based search (no semantics, but fast)
 
 ## Alternative Considered: External Service
 
 We considered requiring users to run a separate embedding service (like Ollama), but rejected because:
+
 - **Barrier to entry**: Most users won't install external services for one feature
 - **Fragility**: Service crashes → memory search breaks
 - **Complexity**: Now users need to manage service lifecycle
@@ -125,13 +142,13 @@ Transformers.js is "just JavaScript" — it works as long as Node.js works.
 
 ## Comparison to Similar Tools
 
-| Tool | Footprint | Approach |
-|------|-----------|----------|
-| **Contextus** | ~90MB | Transformers.js (in-process) |
-| TypeScript LSP | ~200MB | Full language server (tsserver) |
-| Cursor IDE | ~300MB | Embeddings + model runtime |
-| GitHub Copilot | ~150MB | Model + runtime |
-| claude-mem | ~10MB | No embeddings (keyword search) |
+| Tool           | Footprint | Approach                        |
+| -------------- | --------- | ------------------------------- |
+| **Contextus**  | ~90MB     | Transformers.js (in-process)    |
+| TypeScript LSP | ~200MB    | Full language server (tsserver) |
+| Cursor IDE     | ~300MB    | Embeddings + model runtime      |
+| GitHub Copilot | ~150MB    | Model + runtime                 |
+| claude-mem     | ~10MB     | No embeddings (keyword search)  |
 
 Contextus is lighter than most AI-assisted dev tools while providing semantic search.
 

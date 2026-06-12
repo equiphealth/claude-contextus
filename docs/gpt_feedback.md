@@ -6,11 +6,11 @@ Overall score: 8.5/10
 
 Strongest aspects
 
-* Clear separation from claude-mem
-* Incremental migration strategy
-* Good attention to operational realities (merge conflicts, stale embeddings, project isolation)
-* Evolution from simple RAG to knowledge management platform
-* Thoughtful multi-source architecture
+- Clear separation from claude-mem
+- Incremental migration strategy
+- Good attention to operational realities (merge conflicts, stale embeddings, project isolation)
+- Evolution from simple RAG to knowledge management platform
+- Thoughtful multi-source architecture
 
 Biggest concerns
 
@@ -30,9 +30,9 @@ This is probably the strongest architectural decision.
 
 You explicitly define:
 
-System    Purpose
-claude-contextus    Normative knowledge
-claude-mem    Observational history
+System Purpose
+claude-contextus Normative knowledge
+claude-mem Observational history
 
 That distinction is important.
 
@@ -48,10 +48,10 @@ Those should not live in the same retrieval system.
 
 Many memory systems fail because they mix:
 
-* rules
-* documentation
-* observations
-* user preferences
+- rules
+- documentation
+- observations
+- user preferences
 
 into a single vector collection.
 
@@ -86,10 +86,10 @@ Your current system is already near that threshold.
 
 The later evolution into:
 
-* projectMemory
-* projectDocs
-* userMemory
-* userDocs
+- projectMemory
+- projectDocs
+- userMemory
+- userDocs
 
 is much stronger than the original design.
 
@@ -117,15 +117,15 @@ Relevant sources might be:
 
 Project memory:
 
-* testing pattern
+- testing pattern
 
 Project docs:
 
-* test infrastructure guide
+- test infrastructure guide
 
 User memory:
 
-* known timing issue
+- known timing issue
 
 Combining them is powerful.
 
@@ -149,12 +149,12 @@ That becomes a governance nightmare.
 
 Your ownership model is clean:
 
-Source    Read    Write
-Project    Yes    Yes
-User    Yes    Yes
-Parent    Yes    No
-Sibling    Yes    No
-Framework    Yes    No
+Source Read Write
+Project Yes Yes
+User Yes Yes
+Parent Yes No
+Sibling Yes No
+Framework Yes No
 
 Excellent.
 
@@ -168,8 +168,8 @@ This is the biggest issue.
 
 Current proposal:
 
-1 memory file
-=
+# 1 memory file
+
 1 embedding
 
 That works only if memories remain tiny.
@@ -187,10 +187,10 @@ Example:
 
 Memory contains:
 
-* logging patterns
-* exception handling
-* structured metadata
-* telemetry
+- logging patterns
+- exception handling
+- structured metadata
+- telemetry
 
 Prompt:
 
@@ -206,22 +206,22 @@ Chunk memories.
 
 Instead of:
 
-64 files
-=
+# 64 files
+
 64 vectors
 
 Use:
 
-64 files
-=
+# 64 files
+
 300-800 vectors
 
 Store:
 
 {
-  "source": "feedback_logger.md",
-  "chunk": 4,
-  "heading": "Request Correlation IDs"
+"source": "feedback_logger.md",
+"chunk": 4,
+"heading": "Request Correlation IDs"
 }
 
 Then retrieve chunks.
@@ -259,9 +259,10 @@ Top 10 chunks
 Then compress:
 
 Memory A
+
 - LoggerHelper preferred
 - Never use console.log
-Memory B
+  Memory B
 - Capture screenshots on failure
 
 Inject summaries, not raw documents.
@@ -339,11 +340,11 @@ especially if using Xenova locally.
 
 Realistically:
 
-Stage    Time
-Embedding    50-300ms
-Chroma    5-20ms
-Read files    5-30ms
-Formatting    1-5ms
+Stage Time
+Embedding 50-300ms
+Chroma 5-20ms
+Read files 5-30ms
+Formatting 1-5ms
 
 Expected:
 
@@ -380,10 +381,10 @@ I strongly agree with the later decision.
 
 Reasons:
 
-* no merge conflicts
-* no binary artifacts in repo
-* user-specific configuration
-* simpler rebuild story
+- no merge conflicts
+- no binary artifacts in repo
+- user-specific configuration
+- simpler rebuild story
 
 I’d remove the git-committed database concept entirely.
 
@@ -459,9 +460,9 @@ The newer one should win.
 Metadata ranking could be:
 
 score =
-semantic_similarity * 0.8
-+
-freshness * 0.2
+semantic_similarity \* 0.8
+
+- freshness \* 0.2
 
 ⸻
 
@@ -522,17 +523,17 @@ Phase 1
 
 Implement:
 
-* chunked embeddings
-* file mode only
-* project DB in ~/.claude/contextus
-* top-k retrieval
+- chunked embeddings
+- file mode only
+- project DB in ~/.claude/contextus
+- top-k retrieval
 
 Do NOT implement:
 
-* auto-discovery
-* server mode
-* vector abstraction
-* collaborative features
+- auto-discovery
+- server mode
+- vector abstraction
+- collaborative features
 
 Yet.
 
@@ -542,9 +543,9 @@ Phase 2
 
 Add:
 
-* chunk summarization
-* reranking
-* retrieval diagnostics
+- chunk summarization
+- reranking
+- retrieval diagnostics
 
 ⸻
 
@@ -552,9 +553,9 @@ Phase 3
 
 Add:
 
-* custom sources
-* parent repositories
-* source weighting
+- custom sources
+- parent repositories
+- source weighting
 
 ⸻
 
@@ -564,11 +565,11 @@ The document has evolved from “add embeddings to MEMORY.md” into a fairly so
 
 The strongest design decisions are:
 
-* separation from claude-mem
-* multi-source architecture
-* read-only custom sources
-* project-isolated databases
-* proposal-first memory creation
+- separation from claude-mem
+- multi-source architecture
+- read-only custom sources
+- project-isolated databases
+- proposal-first memory creation
 
 The biggest architectural improvement I’d make immediately is:
 

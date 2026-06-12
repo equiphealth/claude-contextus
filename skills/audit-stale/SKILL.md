@@ -50,19 +50,19 @@ Review context files that haven't been updated recently and check if they're sti
 📊 Stale Context Audit
 
 🔴 Older than 6 months (5 found):
-  
+
   [1] framework/feedback_use_jest.md
       Last modified: 8 months ago (2025-10-10)
       ⚠️  Contradicts: framework/feedback_use_vitest.md (2 months ago)
       Action: [Keep] [Update] [Archive] [Delete]
-  
+
   [2] sdk/reference_old_api_endpoint.md
       Last modified: 10 months ago (2025-08-15)
       ⚠️  Pattern not found in current code
       Action: [Keep] [Update] [Archive] [Delete]
 
 🟡 3-6 months old (3 found):
-  
+
   [3] testing/feedback_browserstack_setup.md
       Last modified: 4 months ago (2026-02-10)
       ✓ Still referenced in recent work
@@ -74,6 +74,7 @@ Review context files that haven't been updated recently and check if they're sti
 ## Interactive Mode
 
 For each flagged context file:
+
 1. Shows context summary
 2. Shows potential conflicts/issues
 3. Asks for action
@@ -88,6 +89,7 @@ For each flagged context file:
 ```
 
 Automatically archives context files:
+
 - Older than 12 months
 - Not referenced in last 6 months of commits
 - Contradicted by newer context

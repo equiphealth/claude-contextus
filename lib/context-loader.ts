@@ -17,7 +17,7 @@ export async function loadContexts(contextDir: string) {
   // Find all .md files except index files and README.md
   const pattern = path.join(contextDir, '**', '*.md');
   const files = await glob(pattern, {
-    ignore: ['**/CONTEXT.md', '**/README.md']
+    ignore: ['**/CONTEXT.md', '**/README.md'],
   });
 
   const contexts = [];
@@ -65,7 +65,7 @@ export async function loadContext(filePath: string, contextDir: string) {
     content,
     frontmatter,
     mtime: stats.mtimeMs,
-    size: stats.size
+    size: stats.size,
   };
 }
 
@@ -79,8 +79,8 @@ export async function loadContext(filePath: string, contextDir: string) {
 export async function checkForChanges(embeddedContexts: any[], contextDir: string) {
   const currentContexts = await loadContexts(contextDir);
 
-  const embeddedMap = new Map(embeddedContexts.map(c => [c.id, c.mtime]));
-  const currentMap = new Map(currentContexts.map(c => [c.id, c.mtime]));
+  const embeddedMap = new Map(embeddedContexts.map((c) => [c.id, c.mtime]));
+  const currentMap = new Map(currentContexts.map((c) => [c.id, c.mtime]));
 
   const changed = [];
   const added = [];
@@ -109,7 +109,7 @@ export async function checkForChanges(embeddedContexts: any[], contextDir: strin
     changed,
     added,
     removed,
-    total: currentContexts.length
+    total: currentContexts.length,
   };
 }
 
@@ -136,7 +136,9 @@ export function validateContext(context: any) {
   // Valid types
   const validTypes = ['feedback', 'reference', 'decision', 'project'];
   if (context.frontmatter.type && !validTypes.includes(context.frontmatter.type)) {
-    errors.push(`Invalid type: ${context.frontmatter.type}. Must be one of: ${validTypes.join(', ')}`);
+    errors.push(
+      `Invalid type: ${context.frontmatter.type}. Must be one of: ${validTypes.join(', ')}`
+    );
   }
 
   // Name format (kebab-case recommended)
@@ -146,7 +148,7 @@ export function validateContext(context: any) {
 
   return {
     valid: errors.length === 0,
-    errors
+    errors,
   };
 }
 

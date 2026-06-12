@@ -56,22 +56,26 @@ Embedding... [████████████████████] 102/
 ## When to Rebuild
 
 ### Required
+
 - **Model change**: Switching embedding models requires full rebuild (different vector spaces)
 - **Database corruption**: If ChromaDB reports errors or missing data
 - **Model validation failure**: When daemon detects model mismatch
 
 ### Recommended
+
 - **After bulk edits**: If you've edited 10+ context files in one session
 - **After merge**: If you pulled changes affecting many context patterns
 - **Stale embeddings**: If `/context-debug` shows high stale percentage
 
 ### Optional
+
 - **Before A/B testing**: Generate fresh baseline before comparing models
 - **Periodic maintenance**: Monthly rebuild to ensure consistency
 
 ## Performance
 
 At typical corpus scale (~100-200 files):
+
 - **Full rebuild**: 15-30 seconds
 - **Stale-only**: 2-5 seconds (depends on change count)
 - **Model validation**: <100ms (metadata check only)
@@ -81,6 +85,7 @@ At typical corpus scale (~100-200 files):
 ⏳ **Not yet implemented** — placeholder skill for design documentation.
 
 When implemented, this skill will:
+
 - Call `lib/embedder.ts` to generate embeddings
 - Use `lib/context-loader.ts` to read source files
 - Update ChromaDB via `lib/chroma-client.ts`

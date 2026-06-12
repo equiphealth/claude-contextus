@@ -1,6 +1,6 @@
 # claude-contextus: Design & Implementation
 
-*Last updated: June 12, 2026*
+_Last updated: June 12, 2026_
 
 **Status**: Core scaffolding complete, implementation in progress
 
@@ -12,17 +12,17 @@ This document describes how to implement automatic semantic retrieval for the `.
 
 **Important**: This is a **separate system** from claude-mem. Both use Chroma but serve different purposes:
 
-|Feature            |claude-contextus (this doc)                       |claude-mem                          |
-|-------------------|--------------------------------------------------|------------------------------------|
-|**Purpose**        |Inject curated `.claude/context/` patterns        |Track tool use observations (memory)|
-|**Source**         |Hand-written markdown files + docs                |Auto-generated from PostToolUse hook|
-|**Scope**          |Normative rules/patterns (context)                |Historical activity log (memory)    |
-|**Retrieval Mode** |**Automatic** (every prompt, no commands)         |**Manual** (`/mem-search`, `timeline()`) |
-|**User Experience**|Proactive, ambient, zero-query                    |Reactive, explicit search required  |
-|**Chroma Mode**    |File-based (`~/.claude/contextus/data/{project}/`)|Server-based (`localhost:8000`)     |
-|**Version Control**|Source files committed; DB in user space          |Stored in `~/.claude-mem/`          |
-|**Config**         |`CONTEXTUS_RAG_*` env vars                        |`CLAUDE_MEM_*` env vars             |
-|**Team Sharing**   |Source files yes (git-tracked); DB no             |No (local per-user)                 |
+| Feature             | claude-contextus (this doc)                        | claude-mem                               |
+| ------------------- | -------------------------------------------------- | ---------------------------------------- |
+| **Purpose**         | Inject curated `.claude/context/` patterns         | Track tool use observations (memory)     |
+| **Source**          | Hand-written markdown files + docs                 | Auto-generated from PostToolUse hook     |
+| **Scope**           | Normative rules/patterns (context)                 | Historical activity log (memory)         |
+| **Retrieval Mode**  | **Automatic** (every prompt, no commands)          | **Manual** (`/mem-search`, `timeline()`) |
+| **User Experience** | Proactive, ambient, zero-query                     | Reactive, explicit search required       |
+| **Chroma Mode**     | File-based (`~/.claude/contextus/data/{project}/`) | Server-based (`localhost:8000`)          |
+| **Version Control** | Source files committed; DB in user space           | Stored in `~/.claude-mem/`               |
+| **Config**          | `CONTEXTUS_RAG_*` env vars                         | `CLAUDE_MEM_*` env vars                  |
+| **Team Sharing**    | Source files yes (git-tracked); DB no              | No (local per-user)                      |
 
 ## Key Architectural Decisions
 
@@ -47,17 +47,20 @@ These decisions are settled. Do not re-litigate without strong evidence.
 The killer feature isn't "better search" — it's **no search at all**.
 
 **Traditional RAG** is reactive:
+
 - User asks question → searches manually → retrieves results → applies to task
-- Requires remembering *what* to search for and *when* to search
+- Requires remembering _what_ to search for and _when_ to search
 - Context retrieval is an interruption, not an enhancement
 
 **claude-contextus** is proactive:
+
 - Context appears automatically on every prompt (no `/search` commands)
-- System proposes what to capture as you work (no "did I document that?" anxiety)  
+- System proposes what to capture as you work (no "did I document that?" anxiety)
 - Learns which patterns are useful vs. noise (self-tuning retrieval quality)
 - Calibrates to your project over time (hit tracking + feedback loop)
 
 **The user experience**:
+
 1. **Zero cognitive load**: You never think "I should search for that pattern." It's just there.
 2. **Automatic capture**: Claude says "Context: propose: error-handling" when you solve something novel.
 3. **Self-improving**: The more you use it, the better it gets at knowing what matters.
@@ -99,7 +102,7 @@ Configurable per project in `.claude/settings.json`:
 {
   "claudeContextus": {
     "capture": {
-      "mode": "propose"  // "propose" | "auto" | "silent"
+      "mode": "propose" // "propose" | "auto" | "silent"
     }
   }
 }
@@ -133,17 +136,19 @@ Separate JS script to avoid cross-platform shell escaping issues:
 
 ```javascript
 // scripts/awareness-hook.js
-console.log(JSON.stringify({
-  continue: true,
-  hookSpecificOutput: {
-    additionalContext:
-      "Context awareness: Unless this response is purely trivial " +
-      "(e.g. a one-line answer, yes/no, or acknowledgment), append footer: " +
-      "Context: propose: topic-name [new|similar: x] if ANY new pattern, " +
-      "detail, or context was discussed that is not already covered by the " +
-      "injected context above. Omit only if truly nothing reusable was covered."
-  }
-}));
+console.log(
+  JSON.stringify({
+    continue: true,
+    hookSpecificOutput: {
+      additionalContext:
+        'Context awareness: Unless this response is purely trivial ' +
+        '(e.g. a one-line answer, yes/no, or acknowledgment), append footer: ' +
+        'Context: propose: topic-name [new|similar: x] if ANY new pattern, ' +
+        'detail, or context was discussed that is not already covered by the ' +
+        'injected context above. Omit only if truly nothing reusable was covered.',
+    },
+  })
+);
 ```
 
 ### Rejected Proposals
@@ -326,9 +331,11 @@ Human-written docs have inconsistent structure — headers may be organizational
 ### [Docs] DESIGN.md (3 matches, similarity: 0.89)
 
 **Chunk 3/8**: Architecture section
+
 > ... content ...
 
 **Chunk 5/8**: Configuration section
+
 > ... content ...
 
 **Full document**: `docs/DESIGN.md`
@@ -343,6 +350,7 @@ Contextus supports multiple embedding strategies with automatic fallback. **Mode
 ### Provider Hierarchy (Best → Fallback)
 
 1. **Transformers.js** (Default, Recommended)
+
 - Pure JavaScript, runs in-process via daemon
 - No external dependencies or servers
 - Fast (~50-100ms per query after model load)
@@ -350,36 +358,39 @@ Contextus supports multiple embedding strategies with automatic fallback. **Mode
 - **Default model**: `nomic-ai/nomic-embed-text-v1.5` (768 dim, 138MB)
   - Rationale: better semantic understanding for technical vocabulary; negligible size overhead at <200 doc corpus scale
 - **Alternative**: `Xenova/all-MiniLM-L6-v2` (384 dim, 80MB) — faster, lower quality, familiar from past experiments
-   
-   ```typescript
-   import { pipeline } from '@xenova/transformers';
-   const embedder = await pipeline('feature-extraction', 'nomic-ai/nomic-embed-text-v1.5');
-   const embedding = await embedder(text, { pooling: 'mean', normalize: true });
-   ```
+  ```typescript
+  import { pipeline } from '@xenova/transformers';
+  const embedder = await pipeline('feature-extraction', 'nomic-ai/nomic-embed-text-v1.5');
+  const embedding = await embedder(text, { pooling: 'mean', normalize: true });
+  ```
+
 1. **Ollama** (Opt-in, Power Users)
+
 - Higher quality embeddings, user controls model
 - Requires Ollama running locally
 - Slightly slower (~100-200ms per query)
-   
-   ```typescript
-   {
-     "embedding": {
-       "provider": "ollama",
-       "model": "nomic-embed-text",
-       "endpoint": "http://localhost:11434"
-     }
-   }
-   ```
+  ```typescript
+  {
+    "embedding": {
+      "provider": "ollama",
+      "model": "nomic-embed-text",
+      "endpoint": "http://localhost:11434"
+    }
+  }
+  ```
+
 1. **Claude Semantic Matching** (Fallback)
+
 - No embeddings, uses Haiku sub-agent
 - Expands query → grep with synonyms → AI ranking
 - Slower (~2-5s) but always works
-   
-   ```typescript
-   // Query expansion with Haiku
-   "fixing flaky tests" → ["flaky", "intermittent", "unstable", "timing", "waitForExist"]
-   ```
+  ```typescript
+  // Query expansion with Haiku
+  "fixing flaky tests" → ["flaky", "intermittent", "unstable", "timing", "waitForExist"]
+  ```
+
 1. **Keyword Search** (Ultimate Fallback)
+
 - Plain grep if everything else fails
 - Fast but no semantic understanding
 
@@ -404,8 +415,8 @@ async function validateProjectDB(projectName: string): Promise<void> {
   if (metadata.embeddingModel !== DAEMON_MODEL) {
     throw new Error(
       `Project '${projectName}' was built with ${metadata.embeddingModel}, ` +
-      `but daemon is running ${DAEMON_MODEL}. ` +
-      `Run /rebuild-embeddings to regenerate with current model.`
+        `but daemon is running ${DAEMON_MODEL}. ` +
+        `Run /rebuild-embeddings to regenerate with current model.`
     );
   }
 }
@@ -434,21 +445,22 @@ async function validateProjectDB(projectName: string): Promise<void> {
 
 **Note**: `dimensions` must match the model. 768 for nomic, 384 for MiniLM. Mismatch causes silent failure on first index build — validate this at collection creation time.
 
-**Similarity threshold caveat**: The `0.7` default is model-dependent. Different embedding models have different similarity distributions. Prefer **top-K selection** (retrieve best N results) over hard thresholds. Use threshold as a quality filter *after* ranking, not as a retrieval gate. Calibrate during testing with `/context-debug`.
+**Similarity threshold caveat**: The `0.7` default is model-dependent. Different embedding models have different similarity distributions. Prefer **top-K selection** (retrieve best N results) over hard thresholds. Use threshold as a quality filter _after_ ranking, not as a retrieval gate. Calibrate during testing with `/context-debug`.
 
 ### Performance Characteristics
 
-|Provider                |Initial Index (200 files)|Embedding |Offline|Quality|
-|------------------------|-------------------------|----------|-------|-------|
-|Transformers.js (nomic) |~30s                     |~80ms     |✅ Yes  |Better |
-|Transformers.js (MiniLM)|~20s                     |~55ms     |✅ Yes  |Good   |
-|Ollama                  |~30s                     |~100ms    |✅ Yes* |Better |
-|Claude Semantic         |N/A                      |2-5s      |❌ No   |Good   |
-|Keyword                 |N/A                      |N/A       |✅ Yes  |Poor   |
+| Provider                 | Initial Index (200 files) | Embedding | Offline  | Quality |
+| ------------------------ | ------------------------- | --------- | -------- | ------- |
+| Transformers.js (nomic)  | ~30s                      | ~80ms     | ✅ Yes   | Better  |
+| Transformers.js (MiniLM) | ~20s                      | ~55ms     | ✅ Yes   | Good    |
+| Ollama                   | ~30s                      | ~100ms    | ✅ Yes\* | Better  |
+| Claude Semantic          | N/A                       | 2-5s      | ❌ No    | Good    |
+| Keyword                  | N/A                       | N/A       | ✅ Yes   | Poor    |
 
-*Requires Ollama running locally
+\*Requires Ollama running locally
 
 **End-to-end query latency** (UserPromptSubmit → context injected):
+
 - Embedding generation: 50-100ms (nomic, warm daemon)
 - Chroma query: 5-20ms
 - Re-ranking: <5ms
@@ -467,11 +479,13 @@ Hit count is a first-class metadata field, updated on every retrieval by the dae
 for (const match of topMatches) {
   await collection.update({
     ids: [match.id],
-    metadatas: [{
-      ...match.metadata,
-      hit_count: (match.metadata.hit_count || 0) + 1,
-      last_hit: new Date().toISOString()
-    }]
+    metadatas: [
+      {
+        ...match.metadata,
+        hit_count: (match.metadata.hit_count || 0) + 1,
+        last_hit: new Date().toISOString(),
+      },
+    ],
   });
 }
 ```
@@ -491,29 +505,32 @@ Lightweight post-retrieval scoring — no LLM calls, no cross-encoders, <5ms ove
 
 ```typescript
 const sourceWeights = {
-  'projectMemory': 1.0,
-  'projectDocs': 0.9,
-  'parentMemory': 0.7,
-  'userMemory': 0.8,
-  'userDocs': 0.7
+  projectMemory: 1.0,
+  projectDocs: 0.9,
+  parentMemory: 0.7,
+  userMemory: 0.8,
+  userDocs: 0.7,
 };
 
 const typeBoosts = {
-  'feedback': 1.2,    // Actionable patterns — highest priority
-  'reference': 1.0,
-  'decision': 0.9,
-  'project': 0.8
+  feedback: 1.2, // Actionable patterns — highest priority
+  reference: 1.0,
+  decision: 0.9,
+  project: 0.8,
 };
 
 function rerank(results: SearchResult[]): SearchResult[] {
-  return results.map(r => ({
-    ...r,
-    finalScore: r.similarity
-      * sourceWeights[r.metadata.source]
-      * typeBoosts[r.metadata.type]
-      * freshnessDecay(r.metadata.last_embedded)
-      * hitCountBoost(r.metadata.hit_count)
-  })).sort((a, b) => b.finalScore - a.finalScore);
+  return results
+    .map((r) => ({
+      ...r,
+      finalScore:
+        r.similarity *
+        sourceWeights[r.metadata.source] *
+        typeBoosts[r.metadata.type] *
+        freshnessDecay(r.metadata.last_embedded) *
+        hitCountBoost(r.metadata.hit_count),
+    }))
+    .sort((a, b) => b.finalScore - a.finalScore);
 }
 
 function hitCountBoost(count: number): number {
@@ -528,17 +545,17 @@ Staleness is a first-class health metric, not an implicit side effect.
 
 ```typescript
 interface EmbeddingMetadata {
-  content_hash: string;       // SHA-256 of file content
-  last_embedded: string;      // ISO timestamp
-  file_modified: string;      // File mtime
-  embedding_model: string;    // Model used for this embedding
+  content_hash: string; // SHA-256 of file content
+  last_embedded: string; // ISO timestamp
+  file_modified: string; // File mtime
+  embedding_model: string; // Model used for this embedding
   hit_count: number;
   last_hit: string | null;
 }
 
 async function auditStaleness(): Promise<StaleReport> {
   const allDocs = await collection.get();
-  const stale = allDocs.filter(doc => {
+  const stale = allDocs.filter((doc) => {
     const currentHash = hashFile(doc.metadata.parent_file || doc.id);
     return currentHash !== doc.metadata.content_hash;
   });
@@ -546,7 +563,7 @@ async function auditStaleness(): Promise<StaleReport> {
   return {
     total: allDocs.length,
     stale: stale.length,
-    files: stale.map(d => d.metadata.parent_file || d.id)
+    files: stale.map((d) => d.metadata.parent_file || d.id),
   };
 }
 ```
@@ -565,6 +582,7 @@ Standardized Context Block schema for consistent, scannable output:
 ## 📝 Relevant Context (3 found)
 
 ### [Framework] Use Logger Helper (similarity: 0.92, hits: 14)
+
 **Source**: `.claude/context/framework/feedback_use_logger_helper.md`
 **Type**: feedback | **Updated**: 2026-05-15
 
@@ -576,6 +594,7 @@ Standardized Context Block schema for consistent, scannable output:
 ---
 
 ### [Testing] Test Session Artifacts (similarity: 0.78, hits: 3)
+
 **Source**: `.claude/context/testing/reference_test_session_artifacts.md`
 **Type**: reference | **Updated**: 2026-04-20
 
@@ -595,6 +614,7 @@ Retrieved context patterns are compressed before injection to reduce token usage
 ### Strategy: Lean-ctx Style Pattern Extraction
 
 Pattern-based reduction, similar to lean-ctx's shell output compression:
+
 - Keep rules, patterns, actionable guidance
 - Strip verbose examples, redundant explanations, filler
 - Preserve code snippets (they're already concise)
@@ -609,20 +629,22 @@ Pattern-based reduction, similar to lean-ctx's shell output compression:
   "retrieval": {
     "compression": {
       "enabled": true,
-      "mode": "auto",           // "auto" | "always" | "never"
-      "threshold": 300,         // tokens — compress if pattern exceeds this
-      "strategy": "pattern"     // "pattern" | "excerpt" | "llm"
+      "mode": "auto", // "auto" | "always" | "never"
+      "threshold": 300, // tokens — compress if pattern exceeds this
+      "strategy": "pattern" // "pattern" | "excerpt" | "llm"
     }
   }
 }
 ```
 
 **Modes:**
+
 - `auto` (default): Compress only if pattern >threshold tokens
 - `always`: Compress all retrieved patterns regardless of size
 - `never`: Inject full content (assumes patterns are already concise)
 
 **Strategies:**
+
 - `pattern` (default): Lean-ctx style pattern extraction
   - For `feedback` type: Keep rules, strip examples
   - For `reference` type: Keep paths/commands, strip explanations
@@ -634,19 +656,22 @@ Pattern-based reduction, similar to lean-ctx's shell output compression:
 ### Example: Before/After Compression
 
 **Before (450 tokens):**
-```markdown
+
+````markdown
 ### [Framework] Use Logger Helper
 
 **Why:** Console.log doesn't provide structured logging, makes it hard to filter,
-and doesn't integrate with our log aggregation pipeline. Using getLogger() 
+and doesn't integrate with our log aggregation pipeline. Using getLogger()
 ensures consistent formatting across the codebase and makes debugging easier.
 
 **How to apply:**
+
 1. Import the logger helper at the top of your file
 2. Create a logger instance with a descriptive name
 3. Use appropriate log levels (debug, info, warn, error)
 
 **Example:**
+
 ```typescript
 import { getLogger } from '~/helpers/logger';
 const logger = getLogger('TestRunner');
@@ -657,13 +682,16 @@ logger.info('Starting test', { testId: test.id });
 // Instead of console.error(error)
 logger.error('Test failed', { error: error.message, stack: error.stack });
 ```
+````
 
 **Benefits:**
+
 - Structured JSON output for easy parsing
 - Automatic timestamp and context injection
 - Integration with Datadog log aggregation
-...
-```
+  ...
+
+````
 
 **After pattern compression (180 tokens):**
 ```markdown
@@ -677,12 +705,13 @@ import { getLogger } from '~/helpers/logger';
 const logger = getLogger('ComponentName');
 logger.info('message', { context });
 logger.error('message', { error: err.message });
-```
+````
 
 **Why:** Structured logging, Datadog integration, consistent formatting
 
 [Full context: .claude/context/framework/feedback_use_logger_helper.md]
-```
+
+````
 
 **Token savings: 60% reduction** while preserving actionable content.
 
@@ -693,14 +722,14 @@ Compression happens in the daemon after re-ranking, before injection formatting:
 ```typescript
 function compressContext(context: Context, config: CompressionConfig): string {
   if (!config.enabled) return context.document;
-  
+
   const tokenCount = estimateTokens(context.document);
-  
-  if (config.mode === 'never' || 
+
+  if (config.mode === 'never' ||
       (config.mode === 'auto' && tokenCount < config.threshold)) {
     return context.document;  // Skip compression
   }
-  
+
   switch (config.strategy) {
     case 'pattern':
       return extractPatterns(context.document, context.metadata.type);
@@ -726,11 +755,11 @@ function extractPatterns(content: string, type: string): string {
       /```[\s\S]*?```/g
     ]
   };
-  
+
   // Extract matching patterns, strip verbose prose
   // Return compressed version with "[Full context: path]" footer
 }
-```
+````
 
 ### Compression Metrics in `/context-debug`
 
@@ -846,36 +875,48 @@ claude-contextus/
 
 ```json
 {
-  "SessionStart": [{
-    "hooks": [{
-      "command": "node $PLUGIN_PATH/scripts/session-start-hook.js",
-      "type": "command"
-    }],
-    "matcher": ".*"
-  }],
-  "UserPromptSubmit": [
+  "SessionStart": [
     {
-      "hooks": [{
-        "command": "node $PLUGIN_PATH/scripts/query-hook.js",
-        "type": "command"
-      }],
-      "matcher": ".*"
-    },
-    {
-      "hooks": [{
-        "command": "node $PLUGIN_PATH/scripts/awareness-hook.js",
-        "type": "command"
-      }],
+      "hooks": [
+        {
+          "command": "node $PLUGIN_PATH/scripts/session-start-hook.js",
+          "type": "command"
+        }
+      ],
       "matcher": ".*"
     }
   ],
-  "PostToolUse": [{
-    "hooks": [{
-      "command": "node $PLUGIN_PATH/scripts/watch-memories.js",
-      "type": "command"
-    }],
-    "matcher": "Write|Edit"
-  }]
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "command": "node $PLUGIN_PATH/scripts/query-hook.js",
+          "type": "command"
+        }
+      ],
+      "matcher": ".*"
+    },
+    {
+      "hooks": [
+        {
+          "command": "node $PLUGIN_PATH/scripts/awareness-hook.js",
+          "type": "command"
+        }
+      ],
+      "matcher": ".*"
+    }
+  ],
+  "PostToolUse": [
+    {
+      "hooks": [
+        {
+          "command": "node $PLUGIN_PATH/scripts/watch-memories.js",
+          "type": "command"
+        }
+      ],
+      "matcher": "Write|Edit"
+    }
+  ]
 }
 ```
 
@@ -887,15 +928,15 @@ claude-contextus/
 
 ```javascript
 async function embedContexts({ rebuild = false, verbose = false }) {
-  const EMBEDDING_MODEL = loadConfig().embedding.model;  // From config, not hardcoded
+  const EMBEDDING_MODEL = loadConfig().embedding.model; // From config, not hardcoded
 
   const client = new ChromaClient({ path: resolveDBPath() });
   const collection = await client.getOrCreateCollection('contextus', {
     metadata: {
       embeddingModel: EMBEDDING_MODEL,
       dimensions: loadConfig().embedding.dimensions,
-      createdAt: new Date().toISOString()
-    }
+      createdAt: new Date().toISOString(),
+    },
   });
 
   // Validate model consistency
@@ -903,7 +944,7 @@ async function embedContexts({ rebuild = false, verbose = false }) {
   if (meta.embeddingModel && meta.embeddingModel !== EMBEDDING_MODEL) {
     throw new Error(
       `Collection built with ${meta.embeddingModel}, config specifies ${EMBEDDING_MODEL}. ` +
-      `Run /rebuild-embeddings to regenerate.`
+        `Run /rebuild-embeddings to regenerate.`
     );
   }
 
@@ -911,8 +952,8 @@ async function embedContexts({ rebuild = false, verbose = false }) {
   if (meta.dimensions && meta.dimensions !== loadConfig().embedding.dimensions) {
     throw new Error(
       `Dimension mismatch: collection has ${meta.dimensions}, ` +
-      `config specifies ${loadConfig().embedding.dimensions}. ` +
-      `Run /rebuild-embeddings to regenerate.`
+        `config specifies ${loadConfig().embedding.dimensions}. ` +
+        `Run /rebuild-embeddings to regenerate.`
     );
   }
 
@@ -956,7 +997,9 @@ async function sessionStartHook() {
         const res = await fetch('http://localhost:37800/health');
         const body = await res.json();
         if (body.modelLoaded) break;
-      } catch { /* still starting */ }
+      } catch {
+        /* still starting */
+      }
       attempts++;
     }
   }
@@ -973,7 +1016,7 @@ app.get('/health', async (req, res) => {
     uptime: process.uptime(),
     modelLoaded: embedder !== null,
     chromaConnected: await chromaClient.heartbeat(),
-    embeddingModel: DAEMON_MODEL
+    embeddingModel: DAEMON_MODEL,
   });
 });
 ```
@@ -1134,7 +1177,7 @@ Useful for identifying clusters of near-duplicate memories, visualizing coverage
 ```json
 {
   "chroma": {
-    "projectId": "automation-mobile"  // Override default
+    "projectId": "automation-mobile" // Override default
   }
 }
 ```
@@ -1157,12 +1200,12 @@ cd automation
 
 ```typescript
 const sourceWeights = {
-  'projectContext': 1.0,   // Local patterns (highest priority)
-  'projectDocs': 0.9,      // Local documentation
-  'userContext': 0.8,      // Personal cross-project notes
-  'parentContext': 0.7,    // Parent repo patterns
-  'userDocs': 0.7,
-  'custom': 0.7            // Sibling projects, frameworks
+  projectContext: 1.0, // Local patterns (highest priority)
+  projectDocs: 0.9, // Local documentation
+  userContext: 0.8, // Personal cross-project notes
+  parentContext: 0.7, // Parent repo patterns
+  userDocs: 0.7,
+  custom: 0.7, // Sibling projects, frameworks
 };
 ```
 
@@ -1286,17 +1329,20 @@ Low priority — ChromaDB covers the use case. Add when users request specific p
 **Concept**: Learn which retrieved patterns are actually useful.
 
 Current footer:
+
 ```
 Context: used: logger-helper, test-artifacts
 Context: propose: new-pattern
 ```
 
 Track:
+
 - Retrieved: 5 patterns
 - Used (mentioned in footer): 2
 - Ignored: 3
 
 Over time, this becomes training data:
+
 - Patterns with low use-rate get downweighted in re-ranking
 - Patterns frequently retrieved but never used may be too generic
 - Use patterns inform similarity threshold calibration
@@ -1319,7 +1365,7 @@ Over time, this becomes training data:
 - [claude-mem](~/.claude-mem/settings.json) — Companion Chroma observation tracker
 - [vector-inspector](https://github.com/anthonypdawson/vector-inspector) — Embedding visualization and debugging
 
------
+---
 
 **Status**: Core scaffolding complete, implementation in progress
 

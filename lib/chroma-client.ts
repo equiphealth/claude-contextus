@@ -23,7 +23,7 @@ export async function getClient(dbPath = '.claude/context-db') {
     fs.mkdirSync(dbPath, { recursive: true });
 
     _client = new ChromaClient({
-      path: path.resolve(dbPath)
+      path: path.resolve(dbPath),
     });
   }
   return _client;
@@ -54,8 +54,8 @@ export async function getCollection(collectionName = null, dbPath = '.claude/con
         name: collectionName,
         metadata: {
           description: 'Project context patterns and knowledge',
-          created_at: new Date().toISOString()
-        }
+          created_at: new Date().toISOString(),
+        },
       });
     }
   }
@@ -79,7 +79,7 @@ export async function upsertContext({ id, content, embedding, metadata }) {
     ids: [id],
     embeddings: [embedding],
     documents: [content],
-    metadatas: [{ ...metadata, updated_at: new Date().toISOString() }]
+    metadatas: [{ ...metadata, updated_at: new Date().toISOString() }],
   });
 }
 
@@ -95,10 +95,10 @@ export async function upsertContexts(contexts) {
   const collection = await getCollection();
 
   await collection.upsert({
-    ids: contexts.map(c => c.id),
-    embeddings: contexts.map(c => c.embedding),
-    documents: contexts.map(c => c.content),
-    metadatas: contexts.map(c => ({ ...c.metadata, updated_at: new Date().toISOString() }))
+    ids: contexts.map((c) => c.id),
+    embeddings: contexts.map((c) => c.embedding),
+    documents: contexts.map((c) => c.content),
+    metadatas: contexts.map((c) => ({ ...c.metadata, updated_at: new Date().toISOString() })),
   });
 }
 
@@ -116,7 +116,7 @@ export async function queryContexts(queryEmbedding, topK = 5, filter = null) {
   const results = await collection.query({
     queryEmbeddings: [queryEmbedding],
     nResults: topK,
-    where: filter
+    where: filter,
   });
 
   // Format results
@@ -131,7 +131,7 @@ export async function queryContexts(queryEmbedding, topK = 5, filter = null) {
       document: results.documents[0][i],
       metadata: results.metadatas[0][i],
       distance: results.distances[0][i],
-      similarity: 1 - results.distances[0][i]  // Convert distance to similarity
+      similarity: 1 - results.distances[0][i], // Convert distance to similarity
     });
   }
 
@@ -161,7 +161,7 @@ export async function getStats() {
   return {
     name: collection.name,
     count,
-    metadata: collection.metadata
+    metadata: collection.metadata,
   };
 }
 

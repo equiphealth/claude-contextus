@@ -38,10 +38,12 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 ### Source Paths
 
 **Project-level:**
+
 - `project-context-path` - Path to project context directory (default: `.claude/context`)
 - `project-docs-path` - Path to project docs directory (default: `docs`)
 
 **User-level:**
+
 - `user-context-path` - Path to user context directory (default: `~/.claude/context`)
 - `user-docs-path` - Path to user docs directory (default: `~/.claude/docs`)
 
@@ -76,6 +78,7 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
   - `user` - `~/.claude/context-db/` (global, efficient for multiple projects)
 
 Use `user` mode when:
+
 - Working across 5+ interconnected projects
 - Multiple projects reference same custom sources
 - Want to avoid duplicate embeddings (saves disk space)
@@ -116,11 +119,13 @@ Use `user` mode when:
 ```
 
 Automatically scans for nearby context sources:
+
 - **Parent directories** (up to 3 levels or git root)
 - **Sibling directories** (same parent)
 - **Common framework paths** (optional)
 
 Example output:
+
 ```
 🔍 Scanning for nearby context sources...
 
@@ -128,10 +133,10 @@ Found 3 context sources:
 
 [1] Parent: ../​.claude/context
     87 files (framework patterns, team conventions)
-    
-[2] Sibling (backend): ../​backend/.claude/context  
+
+[2] Sibling (backend): ../​backend/.claude/context
     42 files (API patterns, database schemas)
-    
+
 [3] Sibling (frontend): ../​frontend/.claude/context
     31 files (UI patterns, component guidelines)
 
@@ -165,6 +170,7 @@ Run /rebuild-embeddings to index new sources.
 ```
 
 Example list output:
+
 ```
 Current sources:
 
@@ -219,7 +225,7 @@ Displays current configuration and confirms changes. Also validates paths exist 
 
 → Current path: .claude/context
   New path (or press enter to keep): context
-  
+
 → Directory 'context' does not exist. Create it? (y/n)
 
 → ✓ Updated project context path to 'context'
@@ -238,13 +244,13 @@ Updates `.claude/settings.json`:
   "claudeContextus": {
     "sources": {
       "projectContext": {
-        "path": "context",  // Updated
+        "path": "context", // Updated
         "enabled": true
       }
     },
     "retrieval": {
-      "topK": 10,          // Updated
-      "threshold": 0.85    // Updated
+      "topK": 10, // Updated
+      "threshold": 0.85 // Updated
     }
   }
 }

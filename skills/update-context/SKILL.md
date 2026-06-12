@@ -58,22 +58,24 @@ Updates `mtime` (marks as reviewed) without content changes. Useful after audit 
 **Before opening editor, checks for:**
 
 1. **Conflicting context**
+
    ```
    ⚠️  Found similar context files:
    - framework/feedback_use_jest.md (similarity: 0.89)
    - testing/reference_test_setup.md (similarity: 0.76)
-   
+
    Consider consolidating instead? [y/n]
    ```
 
 2. **Recent changes**
+
    ```
    ℹ️  This context was last updated 2 months ago by create-context skill.
-   
+
    Recent git commits that might affect it:
    - "Switch from Jest to Vitest" (1 month ago)
    - "Update test patterns" (3 weeks ago)
-   
+
    Proceed with update? [y/n]
    ```
 
@@ -124,6 +126,7 @@ We switched from Jest to Vitest in Q1 2026...  # Updated
 ## Footer Integration
 
 When Claude detects conflicts, it adds to footer:
+
 ```
 Context: used: framework/feedback_typescript_strict.md
 Context: update: framework/feedback_typescript_strict.md (contradicts current approach)
@@ -134,9 +137,11 @@ This signals: "I used this context, but it conflicts with what we're doing now."
 ## Conflict Resolution Strategies
 
 ### 1. Update in place
+
 When context is mostly right, just needs refinement.
 
 ### 2. Split into two
+
 ```
 Old: "Use TypeScript strict mode"
 → Split into:
@@ -145,6 +150,7 @@ Old: "Use TypeScript strict mode"
 ```
 
 ### 3. Consolidate
+
 ```
 Multiple similar context files
 → Merge into one comprehensive context
@@ -152,6 +158,7 @@ Multiple similar context files
 ```
 
 ### 4. Deprecate
+
 ```
 Add to context:
 ## Deprecated

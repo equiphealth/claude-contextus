@@ -1,11 +1,11 @@
 # claude-contextus: Design Review Addendum
 
-*Date: June 11, 2026*
-*Source: Design review conversation with Claude Sonnet 4.6*
+_Date: June 11, 2026_
+_Source: Design review conversation with Claude Sonnet 4.6_
 
 This document captures decisions, corrections, and new directions that emerged from a full review of DESIGN.md. Treat these as amendments to the original design — where they conflict, this document takes precedence.
 
------
+---
 
 ## 1. Resolve the Git vs `~/.claude/` Contradiction
 
@@ -18,7 +18,7 @@ This document captures decisions, corrections, and new directions that emerged f
 
 **Rationale:** Binary SQLite merge conflicts are a real operational problem. The per-user, per-project DB in user space avoids them entirely, keeps project directories clean, and is the correct separation of derived artifact from source.
 
------
+---
 
 ## 2. Awareness Hook: Revise Trigger Wording
 
@@ -43,7 +43,7 @@ discussed. Omit only if truly nothing reusable was covered.
 
 **Note:** The every-prompt injection approach is validated and working. The mechanism is correct; only the wording needs updating. Retain universal `.*` matcher coverage — limiting to context-retrieval hits would miss the primary use case of new knowledge being explained conversationally.
 
------
+---
 
 ## 3. Embedding Model: Pin and Validate
 
@@ -53,7 +53,7 @@ discussed. Omit only if truly nothing reusable was covered.
 
 **Action required:** Store the model name in Chroma collection metadata and validate on every query that the model matches. A model swap without a full re-embed will silently return garbage results.
 
------
+---
 
 ## 4. Document Chunking Strategy
 
@@ -69,7 +69,7 @@ discussed. Omit only if truly nothing reusable was covered.
 
 `formatContextForInjection` must handle chunked results differently from whole-file results — either return the chunk directly or use it to load and inject the parent doc depending on context size.
 
------
+---
 
 ## 5. Fix `query-hook.js` Result Destructuring Bug
 
@@ -83,12 +83,12 @@ const relevant = results.distances[0]
     id: results.ids[0][i],
     document: results.documents[0][i],
     metadata: results.metadatas[0][i],
-    similarity: 1 - dist  // cosine distance → similarity
+    similarity: 1 - dist, // cosine distance → similarity
   }))
-  .filter(r => r.similarity >= config.memoryRag.similarityThreshold);
+  .filter((r) => r.similarity >= config.memoryRag.similarityThreshold);
 ```
 
------
+---
 
 ## 6. Architecture: Daemon + HTTP Hook Pattern
 
@@ -109,7 +109,7 @@ UserPromptSubmit hook (thin HTTP client)
   → POST { prompt } to localhost:PORT/query
   → return { additionalContext: ... } from response
 
-PostToolUse hook (Write|Edit, thin HTTP client)  
+PostToolUse hook (Write|Edit, thin HTTP client)
   → POST { file, content } to localhost:PORT/notify
   → daemon triggers incremental re-embed if memory file changed
 ```
@@ -147,7 +147,7 @@ if ! curl -sf http://localhost:PORT/health > /dev/null; then
 fi
 ```
 
------
+---
 
 ## 7. User Context Pattern Duplication: Note for v2
 
@@ -157,7 +157,7 @@ fi
 
 **Defer to v2** unless rebuild latency becomes a real pain point.
 
------
+---
 
 ## 8. Debug Workflow for File Mode
 
@@ -165,7 +165,7 @@ fi
 
 **With the daemon pattern, this is resolved:** The daemon itself exposes a local HTTP API, so you can curl `localhost:PORT/query?text=...` regardless of whether the underlying Chroma storage is file-based or server-based. The daemon abstracts the storage mode from the debug workflow.
 
------
+---
 
 ## 9. Semantic Motivation for RAG (Confirmed Priority)
 
@@ -173,7 +173,7 @@ The primary motivation for RAG is **semantic retrieval over keyword matching**, 
 
 RAG is the right next step. Fix the awareness hook wording first (quick win, immediate improvement), then implement the embedding pipeline during the vacation project.
 
------
+---
 
 ## Summary: Pre-Implementation Checklist
 

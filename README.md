@@ -12,6 +12,7 @@
 **claude-contextus** makes your knowledge base work for you instead of the other way around. Store patterns, decisions, and documentation in markdown — the plugin **automatically** surfaces relevant context on every prompt AND captures new patterns as you discover them. No manual queries, no "remember to search," no "did I write that down?" — just proactive retrieval and capture.
 
 **Unlike other RAG tools**, claude-contextus doesn't wait for you to act. It:
+
 - **Surfaces relevant context** automatically on every prompt (no queries needed)
 - **Proposes new patterns** as you work, calibrating to what matters in your project
 - **Searches semantically** across project + user context patterns and docs
@@ -23,22 +24,26 @@ Think of it as a context system that reads your mind — captures what you learn
 ## Features
 
 ### 🎯 Proactive (Not Reactive)
+
 - **Zero-query context injection**: Relevant context patterns appear automatically on every prompt
 - **Calibrated pattern capture**: System proposes new patterns as you work, learns what's worth remembering
 - **Automatic quality tuning**: Tracks which patterns are actually useful vs. just retrieved
 - **Automatic rebuilds**: Embeddings stay fresh as your knowledge grows
 
 ### 🧠 Smart Retrieval
+
 - **Semantic search**: Finds by meaning, not keywords ("How do I debug?" → matches Logger patterns)
 - **Multi-source**: Searches project context patterns, project docs, user context patterns, and user docs simultaneously
 - **Configurable relevance**: Tune similarity threshold and top-k per your needs
 
 ### 📝 Team-Friendly
+
 - **Markdown-based**: Human-readable, easy to edit, git-trackable
 - **Per-user storage**: Embeddings stored in `~/.claude/contextus/data/` (per-user, per-project)
 - **Merge-friendly**: No binary merge conflicts — embeddings are derived artifacts
 
 ### 🛠️ Integrated Workflow
+
 - **Management skills**: `/create-context`, `/create-doc`, `/configure`, `/audit-context`
 - **Auto-hooks**: Captures file changes, triggers rebuilds, injects context
 - **User + project scope**: Personal patterns persist across all projects
@@ -122,7 +127,7 @@ Claude: [Sees relevant "TypeScript strict mode" context pattern injected]
       "maxTokens": 3000
     },
     "capture": {
-      "mode": "propose"  // propose | auto | manual
+      "mode": "propose" // propose | auto | manual
     },
     "embedding": {
       "provider": "transformers.js",
@@ -165,10 +170,10 @@ Always enable strict mode in `tsconfig.json`:
 
 \`\`\`json
 {
-  "compilerOptions": {
-    "strict": true,
-    "noImplicitAny": true
-  }
+"compilerOptions": {
+"strict": true,
+"noImplicitAny": true
+}
 }
 \`\`\`
 
@@ -244,6 +249,7 @@ npm run lint
 ## Examples
 
 See `examples/` directory for:
+
 - Sample context pattern files
 - Example configurations
 - Common patterns
@@ -263,7 +269,7 @@ See `examples/` directory for:
 
 claude-contextus handles workflow patterns, decisions, and documentation — the knowledge that actually guides your work. For most users, that's sufficient.
 
-**Power user combo**: [claude-mem](https://github.com/thedotmack/claude-mem) adds temporal observation tracking (*"what we tried last sprint"*) if you need historical recall across sessions. It's complementary, not required — contextus is proactive and automatic, claude-mem is manual and search-based.
+**Power user combo**: [claude-mem](https://github.com/thedotmack/claude-mem) adds temporal observation tracking (_"what we tried last sprint"_) if you need historical recall across sessions. It's complementary, not required — contextus is proactive and automatic, claude-mem is manual and search-based.
 
 If you're not sure, start with contextus. Add claude-mem later if you find yourself needing to recall specific past sessions.
 

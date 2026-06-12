@@ -20,19 +20,15 @@ let _embedder = null;
 export async function getEmbedder() {
   if (!_embedder) {
     console.log('Loading embedding model (one-time download)...');
-    _embedder = await pipeline(
-      'feature-extraction',
-      'Xenova/all-MiniLM-L6-v2',
-      {
-        quantized: true,  // Use quantized model for speed
-        progress_callback: (progress) => {
-          if (progress.status === 'downloading') {
-            const pct = Math.round((progress.loaded / progress.total) * 100);
-            process.stdout.write(`\rDownloading model: ${pct}%`);
-          }
+    _embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+      quantized: true, // Use quantized model for speed
+      progress_callback: (progress) => {
+        if (progress.status === 'downloading') {
+          const pct = Math.round((progress.loaded / progress.total) * 100);
+          process.stdout.write(`\rDownloading model: ${pct}%`);
         }
-      }
-    );
+      },
+    });
     console.log('\nModel loaded!');
   }
   return _embedder;
@@ -50,7 +46,7 @@ export async function embedText(text) {
   // Generate embedding with mean pooling and normalization
   const output = await embedder(text, {
     pooling: 'mean',
-    normalize: true
+    normalize: true,
   });
 
   // Convert tensor to plain array
@@ -74,9 +70,7 @@ export async function embedBatch(texts, batchSize = 32) {
     const batch = texts.slice(i, i + batchSize);
 
     // Process batch in parallel
-    const batchEmbeddings = await Promise.all(
-      batch.map(text => embedText(text))
-    );
+    const batchEmbeddings = await Promise.all(batch.map((text) => embedText(text)));
 
     embeddings.push(...batchEmbeddings);
 
