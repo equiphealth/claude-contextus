@@ -6,10 +6,9 @@ Health check and troubleshooting for contextus. Run when something feels off or 
 
 - After installing contextus (verify setup)
 - When retrieval isn't working ("why no results?")
-- During calibration phase (tune thresholds)
-- Before switching from `propose` to `auto` mode
 - When you see errors or latency spikes
 - Monthly health check
+- When `/context-status` shows concerning metrics
 
 ## Quick Health Check (no flags)
 
@@ -27,54 +26,14 @@ Embedding:
 Retrieval (last 30 days):
   ✓ Usage rate: 73% of prompts
   ✓ Avg latency: 156ms
-  ⚠ 23 zero-hit patterns → run /context-doctor --calibrate
+  ℹ️ For optimization suggestions: /context-calibrate
 
 Recent Errors:
   ✓ None (last 7 days)
 
 Recommendations:
   - Rebuild embeddings to clear stale files
-  - Review zero-hit patterns (--calibrate flag)
-```
-
-## Calibration Mode
-
-```bash
-/context-doctor --calibrate
-```
-
-Deep dive on retrieval quality and threshold tuning:
-
-```
-Calibration Analysis
-
-Hit Rate Breakdown:
-  High-frequency (10+ hits): 12 files
-  Medium (3-9 hits): 28 files
-  Low (1-2 hits): 41 files
-  Zero-hit: 23 files ⚠
-
-Top Retrieved Patterns:
-  1. wdio-element-visibility (47 hits)
-  2. logger-helper (34 hits)
-  3. test-data-setup (29 hits)
-
-Zero-Hit Patterns (review candidates):
-  - old-api-endpoint.md (never retrieved, 4 months old)
-  - temp-workaround.md (never retrieved, 2 months old)
-  - debug-flag.md (never retrieved, 1 month old)
-
-Threshold Guidance:
-  Current: similarityThreshold=0.7, dedupThreshold=0.85
-  
-  If seeing [similar: x] proposals that should be separate:
-    → Lower dedupThreshold (try 0.75)
-  
-  If seeing [new] proposals that are duplicates:
-    → Raise dedupThreshold (try 0.90)
-
-Capture Mode: propose ℹ️
-  Switch to 'auto' once thresholds feel right
+  - Run /context-calibrate for usage-driven optimization
 ```
 
 ## Error Log
