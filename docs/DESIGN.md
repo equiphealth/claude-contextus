@@ -822,6 +822,61 @@ This makes Ollama **acceptable for low-frequency background tasks** across all h
 - Entry-level: 42-70 hours/month (probably not worth it)
 - CPU-only: 113-213 hours/month (impractical)
 
+### Team Hardware Considerations
+
+**High-performance hardware teams** (M4 Pro 48GB, RTX 4090, similar): If your team standardizes on high-end hardware, Ollama shifts from "privacy fallback" to **"strong default choice"** for auxiliary tasks.
+
+**Benefits**:
+- **Zero marginal cost**: No per-call API charges, unlimited evaluations
+- **Full privacy**: Prompts and responses never leave developer machines
+- **No API dependencies**: Works offline, immune to API outages/throttling
+- **Better model options**: 13B models locally can match or exceed Haiku quality on complex tasks
+- **Consistent performance**: Not subject to API rate limits or variable latency
+
+**Example: M4 Pro 48GB**:
+- Llama 3 8B: ~500ms-1s per eval (comparable to Haiku API call)
+- Llama 3.1 13B: ~1-2s per eval (better quality, still fast)
+- 48GB RAM handles models + embeddings + daemon without swap
+- Calibration (100 evals): ~1-2 minutes total, barely noticeable
+
+**Trade-offs**:
+- **Setup overhead**: Each developer installs Ollama + downloads models (~5-10 min one-time)
+- **Disk space**: Models are 4-8GB each
+- **Background CPU/GPU**: Inference uses compute even if "in background"
+- **Model consistency**: Team must agree on standard model (e.g., `llama3:8b` for all)
+
+**Recommendation for high-end teams**: Configure Ollama as the default evaluation model in project `.claude/settings.json`. Developers can override to Haiku individually if needed (e.g., laptop users without Ollama installed).
+
+```json
+{
+  "models": {
+    "evaluation": {
+      "provider": "ollama",
+      "model": "llama3:8b",
+      "endpoint": "http://localhost:11434"
+    }
+  }
+}
+```
+
+Individual override in `~/.contextus/config.json`:
+```json
+{
+  "models": {
+    "evaluation": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4"
+    }
+  }
+}
+```
+
+**Cost comparison** (per developer, per quarter):
+- Haiku: ~$0.45 (3 calibrations @ $0.15 each)
+- Ollama: $0 (electricity: ~$0.02-0.05)
+
+Over 10 developers: **$4.50/quarter vs ~$0.50/quarter** (electricity) = $16/year savings. Not huge, but privacy + offline capability may be more valuable than cost.
+
 ### Configuration UI Example
 
 When starting calibration:
