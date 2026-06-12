@@ -1,14 +1,14 @@
 {
   "name": "claude-contextus",
   "version": "0.1.0",
-  "description": "Context-aware memory system: markdown-based pattern storage with automatic semantic retrieval for Claude Code",
+  "description": "Context-aware knowledge system: markdown-based pattern storage with automatic semantic retrieval for Claude Code",
   "main": "dist/scripts/query-hook.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "embed": "npm run build && node dist/scripts/embed-memories.js",
-    "rebuild": "npm run build && node dist/scripts/embed-memories.js --rebuild",
+    "embed": "npm run build && node dist/scripts/embed-contexts.js",
+    "rebuild": "npm run build && node dist/scripts/embed-contexts.js --rebuild",
     "query": "npm run build && node dist/scripts/query-hook.js",
     "dev": "tsc --watch",
     "test": "npm run build && node --test dist/tests/**/*.test.js",

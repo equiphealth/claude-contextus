@@ -14,10 +14,10 @@ let _collection = null;
 /**
  * Get or create ChromaDB client (file-based)
  *
- * @param {string} dbPath - Path to ChromaDB directory (default: .claude/memory-db)
+ * @param {string} dbPath - Path to ChromaDB directory (default: .claude/context-db)
  * @returns {Promise<ChromaClient>}
  */
-export async function getClient(dbPath = '.claude/memory-db') {
+export async function getClient(dbPath = '.claude/context-db') {
   if (!_client) {
     // Ensure directory exists
     fs.mkdirSync(dbPath, { recursive: true });
@@ -30,19 +30,19 @@ export async function getClient(dbPath = '.claude/memory-db') {
 }
 
 /**
- * Get or create the memory collection
+ * Get or create the context collection
  *
  * @param {string} collectionName - Collection name (default: project-basename)
  * @param {string} dbPath - Path to ChromaDB directory
  * @returns {Promise<Collection>}
  */
-export async function getCollection(collectionName = null, dbPath = '.claude/memory-db') {
+export async function getCollection(collectionName = null, dbPath = '.claude/context-db') {
   if (!_collection) {
     const client = await getClient(dbPath);
 
     // Default collection name: project directory basename
     if (!collectionName) {
-      collectionName = `manual-memory-${path.basename(process.cwd())}`;
+      collectionName = `contextus-${path.basename(process.cwd())}`;
     }
 
     // Get or create collection
@@ -53,7 +53,7 @@ export async function getCollection(collectionName = null, dbPath = '.claude/mem
       _collection = await client.createCollection({
         name: collectionName,
         metadata: {
-          description: 'Project memory patterns and context',
+          description: 'Project context patterns and knowledge',
           created_at: new Date().toISOString()
         }
       });
@@ -63,16 +63,16 @@ export async function getCollection(collectionName = null, dbPath = '.claude/mem
 }
 
 /**
- * Add or update a memory in the collection
+ * Add or update a context in the collection
  *
- * @param {Object} memory - Memory object
- * @param {string} memory.id - Unique ID (usually file path)
- * @param {string} memory.content - Memory content (markdown)
- * @param {number[]} memory.embedding - Embedding vector
- * @param {Object} memory.metadata - Metadata (category, type, etc.)
+ * @param {Object} context - Context object
+ * @param {string} context.id - Unique ID (usually file path)
+ * @param {string} context.content - Context content (markdown)
+ * @param {number[]} context.embedding - Embedding vector
+ * @param {Object} context.metadata - Metadata (category, type, etc.)
  * @returns {Promise<void>}
  */
-export async function upsertMemory({ id, content, embedding, metadata }) {
+export async function upsertContext({ id, content, embedding, metadata }) {
   const collection = await getCollection();
 
   await collection.upsert({
@@ -84,33 +84,33 @@ export async function upsertMemory({ id, content, embedding, metadata }) {
 }
 
 /**
- * Batch upsert multiple memories (more efficient)
+ * Batch upsert multiple contexts (more efficient)
  *
- * @param {Array<Object>} memories - Array of memory objects
+ * @param {Array<Object>} contexts - Array of context objects
  * @returns {Promise<void>}
  */
-export async function upsertMemories(memories) {
-  if (memories.length === 0) return;
+export async function upsertContexts(contexts) {
+  if (contexts.length === 0) return;
 
   const collection = await getCollection();
 
   await collection.upsert({
-    ids: memories.map(m => m.id),
-    embeddings: memories.map(m => m.embedding),
-    documents: memories.map(m => m.content),
-    metadatas: memories.map(m => ({ ...m.metadata, updated_at: new Date().toISOString() }))
+    ids: contexts.map(c => c.id),
+    embeddings: contexts.map(c => c.embedding),
+    documents: contexts.map(c => c.content),
+    metadatas: contexts.map(c => ({ ...c.metadata, updated_at: new Date().toISOString() }))
   });
 }
 
 /**
- * Query memories by semantic similarity
+ * Query contexts by semantic similarity
  *
  * @param {number[]} queryEmbedding - Query embedding vector
  * @param {number} topK - Number of results to return
  * @param {Object} filter - Optional metadata filter
- * @returns {Promise<Array>} Matched memories with similarity scores
+ * @returns {Promise<Array>} Matched contexts with similarity scores
  */
-export async function queryMemories(queryEmbedding, topK = 5, filter = null) {
+export async function queryContexts(queryEmbedding, topK = 5, filter = null) {
   const collection = await getCollection();
 
   const results = await collection.query({
@@ -139,12 +139,12 @@ export async function queryMemories(queryEmbedding, topK = 5, filter = null) {
 }
 
 /**
- * Delete a memory by ID
+ * Delete a context by ID
  *
- * @param {string} id - Memory ID
+ * @param {string} id - Context ID
  * @returns {Promise<void>}
  */
-export async function deleteMemory(id) {
+export async function deleteContext(id) {
   const collection = await getCollection();
   await collection.delete({ ids: [id] });
 }
@@ -166,7 +166,7 @@ export async function getStats() {
 }
 
 /**
- * Delete all memories (use with caution!)
+ * Delete all contexts (use with caution!)
  *
  * @returns {Promise<void>}
  */
@@ -181,22 +181,22 @@ export async function clearCollection() {
 /*
  * Example usage:
  *
- * import { upsertMemory, queryMemories, getStats } from './chroma-client.js';
+ * import { upsertContext, queryContexts, getStats } from './chroma-client.js';
  * import { embedText } from './embedder.js';
  *
- * // Add a memory
+ * // Add a context
  * const embedding = await embedText("Use Logger helper for logging");
- * await upsertMemory({
+ * await upsertContext({
  *   id: "framework/feedback_logger.md",
  *   content: "Always use Logger helper...",
  *   embedding,
  *   metadata: { category: "framework", type: "feedback" }
  * });
  *
- * // Query memories
+ * // Query contexts
  * const queryEmb = await embedText("How do I log errors?");
- * const matches = await queryMemories(queryEmb, 5);
- * console.log(matches); // Top 5 similar memories
+ * const matches = await queryContexts(queryEmb, 5);
+ * console.log(matches); // Top 5 similar contexts
  *
  * // Get stats
  * const stats = await getStats();

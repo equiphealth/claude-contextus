@@ -1,11 +1,11 @@
-# Create or Update Memory
+# Create or Update Context
 
-Smart memory management: creates new memories or updates existing ones automatically.
+Smart context management: creates new context files or updates existing ones automatically.
 
 ## When to Use
 
 Anytime you want to capture a pattern, decision, or learning. The skill automatically:
-- Checks if similar memory exists
+- Checks if similar context exists
 - Routes to update if found
 - Creates new if not found
 
@@ -15,16 +15,16 @@ You don't choose — it chooses for you.
 
 ```bash
 # Basic (skill decides: create or update)
-/create-memory "typescript strict mode" "We use strict mode to avoid runtime errors"
+/create-context "typescript strict mode" "We use strict mode to avoid runtime errors"
 
 # Force create new (skip similarity check)
-/create-memory "topic" "context" --force-new
+/create-context "topic" "content" --force-new
 
 # Specify category
-/create-memory "topic" "context" --category framework
+/create-context "topic" "content" --category framework
 
 # Specify type
-/create-memory "topic" "context" --type decision
+/create-context "topic" "content" --type decision
 ```
 
 ## How It Works
@@ -32,21 +32,21 @@ You don't choose — it chooses for you.
 ### 1. Similarity Check (automatic)
 
 ```
-/create-memory "use logger helper" "Always use getLogger() for logging"
+/create-context "use logger helper" "Always use getLogger() for logging"
 
-→ Semantic search existing memories
+→ Semantic search existing context files
 → Found: framework/feedback_use_logger_helper.md (similarity: 0.94)
 → Decision: UPDATE existing (very similar)
-→ Routes to /update-memory automatically
+→ Routes to /update-context automatically
 ```
 
 ### 2. Create New (if no match)
 
 ```
-/create-memory "new sdx pattern" "SDK users need encryption..."
+/create-context "new sdx pattern" "SDK users need encryption..."
 
-→ Semantic search existing memories  
-→ No similar memory found (best match: 0.42)
+→ Semantic search existing context files  
+→ No similar context found (best match: 0.42)
 → Decision: CREATE new
 → Creates sdk/feedback_sdk_encryption.md
 ```
@@ -57,14 +57,14 @@ You don't choose — it chooses for you.
 |-----------|--------|---------|
 | ≥ 0.90 | **Update** existing | Very similar, definitely same topic |
 | 0.75-0.89 | **Ask user** | Similar, might be same or related |
-| < 0.75 | **Create** new | Different enough to warrant new memory |
+| < 0.75 | **Create** new | Different enough to warrant new context file |
 
 ## Interactive Disambiguation
 
 When similarity is 0.75-0.89:
 
 ```
-Found similar memory:
+Found similar context:
   framework/feedback_typescript_patterns.md (similarity: 0.82)
   "TypeScript conventions and best practices"
   Last modified: 2 months ago
@@ -77,20 +77,20 @@ Is this about the same topic?
 
 **Update path:**
 ```
-/create-memory "logger usage" "Use getLogger()..."
+/create-context "logger usage" "Use getLogger()..."
 
 → Found framework/feedback_use_logger_helper.md (0.96)
-→ Automatically invoking /update-memory
+→ Automatically invoking /update-context
 → Opening editor with existing content...
-→ [You add new context to existing memory]
+→ [You add new information to existing context]
 ```
 
 **Create path:**
 ```
-/create-memory "new pattern" "..."
+/create-context "new pattern" "..."
 
-→ No similar memory (best: 0.41)
-→ Creating new memory...
+→ No similar context (best: 0.41)
+→ Creating new context file...
 → Created framework/feedback_new_pattern.md
 ```
 
@@ -99,31 +99,31 @@ Is this about the same topic?
 Claude's footer triggers this automatically:
 
 ```
-Memory: propose: typescript-strict-mode
+Context: propose: typescript-strict-mode
 
-→ Claude invokes: /create-memory "typescript-strict-mode" "<context from conversation>"
+→ Claude invokes: /create-context "typescript-strict-mode" "<information from conversation>"
 → Skill checks similarity
-→ Routes to /update-memory OR creates new
+→ Routes to /update-context OR creates new
 → User reviews result
 ```
 
 ## Force New (skip check)
 
 ```bash
-/create-memory "topic" "context" --force-new
+/create-context "topic" "content" --force-new
 ```
 
 Use when:
 - You KNOW it's a new topic
-- Similar memory exists but covers different angle
-- Want to split a broad memory into specific ones
+- Similar context exists but covers different angle
+- Want to split a broad context into specific ones
 
 ## Configuration
 
 ```json
 {
   "claudeContextus": {
-    "memoryCapture": {
+    "contextCapture": {
       "similarityThreshold": 0.75,  // When to consider "similar"
       "autoUpdateThreshold": 0.90,  // When to auto-update without asking
       "checkSimilarity": true        // Can disable to always create
@@ -138,43 +138,43 @@ Use when:
 
 ```
 User: "We switched from Jest to Vitest"
-Claude: Memory: propose: test-framework-change
+Claude: Context: propose: test-framework-change
 
-/create-memory "test-framework-change" "Switched from Jest to Vitest..."
+/create-context "test-framework-change" "Switched from Jest to Vitest..."
 
 → Found: framework/feedback_use_jest.md (similarity: 0.93)
-→ Routing to /update-memory...
-→ Opening editor with Jest memory...
+→ Routing to /update-context...
+→ Opening editor with Jest context...
 → [You update "Jest" → "Vitest" throughout]
 → ✓ Updated framework/feedback_use_vitest.md
 ```
 
-### Workflow 2: New Memory
+### Workflow 2: New Context
 
 ```
 User: "New SDK pattern for encryption"
-Claude: Memory: propose: sdk-encryption-pattern
+Claude: Context: propose: sdk-encryption-pattern
 
-/create-memory "sdk-encryption-pattern" "SDK users must encrypt passwords..."
+/create-context "sdk-encryption-pattern" "SDK users must encrypt passwords..."
 
-→ Searching existing memories...
+→ Searching existing context files...
 → Best match: sdk/reference_sdk_helper.md (similarity: 0.54)
-→ Not similar enough, creating new memory
+→ Not similar enough, creating new context file
 → Created sdk/feedback_sdk_encryption.md
-→ ✓ Added to MEMORY.md index
+→ ✓ Added to CONTEXT.md index
 ```
 
 ### Workflow 3: User Disambiguation
 
 ```
-/create-memory "error handling" "Use try-catch for API calls"
+/create-context "error handling" "Use try-catch for API calls"
 
 → Found: framework/feedback_error_logging.md (similarity: 0.79)
 → Similar, but not identical. What would you like to do?
 
-[1] Update existing memory (add API error handling section)
-[2] Create new memory (API-specific error handling)
-[3] Show me the existing memory first
+[1] Update existing context (add API error handling section)
+[2] Create new context (API-specific error handling)
+[3] Show me the existing context first
 
 → [User picks 2]
 → Creating framework/feedback_api_error_handling.md
@@ -182,6 +182,6 @@ Claude: Memory: propose: sdk-encryption-pattern
 
 ## Related Skills
 
-- `/update-memory` - Directly update (if you know which one)
-- `/audit-stale` - Find memories needing updates
-- `/search-memory` - Find similar memories manually
+- `/update-context` - Directly update (if you know which one)
+- `/audit-stale` - Find context files needing updates
+- `/context-search` - Find similar context files manually

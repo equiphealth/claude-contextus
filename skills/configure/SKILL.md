@@ -5,7 +5,7 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 ## When to Use
 
 - Initial setup after plugin installation
-- Changing memory/docs directory locations
+- Changing context/docs directory locations
 - Enabling/disabling specific sources
 - Tuning retrieval parameters (topK, similarity threshold)
 
@@ -19,7 +19,7 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 /configure discover
 
 # Set specific options
-/configure memory-path .memory
+/configure context-path .context
 /configure docs-path documentation
 /configure top-k 10
 /configure threshold 0.8
@@ -27,8 +27,8 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 /configure disable project-docs
 
 # Manage custom sources
-/configure add-source ../​.claude/memory --label parent
-/configure add-source ~/​src/framework/.claude/memory --label framework
+/configure add-source ../​.claude/context --label parent
+/configure add-source ~/​src/framework/.claude/context --label framework
 /configure remove-source parent
 /configure list-sources
 ```
@@ -38,16 +38,16 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 ### Source Paths
 
 **Project-level:**
-- `project-memory-path` - Path to project memory directory (default: `.claude/memory`)
+- `project-context-path` - Path to project context directory (default: `.claude/context`)
 - `project-docs-path` - Path to project docs directory (default: `docs`)
 
 **User-level:**
-- `user-memory-path` - Path to user memory directory (default: `~/.claude/memory`)
+- `user-context-path` - Path to user context directory (default: `~/.claude/context`)
 - `user-docs-path` - Path to user docs directory (default: `~/.claude/docs`)
 
 ### Source Toggle
 
-- `enable <source>` - Enable a source (`project-memory`, `project-docs`, `user-memory`, `user-docs`)
+- `enable <source>` - Enable a source (`project-context`, `project-docs`, `user-context`, `user-docs`)
 - `disable <source>` - Disable a source
 
 ### Retrieval Settings
@@ -55,25 +55,25 @@ Interactive configuration for source paths, retrieval settings, and plugin behav
 - `top-k <number>` - Number of results to return (default: 5)
 - `threshold <0.0-1.0>` - Minimum similarity score (default: 0.7)
 - `max-tokens <number>` - Maximum tokens to inject (default: 3000)
-- `merge-strategy <strategy>` - How to merge results: `interleaved`, `prioritize-memory`, `prioritize-docs`
+- `merge-strategy <strategy>` - How to merge results: `interleaved`, `prioritize-context`, `prioritize-docs`
 
 ### Embedding Settings
 
 - `embedding-model <model>` - Transformer model to use (default: `Xenova/all-MiniLM-L6-v2`)
 - `batch-size <number>` - Batch size for embedding (default: 32)
 
-### Memory Capture
+### Context Capture
 
-- `memory-capture <on|off>` - Enable/disable automatic memory capture (default: on)
-- `capture-mode <propose|auto>` - How to capture memories:
-  - `propose` (default) - Claude suggests with footer, you approve via `/create-memory`
-  - `auto` - Claude writes memories automatically (more autonomous, less control)
+- `context-capture <on|off>` - Enable/disable automatic context capture (default: on)
+- `capture-mode <propose|auto>` - How to capture context:
+  - `propose` (default) - Claude suggests with footer, you approve via `/create-context`
+  - `auto` - Claude writes context automatically (more autonomous, less control)
 
 ### ChromaDB Location
 
 - `chroma-mode <project|user>` - Where to store embeddings:
-  - `project` (default) - `.claude/memory-db/` (git-committable, team sharing)
-  - `user` - `~/.claude/memory-db/` (global, efficient for multiple projects)
+  - `project` (default) - `.claude/context-db/` (git-committable, team sharing)
+  - `user` - `~/.claude/context-db/` (global, efficient for multiple projects)
 
 Use `user` mode when:
 - Working across 5+ interconnected projects
@@ -88,8 +88,8 @@ Use `user` mode when:
 ## Examples
 
 ```bash
-# Change project memory location
-/configure project-memory-path memory
+# Change project context location
+/configure project-context-path context
 
 # Disable user-level docs (work project only)
 /configure disable user-docs
@@ -115,24 +115,24 @@ Use `user` mode when:
 /configure discover
 ```
 
-Automatically scans for nearby memory sources:
+Automatically scans for nearby context sources:
 - **Parent directories** (up to 3 levels or git root)
 - **Sibling directories** (same parent)
 - **Common framework paths** (optional)
 
 Example output:
 ```
-🔍 Scanning for nearby memory sources...
+🔍 Scanning for nearby context sources...
 
-Found 3 memory sources:
+Found 3 context sources:
 
-[1] Parent: ../​.claude/memory
+[1] Parent: ../​.claude/context
     87 files (framework patterns, team conventions)
     
-[2] Sibling (backend): ../​backend/.claude/memory  
+[2] Sibling (backend): ../​backend/.claude/context  
     42 files (API patterns, database schemas)
     
-[3] Sibling (frontend): ../​frontend/.claude/memory
+[3] Sibling (frontend): ../​frontend/.claude/context
     31 files (UI patterns, component guidelines)
 
 Enable which sources?
@@ -142,8 +142,8 @@ Enable which sources?
 
 Your choice: 1,2
 
-✓ Enabled parent: ../​.claude/memory
-✓ Enabled backend: ../​backend/.claude/memory
+✓ Enabled parent: ../​.claude/context
+✓ Enabled backend: ../​backend/.claude/context
 
 Run /rebuild-embeddings to index new sources.
 ```
@@ -153,8 +153,8 @@ Run /rebuild-embeddings to index new sources.
 ```bash
 # Add custom source
 /configure add-source <path> --label <name>
-/configure add-source ../​.claude/memory --label parent
-/configure add-source ~/​src/my-framework/.claude/memory --label framework
+/configure add-source ../​.claude/context --label parent
+/configure add-source ~/​src/my-framework/.claude/context --label framework
 
 # Remove custom source
 /configure remove-source <label>
@@ -168,11 +168,11 @@ Example list output:
 ```
 Current sources:
 
-✓ projectMemory: .claude/memory (64 files)
+✓ projectContext: .claude/context (64 files)
 ✓ projectDocs: docs (23 files)
-✓ custom[parent]: ../​.claude/memory (87 files)
-✓ custom[backend]: ../​backend/.claude/memory (42 files)
-✗ userMemory: ~/.claude/memory (disabled)
+✓ custom[parent]: ../​.claude/context (87 files)
+✓ custom[backend]: ../​backend/.claude/context (42 files)
+✗ userContext: ~/.claude/context (disabled)
 ✓ userDocs: ~/.claude/docs (8 files)
 
 Total: 224 knowledge files
@@ -182,7 +182,7 @@ Total: 224 knowledge files
 
 - **Read:** All enabled custom sources searched for context
 - **Write:** Custom sources are READ-ONLY
-  - `/create-memory` writes to project or user memory only
+  - `/create-context` writes to project or user context only
   - To edit parent patterns, navigate to parent directory
 - **Discovery:** First-run auto-detects parent if found
 - **Configuration:** Stored in `.claude/settings.json` under `sources.custom[]`
@@ -208,21 +208,21 @@ Displays current configuration and confirms changes. Also validates paths exist 
 /configure
 
 → Which source would you like to configure?
-  [ ] Project Memory
+  [ ] Project Context
   [ ] Project Docs
-  [ ] User Memory
+  [ ] User Context
   [ ] User Docs
   [ ] Retrieval Settings
   [ ] Show Current Config
 
-→ (User selects Project Memory)
+→ (User selects Project Context)
 
-→ Current path: .claude/memory
-  New path (or press enter to keep): memory
+→ Current path: .claude/context
+  New path (or press enter to keep): context
   
-→ Directory 'memory' does not exist. Create it? (y/n)
+→ Directory 'context' does not exist. Create it? (y/n)
 
-→ ✓ Updated project memory path to 'memory'
+→ ✓ Updated project context path to 'context'
   Run /rebuild-embeddings to re-index with new path.
 ```
 
@@ -237,8 +237,8 @@ Updates `.claude/settings.json`:
   },
   "claudeContextus": {
     "sources": {
-      "projectMemory": {
-        "path": "memory",  // Updated
+      "projectContext": {
+        "path": "context",  // Updated
         "enabled": true
       }
     },
@@ -253,4 +253,4 @@ Updates `.claude/settings.json`:
 ## Related Skills
 
 - `/rebuild-embeddings` - Rebuild after path changes
-- `/debug-memory` - Verify configuration is working
+- `/context-debug` - Verify configuration is working

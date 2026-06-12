@@ -3,9 +3,9 @@
  */
 
 /**
- * Memory frontmatter structure
+ * Context frontmatter structure
  */
-export interface MemoryFrontmatter {
+export interface ContextFrontmatter {
   name: string;
   description: string;
   type: 'feedback' | 'reference' | 'decision' | 'project';
@@ -15,16 +15,16 @@ export interface MemoryFrontmatter {
 }
 
 /**
- * Loaded memory object
+ * Loaded context pattern object
  */
-export interface Memory {
-  /** Relative path from memory dir (used as ID) */
+export interface Context {
+  /** Relative path from context dir (used as ID) */
   id: string;
   /** Absolute file path */
   path: string;
-  /** Relative path from memory dir */
+  /** Relative path from context dir */
   relativePath: string;
-  /** Memory name from frontmatter */
+  /** Context name from frontmatter */
   name: string;
   /** Description from frontmatter */
   description: string;
@@ -35,7 +35,7 @@ export interface Memory {
   /** Markdown content (without frontmatter) */
   content: string;
   /** Parsed frontmatter */
-  frontmatter: MemoryFrontmatter;
+  frontmatter: ContextFrontmatter;
   /** File modification time (milliseconds since epoch) */
   mtime: number;
   /** File size in bytes */
@@ -43,22 +43,22 @@ export interface Memory {
 }
 
 /**
- * Memory with embedding
+ * Context with embedding
  */
-export interface EmbeddedMemory extends Memory {
+export interface EmbeddedContext extends Context {
   /** Embedding vector */
   embedding: number[];
 }
 
 /**
- * Memory query result
+ * Context query result
  */
-export interface MemoryMatch {
-  /** Memory ID */
+export interface ContextMatch {
+  /** Context ID */
   id: string;
-  /** Memory content */
+  /** Context content */
   document: string;
-  /** Memory metadata */
+  /** Context metadata */
   metadata: Record<string, unknown>;
   /** Distance score (lower = more similar) */
   distance: number;
@@ -67,26 +67,26 @@ export interface MemoryMatch {
 }
 
 /**
- * Changes detected in memory files
+ * Changes detected in context files
  */
-export interface MemoryChanges {
+export interface ContextChanges {
   /** Whether rebuild is needed */
   needsRebuild: boolean;
-  /** Modified memories */
-  changed: Memory[];
-  /** New memories */
-  added: Memory[];
-  /** Removed memory IDs */
+  /** Modified contexts */
+  changed: Context[];
+  /** New contexts */
+  added: Context[];
+  /** Removed context IDs */
   removed: string[];
-  /** Total current memories */
+  /** Total current contexts */
   total: number;
 }
 
 /**
- * Memory validation result
+ * Context validation result
  */
 export interface ValidationResult {
-  /** Whether memory is valid */
+  /** Whether context is valid */
   valid: boolean;
   /** Validation error messages */
   errors: string[];
@@ -109,14 +109,14 @@ export interface CollectionStats {
  */
 export interface SourceConfig {
   /** Source type */
-  type: 'memory' | 'doc';
+  type: 'context' | 'doc';
   /** Scope: project or user (global) */
   scope: 'project' | 'user';
   /** Path to source directory (can use ~/ for user home) */
   path: string;
   /** Whether this source is enabled */
   enabled: boolean;
-  /** Index file name (e.g., MEMORY.md, DOCS.md) */
+  /** Index file name (e.g., CONTEXT.md, DOCS.md) */
   indexFile?: string;
   /** File patterns to include (glob) */
   include?: string[];
@@ -130,11 +130,11 @@ export interface SourceConfig {
 export interface ContextusConfig {
   /** Whether plugin is enabled */
   enabled: boolean;
-  /** Knowledge sources (memories, docs, both project and user-level) */
+  /** Knowledge sources (contexts, docs, both project and user-level) */
   sources: {
-    projectMemory: SourceConfig;
+    projectContext: SourceConfig;
     projectDocs: SourceConfig;
-    userMemory: SourceConfig;
+    userContext: SourceConfig;
     userDocs: SourceConfig;
     /** Additional custom sources (e.g., parent repo, sibling projects) */
     custom?: SourceConfig[];
@@ -170,13 +170,13 @@ export interface ContextusConfig {
     /** Maximum tokens to inject */
     maxTokens: number;
     /** How to merge results from multiple sources */
-    mergeStrategy: 'interleaved' | 'prioritize-memory' | 'prioritize-docs';
+    mergeStrategy: 'interleaved' | 'prioritize-context' | 'prioritize-docs';
   };
   /** Auto-rebuild embeddings on file changes */
   autoRebuild: boolean;
-  /** Memory capture mode */
-  memoryCapture: {
-    /** Enable memory capture prompts */
+  /** Context capture mode (for claude-mem compatibility) */
+  contextCapture: {
+    /** Enable context capture prompts */
     enabled: boolean;
     /** Capture mode: 'propose' = suggest with footer, 'auto' = write automatically */
     mode: 'propose' | 'auto';

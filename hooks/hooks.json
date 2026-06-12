@@ -13,7 +13,7 @@
     {
       "hooks": [
         {
-          "command": "echo '{\"hookSpecificOutput\": {\"additionalContext\": \"Memory awareness: For substantial responses, end with footer: Memory: used: filename(s) | Memory: propose: topic-name. Omit if brief/trivial. CRITICAL: If propose: in footer, MUST invoke /create-memory before sending response.\"}}'",
+          "command": "echo '{\"hookSpecificOutput\": {\"additionalContext\": \"Context awareness: For substantial responses, end with footer: Context: used: filename(s) | Context: propose: topic-name. Omit if brief/trivial. CRITICAL: If propose: in footer, MUST invoke /create-context before sending response.\"}}'",
           "type": "command"
         }
       ],
@@ -24,7 +24,7 @@
     {
       "hooks": [
         {
-          "command": "node $PLUGIN_PATH/scripts/watch-memories.js",
+          "command": "node $PLUGIN_PATH/scripts/watch-contexts.js",
           "type": "command",
           "timeout": 2000
         }

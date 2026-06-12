@@ -1,6 +1,6 @@
-# Audit Stale Memories
+# Audit Stale Context
 
-Review memories that haven't been updated recently and check if they're still relevant.
+Review context files that haven't been updated recently and check if they're still relevant.
 
 ## When to Use
 
@@ -12,7 +12,7 @@ Review memories that haven't been updated recently and check if they're still re
 ## Usage
 
 ```bash
-# Review all stale memories (6+ months old)
+# Review all stale context files (6+ months old)
 /audit-stale
 
 # Custom staleness threshold
@@ -29,13 +29,13 @@ Review memories that haven't been updated recently and check if they're still re
 
 ## What It Does
 
-1. **Lists memories by last modified**
+1. **Lists context files by last modified**
    - Groups by age: >6mo, 3-6mo, <3mo
    - Shows category, name, last modified date
 
-2. **Checks relevance** (for each old memory):
+2. **Checks relevance** (for each old context file):
    - Semantic search recent git commits
-   - Check if contradicted by newer memories/docs
+   - Check if contradicted by newer context/docs
    - Check if referenced patterns still exist in code
 
 3. **Suggests action** for each:
@@ -47,7 +47,7 @@ Review memories that haven't been updated recently and check if they're still re
 ## Example Output
 
 ```
-📊 Stale Memory Audit
+📊 Stale Context Audit
 
 🔴 Older than 6 months (5 found):
   
@@ -68,17 +68,17 @@ Review memories that haven't been updated recently and check if they're still re
       ✓ Still referenced in recent work
       Action: [Keep] [Update] [Archive] [Delete]
 
-✅ Recent (<3 months): 56 memories - all current
+✅ Recent (<3 months): 56 context files - all current
 ```
 
 ## Interactive Mode
 
-For each flagged memory:
-1. Shows memory summary
+For each flagged context file:
+1. Shows context summary
 2. Shows potential conflicts/issues
 3. Asks for action
-4. If "Update": Opens editor with memory file
-5. If "Archive": Moves to `.claude/memory/.archive/`
+4. If "Update": Opens editor with context file
+5. If "Archive": Moves to `.claude/context/.archive/`
 6. If "Delete": Removes file and rebuilds embeddings
 
 ## Auto Mode
@@ -87,10 +87,10 @@ For each flagged memory:
 /audit-stale --auto-archive --older-than 12
 ```
 
-Automatically archives memories:
+Automatically archives context files:
 - Older than 12 months
 - Not referenced in last 6 months of commits
-- Contradicted by newer memories
+- Contradicted by newer context
 - No user confirmation
 
 **Use with caution!**
@@ -111,6 +111,6 @@ Automatically archives memories:
 
 ## Related Skills
 
-- `/update-memory` - Update a specific memory
-- `/audit-memory` - Validate structure (not staleness)
-- `/search-memory` - Find relevant memories manually
+- `/update-context` - Update a specific context file
+- `/audit-context` - Validate structure (not staleness)
+- `/context-search` - Find relevant context files manually

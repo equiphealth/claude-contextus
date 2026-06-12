@@ -8,31 +8,31 @@
 
 **Unlike other RAG tools**, claude-contextus doesn't wait for you to act. It:
 - **Surfaces relevant context** automatically on every prompt (no queries needed)
-- **Captures new patterns** automatically by prompting Claude to propose memories
-- **Searches semantically** across project + user memories and docs
+- **Captures new patterns** automatically by prompting Claude to propose context patterns
+- **Searches semantically** across project + user context patterns and docs
 - **Rebuilds embeddings** automatically when files change
 
-Think of it as a memory system that reads your mind — and reminds you to write things down.
+Think of it as a context system that reads your mind — and reminds you to write things down.
 
 ## Features
 
 ### 🎯 Proactive (Not Reactive)
-- **Zero-query context injection**: Relevant memories appear automatically on every prompt
-- **Memory awareness prompts**: Reminds Claude to capture new patterns as you discover them
+- **Zero-query context injection**: Relevant context patterns appear automatically on every prompt
+- **Context awareness prompts**: Reminds Claude to capture new patterns as you discover them
 - **Automatic rebuilds**: Embeddings stay fresh as your knowledge grows
 
 ### 🧠 Smart Retrieval
 - **Semantic search**: Finds by meaning, not keywords ("How do I debug?" → matches Logger patterns)
-- **Multi-source**: Searches project memory, project docs, user memory, and user docs simultaneously
+- **Multi-source**: Searches project context patterns, project docs, user context patterns, and user docs simultaneously
 - **Configurable relevance**: Tune similarity threshold and top-k per your needs
 
 ### 📝 Team-Friendly
 - **Markdown-based**: Human-readable, easy to edit, git-trackable
-- **File-based ChromaDB**: Embeddings committed with your repo (no server needed)
-- **Merge-friendly**: Rebuild on conflict, deterministic results
+- **Per-user storage**: Embeddings stored in `~/.claude/contextus/data/` (per-user, per-project)
+- **Merge-friendly**: No binary merge conflicts — embeddings are derived artifacts
 
 ### 🛠️ Integrated Workflow
-- **Management skills**: `/create-memory`, `/create-doc`, `/configure`, `/audit-memory`
+- **Management skills**: `/create-context`, `/create-doc`, `/configure`, `/audit-context`
 - **Auto-hooks**: Captures file changes, triggers rebuilds, injects context
 - **User + project scope**: Personal patterns persist across all projects
 
@@ -59,47 +59,47 @@ claude plugin install ~/src/claude-contextus
 }
 ```
 
-### 2. Create memory directory structure
+### 2. Create context directory structure
 
 ```
 .claude/
-└── memory/
-    ├── MEMORY.md          # Index (human-readable)
-    ├── README.md          # Documentation
+└── context/
+    ├── CONTEXT.md          # Index (human-readable)
+    ├── README.md           # Documentation
     └── framework/
         └── feedback_example.md
 ```
 
-### 3. Create your first memory
+### 3. Create your first context pattern
 
 ```bash
-/create-memory "Always use TypeScript strict mode" "We've had issues with `any` types causing runtime errors"
+/create-context "Always use TypeScript strict mode" "We've had issues with `any` types causing runtime errors"
 ```
 
 ### 4. Embeddings build automatically
 
-On first use, embeddings are generated and stored in `.claude/memory-db/` (committed to git).
+On first use, embeddings are generated and stored in `~/.claude/contextus/data/{project}/` (per-user, not committed to git).
 
 ### 5. Automatic context injection
 
-Ask a question, and relevant memories are injected automatically:
+Ask a question, and relevant context patterns are injected automatically:
 
 ```
 You: "How should I handle errors in TypeScript?"
 
-Claude: [Sees relevant "TypeScript strict mode" memory injected]
+Claude: [Sees relevant "TypeScript strict mode" context pattern injected]
 "Based on our patterns, always use strict mode and avoid `any` types..."
 ```
 
 ## Skills
 
-- `/create-memory <topic> <context>` - Create a new memory with validation
-- `/create-doc <topic> <context>` - Create documentation file
-- `/add-patterns <file> <patterns>` - Add patterns to existing memory
+- `/create-context <topic> <content>` - Create a new context pattern with validation
+- `/create-doc <topic> <content>` - Create documentation file
+- `/add-patterns <file> <patterns>` - Add patterns to existing context file
 - `/rebuild-embeddings` - Regenerate all embeddings from scratch
-- `/search-memory <query>` - Manual semantic search (debugging)
-- `/debug-memory` - Show stats and tuning suggestions
-- `/audit-memory` - Validate memory structure and check duplicates
+- `/context-search <query>` - Manual semantic search (debugging)
+- `/context-debug` - Show stats and tuning suggestions
+- `/audit-context` - Validate context structure and check duplicates
 
 ## Configuration
 
@@ -123,13 +123,13 @@ Claude: [Sees relevant "TypeScript strict mode" memory injected]
 
 ## How It Works
 
-1. **Memory Creation**: Write markdown files in `.claude/memory/` with frontmatter
+1. **Context Pattern Creation**: Write markdown files in `.claude/context/` with frontmatter
 2. **Embedding**: Files are embedded using a local transformer model (no API keys)
-3. **Storage**: Embeddings stored in file-based ChromaDB (`.claude/memory-db/`)
-4. **Retrieval**: On every prompt, semantic search finds top-k relevant memories
-5. **Injection**: Matched memories injected into Claude's context automatically
+3. **Storage**: Embeddings stored in file-based ChromaDB (`~/.claude/contextus/data/{project}/`)
+4. **Retrieval**: On every prompt, semantic search finds top-k relevant context patterns
+5. **Injection**: Matched context patterns injected into Claude's context automatically
 
-## Memory File Format
+## Context Pattern File Format
 
 ```markdown
 ---
@@ -157,19 +157,21 @@ Always enable strict mode in `tsconfig.json`:
 
 ## Git Integration
 
-**Merge Strategy**: Treat ChromaDB as derived artifact
+**Context patterns are version controlled**: Commit `.claude/context/` to your project repository.
+
+**Embeddings are per-user**: Stored in `~/.claude/contextus/data/{project}/`, not committed to git. Each team member maintains their own embedding database, automatically rebuilt when context files change.
 
 ```bash
-# .gitattributes
-.claude/memory-db/* merge=ours
+# .gitignore (embeddings should NOT be committed)
+.claude/contextus/
 
-# .git/hooks/post-merge
-if git diff --name-only ORIG_HEAD HEAD | grep -q "\.claude/memory/"; then
+# .git/hooks/post-merge (optional: auto-rebuild on context file changes)
+if git diff --name-only ORIG_HEAD HEAD | grep -q "\.claude/context/"; then
   npm run rebuild
 fi
 ```
 
-On conflict, rebuild from source (`.md` files).
+On merge conflicts in context patterns, resolve like any markdown file. Embeddings rebuild automatically from source.
 
 ## Architecture
 
@@ -182,9 +184,9 @@ Query ChromaDB (semantic search)
     ↓
 Filter by similarity threshold
     ↓
-Inject top-k memories into context
+Inject top-k context patterns into context
     ↓
-Claude responds with relevant memory
+Claude responds with relevant context patterns
 ```
 
 **Local, no API keys**: Uses `@xenova/transformers` for embeddings (runs in Node.js, no external API).
@@ -214,7 +216,7 @@ npm run lint
 ## Examples
 
 See `examples/` directory for:
-- Sample memory files
+- Sample context pattern files
 - Example configurations
 - Common patterns
 - Migration scripts
@@ -229,10 +231,10 @@ See `examples/` directory for:
 
 ## Related Projects
 
-- [claude-mem](https://github.com/thedotmack/claude-mem) - Observation-based memory (tool use tracking)
-- **claude-contextus** - Pattern-based memory (curated knowledge)
+- [claude-mem](https://github.com/thedotmack/claude-mem) - Observation-based memory (temporal, what you did)
+- **claude-contextus** - Context patterns (timeless, what you learned)
 
-**Difference**: claude-mem captures *what you did* (observations), claude-contextus stores *what you learned* (patterns).
+**Difference**: claude-mem captures *what you did* (observations with timestamps), claude-contextus stores *what you learned* (timeless patterns and decisions).
 
 ## License
 

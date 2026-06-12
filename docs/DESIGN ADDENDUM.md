@@ -11,10 +11,10 @@ This document captures decisions, corrections, and new directions that emerged f
 
 **Issue:** The document contains two conflicting ChromaDB storage strategies:
 
-- “Git Integration” section: commit `.claude/memory-db/` to the project repo
-- “ChromaDB Location” section: store DBs in `~/.claude/contextus/dbs/{project}/`
+- “Git Integration” section: commit `.claude/context-db/` to the project repo
+- “ChromaDB Location” section: store DBs in `~/.claude/contextus/data/{project}/`
 
-**Decision:** The `~/.claude/contextus/` model wins. Remove or explicitly mark the git-committed DB section as superseded.
+**Decision:** The `~/.claude/contextus/data/` model wins. Remove or explicitly mark the git-committed DB section as superseded.
 
 **Rationale:** Binary SQLite merge conflicts are a real operational problem. The per-user, per-project DB in user space avoids them entirely, keeps project directories clean, and is the correct separation of derived artifact from source.
 
@@ -22,15 +22,15 @@ This document captures decisions, corrections, and new directions that emerged f
 
 ## 2. Awareness Hook: Revise Trigger Wording
 
-**Issue:** “For substantial responses” is doing too much filtering. Claude consistently under-triggers memory proposals because it judges most responses as not substantial enough.
+**Issue:** “For substantial responses” is doing too much filtering. Claude consistently under-triggers context pattern proposals because it judges most responses as not substantial enough.
 
-**Preference:** More noise is acceptable. Missing a memory-worthy exchange is worse than a false positive, since `/create-memory` handles deduplication via similarity checking.
+**Preference:** More noise is acceptable. Missing a pattern-worthy exchange is worse than a false positive, since `/create-context` handles deduplication via similarity checking.
 
 **Revised instruction (replace existing awareness hook echo):**
 
 ```
 Unless this response is purely trivial (e.g. a one-line answer, yes/no, or acknowledgment),
-append footer: Memory: propose: topic-name if ANY new pattern, detail, or context was
+append footer: Context: propose: topic-name if ANY new pattern, detail, or context was
 discussed. Omit only if truly nothing reusable was covered.
 ```
 
@@ -41,7 +41,7 @@ discussed. Omit only if truly nothing reusable was covered.
 - Explicit trivial examples remove Claude’s wiggle room
 - Removes “CRITICAL” / “MUST” imperative language which causes awkward behavior
 
-**Note:** The every-prompt injection approach is validated and working. The mechanism is correct; only the wording needs updating. Retain universal `.*` matcher coverage — limiting to memory-retrieval hits would miss the primary use case of new knowledge being explained conversationally.
+**Note:** The every-prompt injection approach is validated and working. The mechanism is correct; only the wording needs updating. Retain universal `.*` matcher coverage — limiting to context-retrieval hits would miss the primary use case of new knowledge being explained conversationally.
 
 -----
 
@@ -57,7 +57,7 @@ discussed. Omit only if truly nothing reusable was covered.
 
 ## 4. Document Chunking Strategy
 
-**Decision (confirmed):** Docs will be chunked. Longer memories may be chunked depending on length. Standard memories are typically short enough to embed whole.
+**Decision (confirmed):** Docs will be chunked. Longer context patterns may be chunked depending on length. Standard context patterns are typically short enough to embed whole.
 
 **Rationale for chunking docs:** `all-MiniLM-L6-v2` has a 256-token context window and will silently truncate longer content. Chunking with overlap (e.g. 512-token chunks, 64-token overlap) is the correct approach for longer documents.
 
@@ -67,7 +67,7 @@ discussed. Omit only if truly nothing reusable was covered.
 - `chunk_index` — position within the document
 - `chunk_total` — total chunks for that file
 
-`formatMemoriesForInjection` must handle chunked results differently from whole-file results — either return the chunk directly or use it to load and inject the parent doc depending on context size.
+`formatContextForInjection` must handle chunked results differently from whole-file results — either return the chunk directly or use it to load and inject the parent doc depending on context size.
 
 -----
 
@@ -149,11 +149,11 @@ fi
 
 -----
 
-## 7. User Memory Duplication: Note for v2
+## 7. User Context Pattern Duplication: Note for v2
 
-**Current design:** User memories are embedded into every project DB, triggering cascading rebuilds across all projects when `~/.claude/memory/` changes.
+**Current design:** User context patterns are embedded into every project DB, triggering cascading rebuilds across all projects when `~/.claude/context/` changes.
 
-**Not blocking for v1** at current scale, but worth revisiting at 10+ projects. The alternative — a shared `~/.claude/contextus/user-memory-db/` with a union query (two Chroma calls instead of one) — eliminates cascading rebuilds at the cost of slightly more query complexity.
+**Not blocking for v1** at current scale, but worth revisiting at 10+ projects. The alternative — a shared `~/.claude/contextus/data/user/` with a union query (two Chroma calls instead of one) — eliminates cascading rebuilds at the cost of slightly more query complexity.
 
 **Defer to v2** unless rebuild latency becomes a real pain point.
 
@@ -169,7 +169,7 @@ fi
 
 ## 9. Semantic Motivation for RAG (Confirmed Priority)
 
-The primary motivation for RAG is **semantic retrieval over keyword matching**, not scale. This is valid at any corpus size — at 70+ memories plus substantial docs, keyword mismatch is already causing real retrieval failures.
+The primary motivation for RAG is **semantic retrieval over keyword matching**, not scale. This is valid at any corpus size — at 70+ context patterns plus substantial docs, keyword mismatch is already causing real retrieval failures.
 
 RAG is the right next step. Fix the awareness hook wording first (quick win, immediate improvement), then implement the embedding pipeline during the vacation project.
 
@@ -190,6 +190,6 @@ During implementation:
 
 - [ ] Store embedding model name in Chroma metadata, validate on query
 - [ ] Fix result destructuring in query logic (see §5)
-- [ ] Implement chunked result handling in `formatMemoriesForInjection`
+- [ ] Implement chunked result handling in `formatContextForInjection`
 - [ ] Add `/health` endpoint to daemon for hook startup check
 - [ ] Wire `PostToolUse` on Write|Edit to daemon `/notify` for incremental re-embed

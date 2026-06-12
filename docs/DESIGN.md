@@ -34,9 +34,9 @@ These decisions are settled. Do not re-litigate without strong evidence.
 1. **Embedding model validation**: Store model name in collection metadata, validate on query to prevent silent failures. Model change requires full rebuild.
 1. **Awareness hook**: Opt-out framing (“omit only if trivial”), separate JS script for cross-platform safety.
 1. **Result destructuring**: Correct Chroma parallel array handling (ids/documents/metadatas/distances).
-1. **Proactive capture**: The awareness hook handles proactive memory creation. Retrieval quality is what makes captured memories useful. These are complementary, not competing concerns.
+1. **Proactive capture**: The awareness hook handles proactive context creation. Retrieval quality is what makes captured patterns useful. These are complementary, not competing concerns.
 1. **Capture modes**: `propose` (default, safe) vs `auto` (autonomous). Use `propose` during calibration; switch to `auto` once thresholds are tuned.
-1. **Proposal format**: Footer includes slug + novelty signal derived from injected memories already in context — no extra daemon round trip on UserPromptSubmit.
+1. **Proposal format**: Footer includes slug + novelty signal derived from injected context already present — no extra daemon round trip on UserPromptSubmit.
 1. **Retrieval frequency tracking**: Increment hit counter in Chroma metadata on every retrieval. Used for re-ranking and calibration dashboard.
 1. **Dedup and retrieval thresholds**: Tuned independently. Dedup threshold (creation) and retrieval threshold (query) serve different purposes and should not share a value.
 
@@ -55,7 +55,7 @@ Retrieval quality directly determines the ROI of everything captured. The `propo
 The path from install to `auto` mode:
 
 1. Run in `propose` mode. Review footer proposals after each session.
-1. Use `/memory-debug` as your calibration dashboard — precision, recall, zero-hit memories, stale embeddings.
+1. Use `/context-debug` as your calibration dashboard — precision, recall, zero-hit patterns, stale embeddings.
 1. Watch for `[similar: x]` proposals you’d actually want to capture separately → lower dedup threshold.
 1. Watch for `[new]` proposals that are obvious duplicates → raise dedup threshold.
 1. A/B test nomic vs MiniLM on a fixed query set before committing (at ~90 docs, reindex cost is minutes).
@@ -85,19 +85,19 @@ Configurable per project in `.claude/settings.json`:
 
 ### Proposal Footer Format
 
-The awareness hook runs on every UserPromptSubmit alongside the query hook. It has visibility into which memories were injected by the query hook.
+The awareness hook runs on every UserPromptSubmit alongside the query hook. It has visibility into which context patterns were injected by the query hook.
 
 **Novelty signal is derived from injected context — no extra daemon round trip.**
 
-If Claude is proposing something not represented in the retrieved memories, that is already a novelty signal. If it is similar to something retrieved, the retrieved memory name is the reference.
+If Claude is proposing something not represented in the retrieved context, that is already a novelty signal. If it is similar to something retrieved, the retrieved pattern name is the reference.
 
 ```
-Memory: propose: wdio-element-visibility-workaround [new]
-Memory: propose: appium-session-reset [similar: wdio-session-handling]
+Context: propose: wdio-element-visibility-workaround [new]
+Context: propose: appium-session-reset [similar: wdio-session-handling]
 ```
 
-- `[new]` — not represented in retrieved memories for this session
-- `[similar: x]` — close to a retrieved memory; consider whether it merits a separate entry
+- `[new]` — not represented in retrieved context for this session
+- `[similar: x]` — close to a retrieved pattern; consider whether it merits a separate entry
 
 **Weakness**: Retrieval is top-k filtered, so something may exist in the DB but not be retrieved for this prompt. At <200 documents this is an acceptable false positive rate — the user catches it on review.
 
@@ -170,16 +170,16 @@ No confirmation prompt — act or ignore. Passive rejection signal is inferred f
 │  1. User sends prompt                                   │
 │  2. Query hook: POST to daemon /query                   │
 │  3. Daemon embeds prompt, queries Chroma                │
-│  4. Inject top-k memory contents into context           │
+│  4. Inject top-k context patterns into context           │
 │  5. Awareness hook: propose footer from injected set    │
-│  6. Claude responds with relevant memory available      │
+│  6. Claude responds with relevant patterns available      │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
 │                   Chroma Database                       │
 │                                                         │
 │  Collection: "contextus"                                │
-│    - Documents (one per memory file / chunk)            │
+│    - Documents (one per context file / chunk)            │
 │    - Metadata: file_path, category, type, source,       │
 │                hit_count, last_hit, content_hash,       │
 │                embedding_model                          │
@@ -441,8 +441,8 @@ for (const match of topMatches) {
 **Uses:**
 
 - **Re-ranking**: frequency boost factor alongside sourceWeight, typeBoost, freshnessDecay
-- **Calibration dashboard**: `/memory-debug` surfaces zero-hit memories older than N sessions
-- **Proposal scoring**: high-frequency memory in retrieved set strengthens `[similar: x]` signal
+- **Calibration dashboard**: `/context-debug` surfaces zero-hit patterns older than N sessions
+- **Proposal scoring**: high-frequency pattern in retrieved set strengthens `[similar: x]` signal
 - **Auto-save quality control**: post-auto-save audit identifies noise (captured but never retrieved)
 
 **Bias warning**: Frequency favors general memories over specific ones. A broad logging pattern gets retrieved constantly; a narrow edge-case workaround gets retrieved rarely but may be exactly what is needed. Use frequency as one re-ranking factor, not the dominant one.
@@ -517,7 +517,7 @@ async function auditStaleness(): Promise<StaleReport> {
 
 - On-demand: detect stale on query, re-embed before returning
 - Batch: `/rebuild-embeddings --stale-only`
-- Automatic: PostToolUse hook on Write/Edit to memory or doc files
+- Automatic: PostToolUse hook on Write/Edit to context or doc files
 
 ## Injection Format
 
@@ -562,7 +562,7 @@ Pattern-based reduction, similar to lean-ctx's shell output compression:
 - Preserve code snippets (they're already concise)
 - Maintain structure (headers, lists)
 
-**Compression is deterministic and fast** — no LLM calls, <5ms overhead per memory.
+**Compression is deterministic and fast** — no LLM calls, <5ms overhead per context.
 
 ### Threshold-Based Activation
 
@@ -572,7 +572,7 @@ Pattern-based reduction, similar to lean-ctx's shell output compression:
     "compression": {
       "enabled": true,
       "mode": "auto",           // "auto" | "always" | "never"
-      "threshold": 300,         // tokens — compress if memory exceeds this
+      "threshold": 300,         // tokens — compress if pattern exceeds this
       "strategy": "pattern"     // "pattern" | "excerpt" | "llm"
     }
   }
@@ -690,7 +690,7 @@ function extractPatterns(content: string, type: string): string {
   };
   
   // Extract matching patterns, strip verbose prose
-  // Return compressed version with "[Full memory: path]" footer
+  // Return compressed version with "[Full context: path]" footer
 }
 ```
 
@@ -724,7 +724,7 @@ claude-contextus/
 ├── hooks/
 │   └── hooks.json
 ├── skills/
-│   ├── rebuild-contexts/SKILL.md
+│   ├── rebuild-embeddings/SKILL.md
 │   ├── context-search/SKILL.md
 │   ├── context-debug/SKILL.md   # Calibration dashboard
 │   ├── create-context/SKILL.md
@@ -790,7 +790,7 @@ claude-contextus/
   },
   "hooks": "hooks/hooks.json",
   "skills": [
-    "skills/rebuild-contexts",
+    "skills/rebuild-embeddings",
     "skills/context-search",
     "skills/context-debug",
     "skills/create-context",
@@ -900,7 +900,7 @@ UserPromptSubmit hook (thin HTTP client)
 
 PostToolUse hook (Write|Edit, thin HTTP client)
   → POST { file, content, project } to localhost:37800/notify
-  → daemon triggers incremental re-embed if memory/doc file changed
+  → daemon triggers incremental re-embed if context/doc file changed
 ```
 
 **Session Start Hook** (JS, not bash — cross-platform):
