@@ -75,7 +75,7 @@
     "skills/rebuild-embeddings",
     "skills/context-search",
     "skills/context-status",
-    "skills/context-calibrate",
+    "skills/context-doctor",
     "skills/audit-context",
     "skills/audit-stale"
   ]
