@@ -8,18 +8,18 @@
 
 ## Overview
 
-This document describes how to implement automatic semantic retrieval for the `.claude/memory/` system using vector embeddings and Chroma. This upgrades manual index scanning to automatic, meaning-based memory injection.
+This document describes how to implement automatic semantic retrieval for the `.claude/context/` system using vector embeddings and Chroma. This upgrades manual index scanning to automatic, meaning-based context injection.
 
 **Important**: This is a **separate system** from claude-mem. Both use Chroma but serve different purposes:
 
 |Feature            |claude-contextus (this doc)                       |claude-mem                          |
 |-------------------|--------------------------------------------------|------------------------------------|
-|**Purpose**        |Inject curated `.claude/memory/` patterns         |Track tool use observations         |
+|**Purpose**        |Inject curated `.claude/context/` patterns        |Track tool use observations (memory)|
 |**Source**         |Hand-written markdown files + docs                |Auto-generated from PostToolUse hook|
-|**Scope**          |Normative rules/patterns                          |Historical activity log             |
+|**Scope**          |Normative rules/patterns (context)                |Historical activity log (memory)    |
 |**Chroma Mode**    |File-based (`~/.claude/contextus/data/{project}/`)|Server-based (`localhost:8000`)     |
 |**Version Control**|Source files committed; DB in user space          |Stored in `~/.claude-mem/`          |
-|**Config**         |`MEMORY_RAG_*` env vars                           |`CLAUDE_MEM_*` env vars             |
+|**Config**         |`CONTEXTUS_RAG_*` env vars                        |`CLAUDE_MEM_*` env vars             |
 |**Team Sharing**   |Source files yes (git-tracked); DB no             |No (local per-user)                 |
 
 ## Key Architectural Decisions
@@ -44,9 +44,9 @@ These decisions are settled. Do not re-litigate without strong evidence.
 
 The system closes two loops:
 
-**Capture loop** (awareness hook → user action → memory file written → PostToolUse triggers incremental re-embed)
+**Capture loop** (awareness hook → user action → context file written → PostToolUse triggers incremental re-embed)
 
-**Retrieval loop** (UserPromptSubmit → daemon query → top-k injected into context → Claude responds with relevant memory available)
+**Retrieval loop** (UserPromptSubmit → daemon query → top-k injected into context → Claude responds with relevant patterns available)
 
 Retrieval quality directly determines the ROI of everything captured. The `propose` calibration phase is how you develop confidence in the retrieval pipeline before enabling `auto`.
 
@@ -61,7 +61,7 @@ The path from install to `auto` mode:
 1. A/B test nomic vs MiniLM on a fixed query set before committing (at ~90 docs, reindex cost is minutes).
 1. Once thresholds feel right, flip to `auto`.
 
-**Note on existing corpus**: Memories written during long single-session workflows may be written for a different use case — they may capture conversational context rather than durable patterns. Retrieval frequency tracking will surface these quickly (zero-hit memories after 20-30 sessions are candidates for rewrite or deletion).
+**Note on existing corpus**: Context patterns written during long single-session workflows may be written for a different use case — they may capture conversational context rather than durable patterns. Retrieval frequency tracking will surface these quickly (zero-hit patterns after 20-30 sessions are candidates for rewrite or deletion).
 
 ## Proactive Creation & Proposal Scoring
 
@@ -79,8 +79,8 @@ Configurable per project in `.claude/settings.json`:
 }
 ```
 
-- **propose**: Claude appends a footer with the proposed memory slug and novelty signal. User acts or ignores.
-- **auto**: Claude writes the memory file directly via PostToolUse. No user action required.
+- **propose**: Claude appends a footer with the proposed context slug and novelty signal. User acts or ignores.
+- **auto**: Claude writes the context file directly via PostToolUse. No user action required.
 - **silent**: No proposals, no auto-save. Retrieval only.
 
 ### Proposal Footer Format
@@ -111,28 +111,28 @@ console.log(JSON.stringify({
   continue: true,
   hookSpecificOutput: {
     additionalContext:
-      "Memory awareness: Unless this response is purely trivial " +
+      "Context awareness: Unless this response is purely trivial " +
       "(e.g. a one-line answer, yes/no, or acknowledgment), append footer: " +
-      "Memory: propose: topic-name [new|similar: x] if ANY new pattern, " +
+      "Context: propose: topic-name [new|similar: x] if ANY new pattern, " +
       "detail, or context was discussed that is not already covered by the " +
-      "injected memories above. Omit only if truly nothing reusable was covered."
+      "injected context above. Omit only if truly nothing reusable was covered."
   }
 }));
 ```
 
 ### Rejected Proposals
 
-No confirmation prompt — act or ignore. Passive rejection signal is inferred from proposal frequency vs. capture rate. `/memory-debug` surfaces: “these topics have been proposed 5+ times and never saved — consider raising the threshold or adjusting the awareness prompt.”
+No confirmation prompt — act or ignore. Passive rejection signal is inferred from proposal frequency vs. capture rate. `/context-debug` surfaces: “these topics have been proposed 5+ times and never saved — consider raising the threshold or adjusting the awareness prompt.”
 
-**Rejection tracking TTL**: Rejected proposals should have a session window or context-based reset. If new related memories are added, previously-rejected proposals may become valid. Suggest 30-session TTL or reset when related memory changes are detected.
+**Rejection tracking TTL**: Rejected proposals should have a session window or context-based reset. If new related context patterns are added, previously-rejected proposals may become valid. Suggest 30-session TTL or reset when related context changes are detected.
 
 ## Current State (Manual)
 
 **How it works now:**
 
-1. `MEMORY.md` index loaded into context (~2-3k tokens)
-1. Claude manually scans index to find relevant memories
-1. Claude reads individual memory files on-demand
+1. `CONTEXT.md` index loaded into context (~2-3k tokens)
+1. Claude manually scans index to find relevant patterns
+1. Claude reads individual context files on-demand
 1. Relies on keyword matching in descriptions
 
 **Limitations:**
@@ -140,23 +140,23 @@ No confirmation prompt — act or ignore. Passive rejection signal is inferred f
 - Manual discoverability requires scanning 88+ entries
 - Limited to keyword matching in descriptions
 - No synonym or semantic understanding
-- Misses relevant memories if keywords don’t align
+- Misses relevant patterns if keywords don’t align
 
 ## Proposed State (Automatic RAG)
 
 **How it would work:**
 
-1. All memory files + docs embedded into Chroma vector database
-1. On every `UserPromptSubmit`, semantic search for top-k relevant memories
-1. Inject top 3-5 memory contents directly into context
+1. All context files + docs embedded into Chroma vector database
+1. On every `UserPromptSubmit`, semantic search for top-k relevant patterns
+1. Inject top 3-5 pattern contents directly into context
 1. Dynamic relevance: only load what’s needed for this specific prompt
 
 **Benefits:**
 
 - ✅ **Token efficient**: Load ~2-3k tokens instead of scanning 88-entry index
-- ✅ **Semantic matching**: “How do I debug?” → matches Logger Helper memory
+- ✅ **Semantic matching**: “How do I debug?” → matches Logger Helper pattern
 - ✅ **Synonym-aware**: “print”, “log”, “console” all match
-- ✅ **Scales**: Can grow to 200+ memories without context pressure
+- ✅ **Scales**: Can grow to 200+ patterns without context pressure
 - ✅ **Zero maintenance**: No manual keywords or tagging needed
 
 ## Architecture
@@ -189,7 +189,7 @@ No confirmation prompt — act or ignore. Passive rejection signal is inferred f
 ┌─────────────────────────────────────────────────────────┐
 │                   Embedding Pipeline                    │
 │                                                         │
-│  Initial: Embed all .claude/memory/**/*.md + docs/      │
+│  Initial: Embed all .claude/context/**/*.md + docs/     │
 │  Incremental: PostToolUse hook notifies daemon          │
 │  Model: nomic-ai/nomic-embed-text-v1.5 (default)        │
 │  User-configurable: see Embedding Providers             │
@@ -216,7 +216,7 @@ Top matches:
    ↓
 Increment hit_count + last_hit for each match
    ↓
-Read top 3 memory files, format injection block
+Read top 3 context files, format injection block
    ↓
 Inject into context before Claude responds
    ↓
@@ -228,7 +228,7 @@ Awareness hook: "framework/feedback_use_logger_helper already injected
 
 ## Document Chunking Strategy
 
-**Decision**: Chunk longer documents to avoid truncation. Standard memories are typically short enough to embed whole. Human-written freeform docs use dual embedding.
+**Decision**: Chunk longer documents to avoid truncation. Standard context patterns are typically short enough to embed whole. Human-written freeform docs use dual embedding.
 
 **Rationale**: The default model (nomic-embed-text-v1.5) has a 512-token context window. For longer docs, chunking with overlap preserves semantic completeness.
 
@@ -256,7 +256,7 @@ Human-written docs have inconsistent structure — headers may be organizational
 
 **When NOT to use dual embedding:**
 
-- Standard memory files (<500 tokens) — embed whole
+- Standard context files (<500 tokens) — embed whole
 - Structured docs with meaningful headings — chunk only
 - Code snippets — typically already excerpted
 
@@ -271,7 +271,7 @@ Human-written docs have inconsistent structure — headers may be organizational
     chunk_index: 2,                       // 0-indexed
     chunk_total: 8,
     source: "projectDocs",
-    type: "doc-chunk",                    // or "doc-overview", "memory"
+    type: "doc-chunk",                    // or "doc-overview", "context"
     hit_count: 0,
     last_hit: null,
     content_hash: "abc123",              // SHA-256 for staleness detection
@@ -521,13 +521,13 @@ async function auditStaleness(): Promise<StaleReport> {
 
 ## Injection Format
 
-Standardized Memory Block schema for consistent, scannable output:
+Standardized Context Block schema for consistent, scannable output:
 
 ```markdown
-## 📝 Relevant Memories (3 found)
+## 📝 Relevant Context (3 found)
 
 ### [Framework] Use Logger Helper (similarity: 0.92, hits: 14)
-**Source**: `.claude/memory/framework/feedback_use_logger_helper.md`
+**Source**: `.claude/context/framework/feedback_use_logger_helper.md`
 **Type**: feedback | **Updated**: 2026-05-15
 
 > Always use `getLogger()` from `~/helpers/logger` instead of `console.log`.
@@ -538,21 +538,21 @@ Standardized Memory Block schema for consistent, scannable output:
 ---
 
 ### [Testing] Test Session Artifacts (similarity: 0.78, hits: 3)
-**Source**: `.claude/memory/testing/reference_test_session_artifacts.md`
+**Source**: `.claude/context/testing/reference_test_session_artifacts.md`
 **Type**: reference | **Updated**: 2026-04-20
 
 > Session artifacts are stored in `results/sessions/{sessionId}/`...
 
 ---
 
-_Memory retrieval: 80ms | Injected: 1,240 tokens | Sources: projectMemory(2), userMemory(1)_
+_Context retrieval: 80ms | Injected: 1,240 tokens | Sources: projectContext(2), userContext(1)_
 ```
 
-Showing hit count inline lets you evaluate retrieval quality during calibration — frequently retrieved memories appearing in results is a positive signal; zero-hit memories appearing suggests threshold needs tuning.
+Showing hit count inline lets you evaluate retrieval quality during calibration — frequently retrieved patterns appearing in results is a positive signal; zero-hit patterns appearing suggests threshold needs tuning.
 
-## Memory Compression
+## Context Compression
 
-Retrieved memories are compressed before injection to reduce token usage while preserving actionable content.
+Retrieved context patterns are compressed before injection to reduce token usage while preserving actionable content.
 
 ### Strategy: Lean-ctx Style Pattern Extraction
 
@@ -580,9 +580,9 @@ Pattern-based reduction, similar to lean-ctx's shell output compression:
 ```
 
 **Modes:**
-- `auto` (default): Compress only if memory >threshold tokens
-- `always`: Compress all retrieved memories regardless of size
-- `never`: Inject full content (assumes memories are already concise)
+- `auto` (default): Compress only if pattern >threshold tokens
+- `always`: Compress all retrieved patterns regardless of size
+- `never`: Inject full content (assumes patterns are already concise)
 
 **Strategies:**
 - `pattern` (default): Lean-ctx style pattern extraction
@@ -643,7 +643,7 @@ logger.error('message', { error: err.message });
 
 **Why:** Structured logging, Datadog integration, consistent formatting
 
-[Full memory: .claude/memory/framework/feedback_use_logger_helper.md]
+[Full context: .claude/context/framework/feedback_use_logger_helper.md]
 ```
 
 **Token savings: 60% reduction** while preserving actionable content.
@@ -653,23 +653,23 @@ logger.error('message', { error: err.message });
 Compression happens in the daemon after re-ranking, before injection formatting:
 
 ```typescript
-function compressMemory(memory: Memory, config: CompressionConfig): string {
-  if (!config.enabled) return memory.document;
+function compressContext(context: Context, config: CompressionConfig): string {
+  if (!config.enabled) return context.document;
   
-  const tokenCount = estimateTokens(memory.document);
+  const tokenCount = estimateTokens(context.document);
   
   if (config.mode === 'never' || 
       (config.mode === 'auto' && tokenCount < config.threshold)) {
-    return memory.document;  // Skip compression
+    return context.document;  // Skip compression
   }
   
   switch (config.strategy) {
     case 'pattern':
-      return extractPatterns(memory.document, memory.metadata.type);
+      return extractPatterns(context.document, context.metadata.type);
     case 'excerpt':
-      return excerptMemory(memory.document, config.threshold);
+      return excerptContext(context.document, config.threshold);
     case 'llm':
-      return await summarizeWithHaiku(memory.document);  // v2
+      return await summarizeWithHaiku(context.document);  // v2
   }
 }
 
@@ -694,11 +694,11 @@ function extractPatterns(content: string, type: string): string {
 }
 ```
 
-### Compression Metrics in `/memory-debug`
+### Compression Metrics in `/context-debug`
 
 ```
 Compression Stats (last 30 sessions):
-  Memories compressed: 42 / 90 (46.7%)
+  Patterns compressed: 42 / 90 (46.7%)
   Avg compression ratio: 62% reduction
   Token savings: 18,340 tokens total
   Compression overhead: <5ms avg
@@ -717,33 +717,33 @@ claude-contextus/
 ├── daemon/
 │   └── server.js               # Persistent HTTP daemon
 ├── scripts/
-│   ├── embed-memories.js       # Build/rebuild embeddings
+│   ├── embed-contexts.js       # Build/rebuild embeddings
 │   ├── query-hook.js           # UserPromptSubmit — thin HTTP client
 │   ├── awareness-hook.js       # Proposal footer injection
-│   └── watch-memories.js       # PostToolUse — thin HTTP client
+│   └── watch-contexts.js       # PostToolUse — thin HTTP client
 ├── hooks/
 │   └── hooks.json
 ├── skills/
-│   ├── rebuild-embeddings/SKILL.md
-│   ├── memory-search/SKILL.md
-│   ├── memory-debug/SKILL.md   # Calibration dashboard
-│   ├── create-memory/SKILL.md
+│   ├── rebuild-contexts/SKILL.md
+│   ├── context-search/SKILL.md
+│   ├── context-debug/SKILL.md   # Calibration dashboard
+│   ├── create-context/SKILL.md
 │   ├── create-doc/SKILL.md
 │   ├── add-patterns/SKILL.md
-│   ├── audit-memory/SKILL.md
-│   └── update-memory-index/SKILL.md
+│   ├── audit-context/SKILL.md
+│   └── update-context-index/SKILL.md
 ├── lib/
 │   ├── embedder.js
 │   ├── chroma-client.js
-│   ├── memory-loader.js
-│   ├── memory-creator.js
-│   ├── memory-validator.js
+│   ├── context-loader.js
+│   ├── context-creator.js
+│   ├── context-validator.js
 │   ├── deduplicator.js
 │   ├── reranker.js
 │   ├── staleness.js
 │   └── index-updater.js
 ├── templates/
-│   ├── memory-template.md
+│   ├── context-template.md
 │   └── doc-template.md
 └── README.md
 ```
@@ -754,7 +754,7 @@ claude-contextus/
 {
   "name": "claude-contextus",
   "version": "1.0.0",
-  "description": "Memory management: proactive capture + automatic semantic retrieval via vector embeddings",
+  "description": "Context management: proactive capture + automatic semantic retrieval via vector embeddings",
   "author": "Anthony Dawson",
   "engines": {
     "claude": ">=1.0.0",
@@ -790,19 +790,19 @@ claude-contextus/
   },
   "hooks": "hooks/hooks.json",
   "skills": [
-    "skills/rebuild-embeddings",
-    "skills/memory-search",
-    "skills/memory-debug",
-    "skills/create-memory",
+    "skills/rebuild-contexts",
+    "skills/context-search",
+    "skills/context-debug",
+    "skills/create-context",
     "skills/create-doc",
     "skills/add-patterns",
-    "skills/audit-memory",
-    "skills/update-memory-index"
+    "skills/audit-context",
+    "skills/update-context-index"
   ]
 }
 ```
 
-**Note**: `retrieval.similarityThreshold` (query) and `retrieval.dedupThreshold` (creation) are tuned independently. A memory “close enough to skip creation” should not automatically be “close enough to always retrieve.”
+**Note**: `retrieval.similarityThreshold` (query) and `retrieval.dedupThreshold` (creation) are tuned independently. A pattern “close enough to skip creation” should not automatically be “close enough to always retrieve.”
 
 ### Hooks Configuration
 
@@ -845,10 +845,10 @@ claude-contextus/
 
 ### Phase 1: Embedding Pipeline
 
-**Goal**: Populate Chroma with all memory and doc embeddings
+**Goal**: Populate Chroma with all context patterns and doc embeddings
 
 ```javascript
-async function embedMemories({ rebuild = false, verbose = false }) {
+async function embedContexts({ rebuild = false, verbose = false }) {
   const EMBEDDING_MODEL = loadConfig().embedding.model;  // From config, not hardcoded
 
   const client = new ChromaClient({ path: resolveDBPath() });
@@ -961,7 +961,7 @@ POST http://localhost:37800/query
 { "project": "automation", "prompt": "How do I debug tests?" }
 
 POST http://localhost:37800/notify
-{ "project": "automation", "file": ".claude/memory/testing/feedback_new.md" }
+{ "project": "automation", "file": ".claude/context/testing/feedback_new.md" }
 
 GET  http://localhost:37800/health
 ```
@@ -1006,12 +1006,12 @@ async function queryHook(prompt: string) {
 
 ### Phase 3: Incremental Updates
 
-PostToolUse hook fires on Write/Edit. If the changed file is in a memory or doc source, daemon re-embeds incrementally.
+PostToolUse hook fires on Write/Edit. If the changed file is in a context or doc source, daemon re-embeds incrementally.
 
-**User memory changes propagate to all project DBs:**
+**User context changes propagate to all project DBs:**
 
 ```bash
-vim ~/.claude/memory/feedback_git.md
+vim ~/.claude/context/feedback_git.md
 
 # File watcher detects change
 → Rebuilding automation: ~/.claude/contextus/data/automation/
@@ -1021,20 +1021,20 @@ vim ~/.claude/memory/feedback_git.md
 
 ### Phase 4: Debugging & Calibration
 
-**`/memory-debug` output:**
+**`/context-debug` output:**
 
 ```
-Memory Health:
-  Total embeddings: 90 (70 memories, 20 docs)
+Context Health:
+  Total embeddings: 90 (70 patterns, 20 docs)
   Embedding model: nomic-ai/nomic-embed-text-v1.5 (768 dim)
   Stale embeddings: 3 (3.3%)
-    - .claude/memory/testing/feedback_new_pattern.md
+    - .claude/context/testing/feedback_new_pattern.md
     - docs/setup-guide.md
 
 Retrieval Stats (last 30 sessions):
-  Avg similarity of injected memories: 0.81
+  Avg similarity of injected patterns: 0.81
   Avg tokens injected: 1,340
-  Zero-hit memories (never retrieved): 8
+  Zero-hit patterns (never retrieved): 8
     - framework/decision_early_architecture.md (captured 45 sessions ago)
     - ...
 
@@ -1069,8 +1069,8 @@ Useful for identifying clusters of near-duplicate memories, visualizing coverage
 ```
 # In project (git-tracked)
 .claude/
-├── memory/              # Source files — committed, team-shared
-│   ├── MEMORY.md
+├── context/             # Source files — committed, team-shared
+│   ├── CONTEXT.md
 │   ├── sdk/
 │   ├── testing/
 │   └── framework/
@@ -1119,10 +1119,10 @@ cd automation
 
 ```typescript
 const sourceWeights = {
-  'projectMemory': 1.0,    // Local patterns (highest priority)
+  'projectContext': 1.0,   // Local patterns (highest priority)
   'projectDocs': 0.9,      // Local documentation
-  'userMemory': 0.8,       // Personal cross-project notes
-  'parentMemory': 0.7,     // Parent repo patterns
+  'userContext': 0.8,      // Personal cross-project notes
+  'parentContext': 0.7,    // Parent repo patterns
   'userDocs': 0.7,
   'custom': 0.7            // Sibling projects, frameworks
 };
@@ -1132,38 +1132,38 @@ All sources in one collection, single query per prompt. Source isolation via met
 
 ### Custom Sources (Read-Only)
 
-Custom sources (parent repos, siblings, frameworks) are read-only for retrieval. Writes always go to `projectMemory` or `userMemory`.
+Custom sources (parent repos, siblings, frameworks) are read-only for retrieval. Writes always go to `projectContext` or `userContext`.
 
 ```bash
 # Add custom source
-/configure add-source ../.claude/memory --label parent
+/configure add-source ../.claude/context --label parent
 
 # List sources
 /configure list-sources
-✓ projectMemory: .claude/memory (70 files)
+✓ projectContext: .claude/context (70 files)
 ✓ projectDocs: docs (20 files)
-✓ userMemory: ~/.claude/memory (12 files)
+✓ userContext: ~/.claude/context (12 files)
 Total: 102 knowledge files indexed
 ```
 
 ### Auto-Detection
 
-On first plugin load or `/configure discover`, scan parent directories and siblings for `.claude/memory/` and prompt to enable.
+On first plugin load or `/configure discover`, scan parent directories and siblings for `.claude/context/` and prompt to enable.
 
 ## Configuration Reference
 
 ### Environment Variables
 
 ```bash
-MEMORY_RAG_ENABLED=true
-MEMORY_RAG_CHROMA_PATH=~/.claude/contextus/data      # User space, not project
-MEMORY_RAG_TOP_K=5
-MEMORY_RAG_SIMILARITY_THRESHOLD=0.7
-MEMORY_RAG_DEDUP_THRESHOLD=0.85
-MEMORY_RAG_EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5
-MEMORY_RAG_EMBEDDING_DIMENSIONS=768
-MEMORY_RAG_AUTO_REBUILD=true
-MEMORY_RAG_CAPTURE_MODE=propose
+CONTEXTUS_RAG_ENABLED=true
+CONTEXTUS_RAG_CHROMA_PATH=~/.claude/contextus/data      # User space, not project
+CONTEXTUS_RAG_TOP_K=5
+CONTEXTUS_RAG_SIMILARITY_THRESHOLD=0.7
+CONTEXTUS_RAG_DEDUP_THRESHOLD=0.85
+CONTEXTUS_RAG_EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5
+CONTEXTUS_RAG_EMBEDDING_DIMENSIONS=768
+CONTEXTUS_RAG_AUTO_REBUILD=true
+CONTEXTUS_RAG_CAPTURE_MODE=propose
 ```
 
 ### Per-Project Settings (`.claude/settings.json`)
@@ -1195,7 +1195,7 @@ Before implementation:
 - [ ] **Lock embedding model**: nomic-ai/nomic-embed-text-v1.5 as global default — update all dimension references to 768
 - [ ] **A/B benchmark**: nomic vs MiniLM on representative query set before first index commit
 - [ ] **Design daemon API contract**: full endpoint specs, request/response shapes
-- [ ] **Confirm chunk strategy**: for freeform docs (dual embedding) vs structured memories (whole or chunk)
+- [ ] **Confirm chunk strategy**: for freeform docs (dual embedding) vs structured patterns (whole or chunk)
 - [ ] **Test awareness hook wording** in real sessions with novelty signal format
 
 During implementation:
@@ -1204,8 +1204,8 @@ During implementation:
 - [ ] **Implement `ensureDaemonRunning()`** as shared JS utility (SessionStart + crash recovery)
 - [ ] **Store embedding model + dimensions** in Chroma metadata at collection creation
 - [ ] **Validate model + dimensions** on every query — fail fast with actionable error
-- [ ] **Handle chunked results** with breadcrumb deduplication in `formatMemoriesForInjection`
-- [ ] **Implement hit count tracking** — increment on every retrieval, expose in `/memory-debug`
+- [ ] **Handle chunked results** with breadcrumb deduplication in `formatContextInjection`
+- [ ] **Implement hit count tracking** — increment on every retrieval, expose in `/context-debug`
 - [ ] **Separate retrieval and dedup thresholds** in config — do not share a value
 - [ ] **Wire PostToolUse hook** to daemon `/notify` for incremental re-embed
 - [ ] **Add dual embedding path** for freeform docs (doc-overview + doc-chunk types)
