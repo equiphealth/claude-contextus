@@ -248,6 +248,9 @@ After Claude responds, if `evaluateUsage` is true:
 - Has full context (prompt + patterns + response) so can judge accurately
 - Structured task (pattern matching + classification) is well within Haiku's capability
 - Over 100 samples: $0.15 vs $1.50 — meaningful savings for background task
+- **Proven reliable**: Haiku consistently follows format and distinguishes rating categories
+
+**Ollama quality caveat**: Smaller open-source models (Llama 3.1 8B, 3.2, Mistral 7B) have shown poor reliability for this task in practice — inconsistent ratings, format compliance issues, difficulty with nuanced categories. Larger quantized models (70B-q4) may perform better but are unproven. If using Ollama for privacy, validate quality against Haiku baseline (run first 20 evals with both, compare ratings).
 
 ### Phase 3: Auto-Disable
 

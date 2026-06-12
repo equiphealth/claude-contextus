@@ -824,9 +824,11 @@ This makes Ollama **acceptable for low-frequency background tasks** across all h
 
 ### Team Hardware Considerations
 
-**High-performance hardware teams** (M4 Pro 48GB, RTX 4090, similar): If your team standardizes on high-end hardware, Ollama shifts from "privacy fallback" to **"strong default choice"** for auxiliary tasks.
+**High-performance hardware teams** (M4 Pro 48GB, RTX 4090, similar): If your team standardizes on high-end hardware, Ollama becomes **viable for calibration** with important quality caveats.
 
-**Benefits**:
+⚠️ **Quality Warning**: Smaller open-source models (Llama 3.1 8B, 3.2, Mistral 7B) have shown poor reliability for semantic quality evaluation tasks — inconsistent ratings, format compliance issues, and difficulty distinguishing nuanced categories. **Haiku remains the recommended default.** Larger quantized models (70B-q4) may perform better but are unproven for this task. If using Ollama, validate results against a Haiku baseline before trusting.
+
+**Benefits** (if quality is acceptable):
 - **Zero marginal cost**: No per-call API charges, unlimited evaluations
 - **Full privacy**: Prompts and responses never leave developer machines
 - **No API dependencies**: Works offline, immune to API outages/throttling
@@ -847,21 +849,20 @@ This makes Ollama **acceptable for low-frequency background tasks** across all h
 - **Background CPU/GPU**: Inference uses compute even if "in background"
 - **Model consistency**: Team must agree on standard model (e.g., `llama3:8b` for all)
 
-**Recommendation for high-end teams**: Configure Ollama as the default evaluation model in project `.claude/settings.json`. Developers can override to Haiku individually if needed (e.g., laptop users without Ollama installed).
+**Recommendation for high-end teams**: Keep Haiku as the default. Developers interested in privacy can opt into Ollama individually and should validate quality by comparing a sample of evaluations against Haiku baseline (e.g., run first 20 evals with both models, check for agreement).
 
 ```json
 {
   "models": {
     "evaluation": {
-      "provider": "ollama",
-      "model": "llama3:8b",
-      "endpoint": "http://localhost:11434"
+      "provider": "anthropic",
+      "model": "claude-haiku-4"
     }
   }
 }
 ```
 
-Individual override in `~/.contextus/config.json`:
+Privacy-focused individual override in `~/.contextus/config.json` (validate quality first):
 ```json
 {
   "models": {
@@ -877,7 +878,7 @@ Individual override in `~/.contextus/config.json`:
 - Haiku: ~$0.45 (3 calibrations @ $0.15 each)
 - Ollama: $0 (electricity: ~$0.02-0.05)
 
-Over 10 developers: **$4.50/quarter vs ~$0.50/quarter** (electricity) = $16/year savings. Not huge, but privacy + offline capability may be more valuable than cost.
+Over 10 developers: **$4.50/quarter vs ~$0.50/quarter** (electricity) = $16/year savings. Not huge, and **only worthwhile if Ollama quality is acceptable** (validate against Haiku baseline first). Privacy + offline capability may justify the quality trade-off for some teams.
 
 ### Configuration UI Example
 
