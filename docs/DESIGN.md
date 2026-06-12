@@ -509,6 +509,353 @@ async function validateProjectDB(projectName: string): Promise<void> {
 
 Target: <200ms p50, <500ms p95
 
+## Multi-Model Architecture for Auxiliary Tasks
+
+While embedding model selection governs corpus indexing, **auxiliary LLM tasks** (evaluation, deduplication, compression, diagnosis) can use different models optimized for cost, privacy, or latency.
+
+**Design Principle**: The user's primary LLM (Sonnet/Opus) handles responses. Auxiliary models handle structured background tasks where cost, privacy, or speed matter more than max capability.
+
+### Configurable Model Selection
+
+```json
+{
+  "models": {
+    "evaluation": {
+      "provider": "anthropic",       // anthropic | openai | ollama | custom
+      "model": "claude-haiku-4",     // Default: Haiku for cost efficiency
+      "endpoint": null               // For ollama: "http://localhost:11434"
+    },
+    "dedup": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4"
+    },
+    "compression": {
+      "provider": "ollama",
+      "model": "llama3",
+      "endpoint": "http://localhost:11434"
+    },
+    "diagnosis": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4"
+    }
+  }
+}
+```
+
+### Use Cases and Model Selection
+
+| Task | Default Model | Why | Cost (100 ops) | When to Override |
+|------|--------------|-----|----------------|------------------|
+| **Calibration Evaluation** | Haiku | Structured classification, full context provided | $0.15 | Use Ollama for privacy (free) or GPT-4o-mini for cost ($0.08) |
+| **Dedup Checking** | Haiku | Semantic comparison beyond vector similarity | $0.10 | Use Ollama if API budget constrained |
+| **Pattern Compression** | Ollama (llama3) | High frequency (every retrieval), summarization task | $0 | Use Haiku if Ollama unavailable or latency critical |
+| **Zero-Hit Triage** | Haiku | One-time classification, low cost | $0.01 | - |
+| **Error Diagnosis** | Haiku | Pattern matching in logs, infrequent | $0.05 | - |
+
+### Task Details
+
+#### 1. Calibration Evaluation (Primary Use Case)
+
+**Frequency**: 100 samples per calibration run (every 3-6 months)
+
+**Task**: Rate injected patterns as critical/helpful/mentioned/unused given full context (prompt, patterns, response)
+
+**Model Selection Criteria**:
+- **Structured output**: Must follow "number:rating" format reliably
+- **Classification**: Simple 4-class problem, not generative
+- **Full context**: Receives 3-5k tokens (prompt + patterns + response)
+- **Not user-facing**: Can tolerate 1-2s latency
+
+**Cost Analysis**:
+```
+Haiku (default):    $0.0015/eval × 100 = $0.15 per calibration
+GPT-4o-mini:        $0.0008/eval × 100 = $0.08 per calibration
+Ollama (llama3):    $0/eval × 100 = $0 (+ inference time: ~3hrs total)
+Sonnet:             $0.015/eval × 100 = $1.50 per calibration (10× cost)
+```
+
+**Privacy Consideration**: Evaluation sees user prompts and responses. For sensitive environments, use Ollama (local inference, zero API calls).
+
+**Implementation**:
+```typescript
+async function evaluatePatternUsage(
+  prompt: string,
+  patterns: Pattern[],
+  response: string,
+  config: ModelConfig
+): Promise<Evaluation[]> {
+  const evalPrompt = buildEvaluationPrompt(prompt, patterns, response);
+  
+  const result = await callModel(config.models.evaluation, evalPrompt);
+  return parseEvaluationResponse(result);
+}
+```
+
+#### 2. Dedup Checking (Capture Phase)
+
+**Frequency**: Low (only during manual proposal approval or auto-capture)
+
+**Task**: Determine if proposed pattern is duplicate/distinct/mergeable vs existing similar pattern
+
+**Prompt**:
+```
+Proposed pattern: <new content>
+Existing similar pattern (0.87 similarity): <existing content>
+
+Are these duplicates or meaningfully different?
+Reply: duplicate | distinct | merge
+
+If merge: suggest combined version (preserve both insights).
+```
+
+**Why LLM over vector similarity alone**: Catches semantic duplicates that vector distance misses (paraphrases, different examples, same underlying rule).
+
+**Cost**: ~$0.001 per check, amortized over ~10-20 proposals/month = $0.01-0.02/month
+
+**Model Choice**: Haiku (default) or Ollama (free, slightly slower)
+
+#### 3. Pattern Compression (Retrieval Phase) — Defer to v2+
+
+**Frequency**: High (every retrieval where patterns >300 tokens)
+
+**Task**: Compress verbose patterns to ~150 tokens preserving core rule, examples, caveats
+
+**Prompt**:
+```
+Original pattern (420 tokens): <full content>
+
+Compress to ~150 tokens preserving:
+- Core rule/concept
+- Key examples
+- Critical caveats
+
+Output compressed version only (no commentary).
+```
+
+**Why**: Enables injecting more patterns within token budget. Target: 60% compression (5 patterns @ 250 tokens avg → 3k total vs 5k uncompressed).
+
+**Risk**: Lossy compression may drop nuance. Measure quality impact during calibration (compare compressed vs full on same sample).
+
+**Cost** (if using Haiku at ~850 retrievals/month):
+```
+850 retrievals × $0.002/compression = $1.70/month
+```
+
+**Latency reality check**: Ollama inference is often 3-5+ seconds per call (model/hardware dependent). At 850 retrievals/month × 4s average = **56 hours cumulative inference time**. Even as background task, this delays context availability and burns CPU constantly.
+
+**Recommendation**: **Defer to v2+, validate need first.** Alternatives that avoid per-retrieval cost:
+1. **Write tighter patterns** — most patterns shouldn't need 400+ tokens
+2. **Cache compressed versions** — compress once at rebuild time, serve compressed version
+3. **Pre-compute summaries** — store both full + compressed in ChromaDB metadata
+
+If on-demand compression is truly needed: use **Haiku** (200ms, predictable) not Ollama (cheap but 10-20× slower for high-frequency task).
+
+**Model Choice** (if implemented): Haiku with aggressive caching, not Ollama
+
+#### 4. Zero-Hit Pattern Triage (Maintenance)
+
+**Frequency**: Rare (quarterly, per stale pattern)
+
+**Task**: Classify why a pattern was never retrieved: stale | niche | obsolete | mislabeled
+
+**Prompt**:
+```
+Pattern: mobile-gestures.md (never retrieved in 90 days)
+Content: <pattern>
+Recent corpus topics: test automation, web testing, CI/CD, BrowserStack
+
+Assessment: stale | niche | obsolete | mislabeled
+
+Explanation: <why>
+If stale: suggest update
+If mislabeled: suggest better filename/category
+```
+
+**Value**: Smarter pruning than blunt "zero hits → delete". Distinguishes niche-but-valid from truly obsolete.
+
+**Cost**: Batch operation (~5-15 patterns) = $0.01 total
+
+**Model Choice**: Haiku (sufficient, cheap)
+
+#### 5. Error Diagnosis (Troubleshooting)
+
+**Frequency**: On-demand (`/context-doctor`)
+
+**Task**: Diagnose errors from logs + recent changes + system state
+
+**Prompt**:
+```
+Error: Query timeout (2400ms)
+Recent changes: Added 40 new docs 3 days ago
+System: ChromaDB file mode, nomic embeddings, 142 chunks
+Logs: <relevant lines>
+
+Likely cause? Reply: diagnosis + fix suggestion
+```
+
+**Value**: Faster debugging, surfaces non-obvious correlations (e.g., rebuild after big doc add caused index bloat)
+
+**Cost**: $0.005 per diagnosis, rare usage
+
+**Model Choice**: Haiku (pattern matching, sufficient for log analysis)
+
+### Model Provider Abstraction
+
+```typescript
+interface ModelProvider {
+  call(prompt: string, options: CallOptions): Promise<string>;
+}
+
+class AnthropicProvider implements ModelProvider {
+  async call(prompt: string, options: CallOptions): Promise<string> {
+    const response = await anthropic.messages.create({
+      model: options.model || 'claude-haiku-4',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: options.maxTokens || 1024
+    });
+    return response.content[0].text;
+  }
+}
+
+class OllamaProvider implements ModelProvider {
+  async call(prompt: string, options: CallOptions): Promise<string> {
+    const response = await fetch(`${options.endpoint}/api/generate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        model: options.model || 'llama3',
+        prompt: prompt,
+        stream: false
+      })
+    });
+    const data = await response.json();
+    return data.response;
+  }
+}
+
+// Factory
+function getProvider(config: ModelConfig): ModelProvider {
+  switch (config.provider) {
+    case 'anthropic': return new AnthropicProvider(config);
+    case 'openai': return new OpenAIProvider(config);
+    case 'ollama': return new OllamaProvider(config);
+    case 'custom': return new CustomProvider(config);
+    default: throw new Error(`Unknown provider: ${config.provider}`);
+  }
+}
+```
+
+### Auto-Detection and Fallback
+
+```typescript
+async function detectAvailableModels(): Promise<ModelOption[]> {
+  const available: ModelOption[] = [];
+  
+  // Always offer Anthropic if API key present
+  if (process.env.ANTHROPIC_API_KEY) {
+    available.push({
+      provider: 'anthropic',
+      model: 'claude-haiku-4',
+      cost: 0.0015,
+      note: 'Fast, high quality, API call'
+    });
+  }
+  
+  // Check for local Ollama
+  try {
+    const response = await fetch('http://localhost:11434/api/tags', {
+      signal: AbortSignal.timeout(2000)
+    });
+    if (response.ok) {
+      const { models } = await response.json();
+      available.push({
+        provider: 'ollama',
+        model: models[0]?.name || 'llama3',
+        cost: 0,
+        note: 'Free, private, slower (~2s per eval)'
+      });
+    }
+  } catch {}
+  
+  // Check for OpenAI
+  if (process.env.OPENAI_API_KEY) {
+    available.push({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      cost: 0.0008,
+      note: 'Cheap, fast, API call'
+    });
+  }
+  
+  return available;
+}
+```
+
+### Cost vs Privacy vs Latency Trade-offs
+
+| Dimension | Anthropic (Haiku) | OpenAI (gpt-4o-mini) | Ollama (llama3) |
+|-----------|-------------------|----------------------|-----------------|
+| **Cost (100 evals)** | $0.15 | $0.08 | $0 (electricity only) |
+| **Privacy** | API call (prompt/response sent) | API call | Fully local |
+| **Latency (per call)** | ~200ms | ~150ms | ~3-5s (hardware dependent) |
+| **Quality** | High | High | Good |
+| **Availability** | Requires API key + internet | Requires API key + internet | Requires Ollama installed |
+| **Best For** | Default (balanced) | Cost-sensitive | Privacy-sensitive, low-frequency |
+
+**Ollama Latency Reality**: Advertised "~500ms" assumes powerful hardware (M3 Max, RTX 4090). On typical hardware (M1, older GPUs), expect 3-5+ seconds per inference. This makes Ollama **acceptable for low-frequency background tasks** (calibration: 100 calls over 2 weeks = 5-8 minutes total) but **impractical for high-frequency tasks** (compression: 850 calls/month = 42-70 hours cumulative).
+
+### Configuration UI Example
+
+When starting calibration:
+
+```
+/context-calibrate --start
+
+Evaluation Model Selection:
+
+Available models (auto-detected):
+  1. claude-haiku-4 (default, recommended)
+     • Cost: $0.15 total (100 evals)
+     • Latency: ~200ms per eval
+     • Privacy: API call
+
+  2. ollama:llama3 (detected at localhost:11434)
+     • Cost: Free
+     • Latency: ~2s per eval (~3hrs total inference time)
+     • Privacy: Fully local (no API calls)
+
+  3. gpt-4o-mini
+     • Cost: $0.08 total
+     • Latency: ~150ms per eval
+     • Privacy: API call
+
+Select model [1]: 2
+
+✓ Using ollama:llama3 for evaluation
+  • Free (local inference, ~0.5 kWh total)
+  • Private (no prompts/responses sent to API)
+  • Expected duration: ~3 hours inference time over 1-2 weeks
+
+Calibration started. Progress: /context-calibrate --status
+```
+
+### Implementation Priorities
+
+**v1** (ship with):
+- Haiku for calibration evaluation (default)
+- Ollama auto-detection + fallback
+- Single provider abstraction
+
+**v2** (add later):
+- Dedup checking with configurable model
+- Pattern compression (optional, measure benefit first)
+- Custom endpoint support for enterprise (e.g., internal LLM API)
+
+**v3** (future):
+- Zero-hit triage
+- Error diagnosis with LLM
+
+**Rationale**: Ship v1 with calibration quality measurement (solves Opus critique). Add other tasks once proven valuable via manual testing.
+
 ## Retrieval Frequency Tracking
 
 Hit count is a first-class metadata field, updated on every retrieval by the daemon.
