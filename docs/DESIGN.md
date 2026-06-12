@@ -550,6 +550,162 @@ _Memory retrieval: 80ms | Injected: 1,240 tokens | Sources: projectMemory(2), us
 
 Showing hit count inline lets you evaluate retrieval quality during calibration — frequently retrieved memories appearing in results is a positive signal; zero-hit memories appearing suggests threshold needs tuning.
 
+## Memory Compression
+
+Retrieved memories are compressed before injection to reduce token usage while preserving actionable content.
+
+### Strategy: Lean-ctx Style Pattern Extraction
+
+Pattern-based reduction, similar to lean-ctx's shell output compression:
+- Keep rules, patterns, actionable guidance
+- Strip verbose examples, redundant explanations, filler
+- Preserve code snippets (they're already concise)
+- Maintain structure (headers, lists)
+
+**Compression is deterministic and fast** — no LLM calls, <5ms overhead per memory.
+
+### Threshold-Based Activation
+
+```json
+{
+  "retrieval": {
+    "compression": {
+      "enabled": true,
+      "mode": "auto",           // "auto" | "always" | "never"
+      "threshold": 300,         // tokens — compress if memory exceeds this
+      "strategy": "pattern"     // "pattern" | "excerpt" | "llm"
+    }
+  }
+}
+```
+
+**Modes:**
+- `auto` (default): Compress only if memory >threshold tokens
+- `always`: Compress all retrieved memories regardless of size
+- `never`: Inject full content (assumes memories are already concise)
+
+**Strategies:**
+- `pattern` (default): Lean-ctx style pattern extraction
+  - For `feedback` type: Keep rules, strip examples
+  - For `reference` type: Keep paths/commands, strip explanations
+  - For `doc-chunk`: Already chunked, light compression only
+  - For `doc-overview`: Excerpt first 200 tokens (low priority type)
+- `excerpt`: Simple truncation to first N tokens + "... (see full: path)"
+- `llm`: Haiku-based summarization (high quality, adds latency — v2 feature)
+
+### Example: Before/After Compression
+
+**Before (450 tokens):**
+```markdown
+### [Framework] Use Logger Helper
+
+**Why:** Console.log doesn't provide structured logging, makes it hard to filter,
+and doesn't integrate with our log aggregation pipeline. Using getLogger() 
+ensures consistent formatting across the codebase and makes debugging easier.
+
+**How to apply:**
+1. Import the logger helper at the top of your file
+2. Create a logger instance with a descriptive name
+3. Use appropriate log levels (debug, info, warn, error)
+
+**Example:**
+```typescript
+import { getLogger } from '~/helpers/logger';
+const logger = getLogger('TestRunner');
+
+// Instead of console.log('Starting test')
+logger.info('Starting test', { testId: test.id });
+
+// Instead of console.error(error)
+logger.error('Test failed', { error: error.message, stack: error.stack });
+```
+
+**Benefits:**
+- Structured JSON output for easy parsing
+- Automatic timestamp and context injection
+- Integration with Datadog log aggregation
+...
+```
+
+**After pattern compression (180 tokens):**
+```markdown
+### [Framework] Use Logger Helper (compressed)
+
+**Rule:** Use `getLogger()` from `~/helpers/logger` instead of `console.log`
+
+**Pattern:**
+```typescript
+import { getLogger } from '~/helpers/logger';
+const logger = getLogger('ComponentName');
+logger.info('message', { context });
+logger.error('message', { error: err.message });
+```
+
+**Why:** Structured logging, Datadog integration, consistent formatting
+
+[Full memory: .claude/memory/framework/feedback_use_logger_helper.md]
+```
+
+**Token savings: 60% reduction** while preserving actionable content.
+
+### Implementation
+
+Compression happens in the daemon after re-ranking, before injection formatting:
+
+```typescript
+function compressMemory(memory: Memory, config: CompressionConfig): string {
+  if (!config.enabled) return memory.document;
+  
+  const tokenCount = estimateTokens(memory.document);
+  
+  if (config.mode === 'never' || 
+      (config.mode === 'auto' && tokenCount < config.threshold)) {
+    return memory.document;  // Skip compression
+  }
+  
+  switch (config.strategy) {
+    case 'pattern':
+      return extractPatterns(memory.document, memory.metadata.type);
+    case 'excerpt':
+      return excerptMemory(memory.document, config.threshold);
+    case 'llm':
+      return await summarizeWithHaiku(memory.document);  // v2
+  }
+}
+
+function extractPatterns(content: string, type: string): string {
+  // Lean-ctx style pattern extraction
+  const patterns = {
+    feedback: [
+      /\*\*Rule:\*\*.+/g,           // Keep rules
+      /\*\*Pattern:\*\*.+/g,        // Keep patterns
+      /```[\s\S]*?```/g,            // Keep code blocks
+      /^(#+\s.+)$/gm                // Keep headers
+    ],
+    reference: [
+      /\*\*Path:\*\*.+/g,
+      /\*\*Command:\*\*.+/g,
+      /```[\s\S]*?```/g
+    ]
+  };
+  
+  // Extract matching patterns, strip verbose prose
+  // Return compressed version with "[Full memory: path]" footer
+}
+```
+
+### Compression Metrics in `/memory-debug`
+
+```
+Compression Stats (last 30 sessions):
+  Memories compressed: 42 / 90 (46.7%)
+  Avg compression ratio: 62% reduction
+  Token savings: 18,340 tokens total
+  Compression overhead: <5ms avg
+```
+
+This helps validate that compression is working and quantifies the token savings.
+
 ## Plugin Structure
 
 ### Option A: Claude Plugin (Recommended)
