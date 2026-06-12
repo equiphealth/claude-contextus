@@ -37,7 +37,7 @@ These decisions are settled. Do not re-litigate without strong evidence.
 1. **Awareness hook**: Opt-out framing (“omit only if trivial”), separate JS script for cross-platform safety.
 1. **Result destructuring**: Correct Chroma parallel array handling (ids/documents/metadatas/distances).
 1. **Proactive capture**: The awareness hook handles proactive context creation. Retrieval quality is what makes captured patterns useful. These are complementary, not competing concerns.
-1. **Capture modes**: `propose` (default, safe) vs `auto` (autonomous). Use `propose` during calibration; switch to `auto` once thresholds are tuned.
+1. **Capture modes**: `propose` (default, safe) vs `auto` (autonomous) vs `silent` (retrieval only). These are a permanent tradeoff, not a ramp — `propose`'s human judgment is the corpus quality gate, and for most users it is the right permanent home. Auto-_injection_ (retrieval) is always on regardless; only auto-_capture_ carries the corpus-quality cost. See "Capture Mode Is a Tradeoff, Not a Graduation."
 1. **Proposal format**: Footer includes slug + novelty signal derived from injected context already present — no extra daemon round trip on UserPromptSubmit.
 1. **Retrieval frequency tracking**: Increment hit counter in Chroma metadata on every retrieval. Used for re-ranking and calibration dashboard.
 1. **Dedup and retrieval thresholds**: Tuned independently. Dedup threshold (creation) and retrieval threshold (query) serve different purposes and should not share a value.
@@ -78,7 +78,7 @@ The system closes two loops:
 
 **Retrieval loop** (UserPromptSubmit → daemon query → top-k injected into context → Claude responds with relevant patterns available)
 
-Retrieval quality directly determines the ROI of everything captured. The `propose` calibration phase is how you develop confidence in the retrieval pipeline before enabling `auto`.
+Retrieval quality directly determines the ROI of everything captured. The `propose` calibration phase is how you develop confidence in the retrieval pipeline — and for most users it is also the permanent capture mode, not just a stepping stone to `auto`. See "Capture Mode Is a Tradeoff, Not a Graduation."
 
 ## Calibration Strategy
 
@@ -90,7 +90,7 @@ The path from install to `auto` mode:
 1. Watch for `[similar: x]` proposals you’d actually want to capture separately → lower dedup threshold.
 1. Watch for `[new]` proposals that are obvious duplicates → raise dedup threshold.
 1. A/B test nomic vs MiniLM on a fixed query set before committing (at ~90 docs, reindex cost is minutes).
-1. Once thresholds feel right, flip to `auto`.
+1. Decide your permanent capture mode. `propose` stays the default for most users — the human judgment is the corpus quality gate. `auto` is available for low-stakes corpora or users who prune by exception. This is a tradeoff, not a finish line — see "Capture Mode Is a Tradeoff, Not a Graduation."
 
 ### Calibrating the Injection Floor (Do This First)
 
@@ -125,6 +125,31 @@ Configurable per project in `.claude/settings.json`:
 - **propose**: Claude appends a footer with the proposed context slug and novelty signal. User acts or ignores.
 - **auto**: Claude writes the context file directly via PostToolUse. No user action required.
 - **silent**: No proposals, no auto-save. Retrieval only.
+
+### Capture Mode Is a Tradeoff, Not a Graduation
+
+It is tempting to read the progression as `propose` → tune → `auto` → sit back, with `auto` as the finish line. **It is not.** `auto` is the most hands-off setting, not the most correct one, and for most users `propose` is the right permanent home.
+
+**Separate two things the word "auto" conflates:**
+
+- **Auto-_injection_** (retrieval, zero friction) — this is the magic, and it is always on. You never approve a retrieval.
+- **Auto-_capture_** (writing new patterns without review) — this is a different decision with a real cost.
+
+Calibration tunes _retrieval_ — the floor, thresholds, re-ranking. Those answer "given a corpus, what do I surface?" They do **not** govern what enters the corpus. A perfectly calibrated retriever over a degrading corpus still degrades: the floor filters _relevance_, not _quality_. A plausible-but-not-durable pattern that is lexically on-topic clears the floor exactly like a real one — the difference between them is semantic, and no threshold can see it.
+
+**What `propose` is quietly doing:** every approve/ignore is a human judgment about durability — "is this a timeless rule or conversational residue?" That judgment is the corpus's quality gate. `auto` removes it. The risk is not volume (dedup handles that); it is slow accretion of near-misses that erode retrieval quality so gradually you never notice the day it started.
+
+**The honest framing:**
+
+| Mode      | Friction         | Cost                                               | Best for                                        |
+| --------- | ---------------- | -------------------------------------------------- | ----------------------------------------------- |
+| `propose` | ~2s per approval | Tiny ongoing attention                             | Corpora you want to stay clean indefinitely     |
+| `auto`    | Zero             | Slow corpus-quality tax; needs review-by-exception | Low-stakes corpora, or users who prune actively |
+| `silent`  | Zero             | No capture at all                                  | Pure retrieval over a frozen corpus             |
+
+The ~2-second friction in `propose` is not a bug to optimize away — it may be the feature that keeps the system working over months. Pick based on how much you trust the corpus to stay clean without a gardener.
+
+**If running `auto`, review by exception.** `auto` does not mean "never look again." The hit-tracking metadata is the safety net: a pattern auto-captured 30 sessions ago with zero hits is almost certainly noise. `/context-calibrate` should periodically surface _"these N auto-captured patterns have never been retrieved — prune?"_ — keeping the corpus honest with a couple of minutes a month. That is still hands-off; it is just not blind.
 
 ### Proposal Footer Format
 
