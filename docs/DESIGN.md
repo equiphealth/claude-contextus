@@ -408,17 +408,29 @@ async function validateProjectDB(projectName: string): Promise<void> {
 
 **Note**: `dimensions` must match the model. 768 for nomic, 384 for MiniLM. Mismatch causes silent failure on first index build — validate this at collection creation time.
 
+**Similarity threshold caveat**: The `0.7` default is model-dependent. Different embedding models have different similarity distributions. Prefer **top-K selection** (retrieve best N results) over hard thresholds. Use threshold as a quality filter *after* ranking, not as a retrieval gate. Calibrate during testing with `/context-debug`.
+
 ### Performance Characteristics
 
-|Provider                |Initial Index (200 files)|Query |Offline|Quality|
-|------------------------|-------------------------|------|-------|-------|
-|Transformers.js (nomic) |~30s                     |~80ms |✅ Yes  |Better |
-|Transformers.js (MiniLM)|~20s                     |~55ms |✅ Yes  |Good   |
-|Ollama                  |~30s                     |~100ms|✅ Yes* |Better |
-|Claude Semantic         |N/A                      |2-5s  |❌ No   |Good   |
-|Keyword                 |N/A                      |10ms  |✅ Yes  |Poor   |
+|Provider                |Initial Index (200 files)|Embedding |Offline|Quality|
+|------------------------|-------------------------|----------|-------|-------|
+|Transformers.js (nomic) |~30s                     |~80ms     |✅ Yes  |Better |
+|Transformers.js (MiniLM)|~20s                     |~55ms     |✅ Yes  |Good   |
+|Ollama                  |~30s                     |~100ms    |✅ Yes* |Better |
+|Claude Semantic         |N/A                      |2-5s      |❌ No   |Good   |
+|Keyword                 |N/A                      |N/A       |✅ Yes  |Poor   |
 
 *Requires Ollama running locally
+
+**End-to-end query latency** (UserPromptSubmit → context injected):
+- Embedding generation: 50-100ms (nomic, warm daemon)
+- Chroma query: 5-20ms
+- Re-ranking: <5ms
+- File reads (if needed): 5-30ms
+- Compression + formatting: 5-15ms
+- **Total: 100-200ms** typical, 300-500ms worst case
+
+Target: <200ms p50, <500ms p95
 
 ## Retrieval Frequency Tracking
 
@@ -1243,12 +1255,34 @@ interface VectorStore {
 
 Low priority — ChromaDB covers the use case. Add when users request specific providers.
 
+### Retrieval Quality Feedback Loop (High Value, v2)
+
+**Concept**: Learn which retrieved patterns are actually useful.
+
+Current footer:
+```
+Context: used: logger-helper, test-artifacts
+Context: propose: new-pattern
+```
+
+Track:
+- Retrieved: 5 patterns
+- Used (mentioned in footer): 2
+- Ignored: 3
+
+Over time, this becomes training data:
+- Patterns with low use-rate get downweighted in re-ranking
+- Patterns frequently retrieved but never used may be too generic
+- Use patterns inform similarity threshold calibration
+
+**Implementation**: Store `use_count` alongside `hit_count` in metadata. Exposure without usage = false positive signal.
+
 ### Other Potential Improvements
 
 - **Hybrid search**: Combine semantic + keyword for exact term matches
-- **Memory versioning**: Track changes over time, rollback support
-- **Memory analytics**: Usage stats beyond hit count (session co-occurrence, etc.)
-- **Multi-language support**: Non-English memories
+- **Context versioning**: Track changes over time, rollback support
+- **Advanced analytics**: Session co-occurrence, topic clustering
+- **Multi-language support**: Non-English patterns
 - **Collaborative filtering**: “Users who found X useful also found Y useful”
 - **Excerpt mode**: Claude requests truncated injection when approaching context limits
 
