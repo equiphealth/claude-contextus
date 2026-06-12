@@ -371,7 +371,7 @@ committed to git
 
 Later sections say:
 
-~/.claude/contextus/data/{project}
+~/.contextus/data/{project}
 
 These are fundamentally different architectures.
 
@@ -525,7 +525,7 @@ Implement:
 
 - chunked embeddings
 - file mode only
-- project DB in ~/.claude/contextus
+- project DB in ~/.contextus
 - top-k retrieval
 
 Do NOT implement:

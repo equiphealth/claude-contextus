@@ -12,9 +12,9 @@ This document captures decisions, corrections, and new directions that emerged f
 **Issue:** The document contains two conflicting ChromaDB storage strategies:
 
 - “Git Integration” section: commit `.claude/context-db/` to the project repo
-- “ChromaDB Location” section: store DBs in `~/.claude/contextus/data/{project}/`
+- “ChromaDB Location” section: store DBs in `~/.contextus/data/{project}/`
 
-**Decision:** The `~/.claude/contextus/data/` model wins. Remove or explicitly mark the git-committed DB section as superseded.
+**Decision:** The `~/.contextus/data/` model wins. Remove or explicitly mark the git-committed DB section as superseded.
 
 **Rationale:** Binary SQLite merge conflicts are a real operational problem. The per-user, per-project DB in user space avoids them entirely, keeps project directories clean, and is the correct separation of derived artifact from source.
 
@@ -153,7 +153,7 @@ fi
 
 **Current design:** User context patterns are embedded into every project DB, triggering cascading rebuilds across all projects when `~/.claude/context/` changes.
 
-**Not blocking for v1** at current scale, but worth revisiting at 10+ projects. The alternative — a shared `~/.claude/contextus/data/user/` with a union query (two Chroma calls instead of one) — eliminates cascading rebuilds at the cost of slightly more query complexity.
+**Not blocking for v1** at current scale, but worth revisiting at 10+ projects. The alternative — a shared `~/.contextus/data/user/` with a union query (two Chroma calls instead of one) — eliminates cascading rebuilds at the cost of slightly more query complexity.
 
 **Defer to v2** unless rebuild latency becomes a real pain point.
 

@@ -50,7 +50,7 @@ Embedding... [████████████████████] 102/
   - Embedded: 102 files
   - Skipped (unchanged): 0
   - Time: 18.4s
-  - Database: ~/.claude/contextus/data/automation/
+  - Database: ~/.contextus/data/automation/
 ```
 
 ## When to Rebuild

@@ -105,7 +105,7 @@ For optimization: /context-calibrate
 
 Requires:
 1. **Filesystem scan**: Count files, filter by mtime for growth
-2. **Usage log**: `~/.claude/contextus/usage.jsonl` with per-prompt entries:
+2. **Usage log**: `~/.contextus/usage.jsonl` with per-prompt entries:
    ```json
    {
      "timestamp": "2026-06-12T14:23:42Z",

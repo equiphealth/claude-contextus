@@ -5,7 +5,7 @@ Dual-format logging for analytics + human readability.
 ## File Structure
 
 ```
-~/.claude/contextus/logs/
+~/.contextus/logs/
 ├── usage.jsonl          # Structured retrieval + capture events
 ├── daemon.log           # Human-readable daemon activity
 ├── errors.jsonl         # Structured error events  
@@ -180,14 +180,14 @@ Automatic rotation via simple script (called by daemon on startup):
 
 ```bash
 # Compress logs older than 30 days
-find ~/.claude/contextus/logs/ -name "*.jsonl" -mtime +30 -exec gzip {} \;
-find ~/.claude/contextus/logs/ -name "*.log" -mtime +30 -exec gzip {} \;
+find ~/.contextus/logs/ -name "*.jsonl" -mtime +30 -exec gzip {} \;
+find ~/.contextus/logs/ -name "*.log" -mtime +30 -exec gzip {} \;
 
 # Move to archive
-mv ~/.claude/contextus/logs/*.gz ~/.claude/contextus/logs/archive/
+mv ~/.contextus/logs/*.gz ~/.contextus/logs/archive/
 
 # Delete archives older than 6 months
-find ~/.claude/contextus/logs/archive/ -name "*.gz" -mtime +180 -delete
+find ~/.contextus/logs/archive/ -name "*.gz" -mtime +180 -delete
 ```
 
 ## Implementation Notes
@@ -234,7 +234,7 @@ function aggregateLast30Days(): UsageStats {
 
 - **No prompt text stored** — only SHA-256 hash (first 8 chars)
 - **No pattern content** — only filenames
-- Logs stored in user home dir (`~/.claude/contextus/logs/`)
+- Logs stored in user home dir (`~/.contextus/logs/`)
 - Not transmitted anywhere (local only)
 
 ## Performance

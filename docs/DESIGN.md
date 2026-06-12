@@ -19,7 +19,7 @@ This document describes how to implement automatic semantic retrieval for the `.
 | **Scope**           | Normative rules/patterns (context)                 | Historical activity log (memory)         |
 | **Retrieval Mode**  | **Automatic** (every prompt, no commands)          | **Manual** (`/mem-search`, `timeline()`) |
 | **User Experience** | Proactive, ambient, zero-query                     | Reactive, explicit search required       |
-| **Chroma Mode**     | File-based (`~/.claude/contextus/data/{project}/`) | Server-based (`localhost:8000`)          |
+| **Chroma Mode**     | File-based (`~/.contextus/data/{project}/`) | Server-based (`localhost:8000`)          |
 | **Version Control** | Source files committed; DB in user space           | Stored in `~/.claude-mem/`               |
 | **Config**          | `CONTEXTUS_RAG_*` env vars                         | `CLAUDE_MEM_*` env vars                  |
 | **Team Sharing**    | Source files yes (git-tracked); DB no              | No (local per-user)                      |
@@ -29,7 +29,7 @@ This document describes how to implement automatic semantic retrieval for the `.
 These decisions are settled. Do not re-litigate without strong evidence.
 
 1. **Default embedding model**: `nomic-ai/nomic-embed-text-v1.5` (768 dim, 138MB). Rationale: technical domain vocabulary (Appium, WebdriverIO, BrowserStack), negligible size overhead at target corpus scale (<200 docs), better semantic understanding for technical prose than MiniLM. Model is user-configurable — see Embedding Providers.
-1. **Storage location**: ChromaDB in `~/.claude/contextus/data/{project}/` (user space), not git-committed.
+1. **Storage location**: ChromaDB in `~/.contextus/data/{project}/` (user space), not git-committed.
 1. **Daemon architecture**: Persistent HTTP daemon instead of stateless hooks (solves model warm-up latency).
 1. **Daemon lifecycle**: Single shared daemon across all projects (one embedding model loaded once), graceful degradation on crash.
 1. **Chunking strategy**: Chunk long docs with breadcrumb injection; freeform human-written docs use dual embedding (whole-doc overview + chunks).
@@ -400,7 +400,7 @@ A shared daemon only works if all projects use the **same embedding model**. Dif
 
 **Strategy:**
 
-1. **Global default model** in `~/.claude/contextus/config.json`, used by all projects
+1. **Global default model** in `~/.contextus/config.json`, used by all projects
 1. **Store model name** in collection metadata on index build
 1. **Validate on every query**: if project DB was built with a different model, return error + instructions to rebuild
 1. **Per-project override** forces a dedicated per-project daemon (Option B lifecycle)
@@ -835,7 +835,7 @@ claude-contextus/
     "enabled": true,
     "chroma": {
       "mode": "file",
-      "path": "~/.claude/contextus/data/{project-name}"
+      "path": "~/.contextus/data/{project-name}"
     },
     "embedding": {
       "provider": "transformers",
@@ -1026,7 +1026,7 @@ app.get('/health', async (req, res) => {
 **Single shared daemon across all projects** — model loaded once, project isolation via request parameter.
 
 ```
-~/.claude/contextus/
+~/.contextus/
   data/
     automation/          # File-based ChromaDB per project
     backend/
@@ -1095,8 +1095,8 @@ PostToolUse hook fires on Write/Edit. If the changed file is in a context or doc
 vim ~/.claude/context/feedback_git.md
 
 # File watcher detects change
-→ Rebuilding automation: ~/.claude/contextus/data/automation/
-→ Rebuilding backend: ~/.claude/contextus/data/backend/
+→ Rebuilding automation: ~/.contextus/data/automation/
+→ Rebuilding backend: ~/.contextus/data/backend/
 → ✓ All projects updated (2-3 sec each)
 ```
 
@@ -1138,7 +1138,7 @@ Config:
 
 ```bash
 # Point vector-inspector at contextus collection for embedding visualization
-vector-inspector ~/.claude/contextus/data/automation contextus
+vector-inspector ~/.contextus/data/automation contextus
 ```
 
 Useful for identifying clusters of near-duplicate memories, visualizing coverage gaps, and validating that the embedding model separates your memory categories well.
@@ -1158,7 +1158,7 @@ Useful for identifying clusters of near-duplicate memories, visualizing coverage
 └── settings.json        # Personal config — gitignored
 
 # In user space (not in git)
-~/.claude/contextus/
+~/.contextus/
   data/
     {project-name}/      # Per-project ChromaDB instance
       chroma.sqlite3
@@ -1189,7 +1189,7 @@ On first session in a project, embeddings build automatically:
 ```bash
 cd automation
 # First prompt triggers auto-build
-→ Building ~/.claude/contextus/data/automation/
+→ Building ~/.contextus/data/automation/
 → Indexing 90 files (70 memories + 20 docs + user memories)
 → ✓ Ready! (~15-20 seconds)
 ```
@@ -1237,7 +1237,7 @@ On first plugin load or `/configure discover`, scan parent directories and sibli
 
 ```bash
 CONTEXTUS_RAG_ENABLED=true
-CONTEXTUS_RAG_CHROMA_PATH=~/.claude/contextus/data      # User space, not project
+CONTEXTUS_RAG_CHROMA_PATH=~/.contextus/data      # User space, not project
 CONTEXTUS_RAG_TOP_K=5
 CONTEXTUS_RAG_SIMILARITY_THRESHOLD=0.7
 CONTEXTUS_RAG_DEDUP_THRESHOLD=0.85

@@ -39,7 +39,7 @@ Think of it as a context system that reads your mind — captures what you learn
 ### 📝 Team-Friendly
 
 - **Markdown-based**: Human-readable, easy to edit, git-trackable
-- **Per-user storage**: Embeddings stored in `~/.claude/contextus/data/` (per-user, per-project)
+- **Per-user storage**: Embeddings stored in `~/.contextus/data/` (per-user, per-project)
 - **Merge-friendly**: No binary merge conflicts — embeddings are derived artifacts
 
 ### 🛠️ Integrated Workflow
@@ -90,7 +90,7 @@ claude plugin install ~/src/claude-contextus
 
 ### 4. Embeddings build automatically
 
-On first use, embeddings are generated and stored in `~/.claude/contextus/data/{project}/` (per-user, not committed to git).
+On first use, embeddings are generated and stored in `~/.contextus/data/{project}/` (per-user, not committed to git).
 
 ### 5. Automatic context injection
 
@@ -184,11 +184,11 @@ Always enable strict mode in `tsconfig.json`:
 
 **Context patterns are version controlled**: Commit `.claude/context/` to your project repository.
 
-**Embeddings are per-user**: Stored in `~/.claude/contextus/data/{project}/`, not committed to git. Each team member maintains their own embedding database, automatically rebuilt when context files change.
+**Embeddings are per-user**: Stored in `~/.contextus/data/{project}/`, not committed to git. Each team member maintains their own embedding database, automatically rebuilt when context files change.
 
 ```bash
 # .gitignore (embeddings should NOT be committed)
-.claude/contextus/
+.contextus/
 
 # .git/hooks/post-merge (optional: auto-rebuild on context file changes)
 if git diff --name-only ORIG_HEAD HEAD | grep -q "\.claude/context/"; then
@@ -222,7 +222,7 @@ Track hit counts → learn what's useful
 
 **Total latency**: 100-200ms typical (p50), 300-500ms worst case (p95)
 
-**Storage**: `~/.claude/contextus/data/{project}/` — per-user, per-project ChromaDB instances. No git conflicts, automatic rebuilds on context file changes.
+**Storage**: `~/.contextus/data/{project}/` — per-user, per-project ChromaDB instances. No git conflicts, automatic rebuilds on context file changes.
 
 ## Development
 
