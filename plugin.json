@@ -76,6 +76,7 @@
     "skills/context-search",
     "skills/context-status",
     "skills/context-doctor",
+    "skills/context-calibrate",
     "skills/audit-context",
     "skills/audit-stale"
   ]

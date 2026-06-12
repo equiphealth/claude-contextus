@@ -1,128 +1,119 @@
-# Context Debug / Dashboard
+# Context Calibrate
 
-Show embedding status, retrieval quality metrics, and calibration guidance.
+Usage-driven optimization suggestions — analyzes your actual retrieval patterns and recommends config changes.
 
 ## When to Use
 
-- After installing contextus (verify setup)
-- During calibration phase (tune thresholds)
-- When retrieval quality feels off
-- Before switching from `propose` to `auto` mode
-- Monthly health check
+- After 1-2 weeks of using contextus (need usage data)
+- When switching from `propose` to `auto` mode
+- When retrieval feels too noisy or too sparse
+- Quarterly optimization check
 
 ## What It Shows
 
-### Embedding Status
+Analyzes usage patterns (last 30 days) and suggests concrete config changes:
 
 ```
-Embedding Model: nomic-ai/nomic-embed-text-v1.5 (768 dim)
-Last Rebuild: 2026-06-11 14:23:42 (2 days ago)
-Database: ~/.claude/contextus/data/automation/ (4.2 MB)
+Calibration Analysis (based on 847 retrievals)
 
-Files Indexed:
-  ✓ projectContext: 68 files
-  ✓ projectDocs: 22 files  
-  ✓ userContext: 14 files
-  Total: 104 files, 142 chunks
+Usage Patterns:
 
-Staleness:
-  ⚠ 3 files modified since last embed (2.9%)
-  → Run /rebuild-embeddings to refresh
+Source Distribution:
+  projectContext: 680 hits (80%) ✓ Primary source
+  projectDocs: 142 hits (17%)
+  userContext: 25 hits (3%) ⚠ Underutilized
+
+Pattern Frequency:
+  High-frequency (10+/week): 8 patterns
+  Medium (3-9/week): 18 patterns  
+  Low (1-2/week): 32 patterns
+  Zero-hit: 14 patterns ⚠
+
+Retrieval Quality:
+  Avg patterns retrieved: 3.2 per query
+  Avg patterns used (in footer): 1.4 per query ⚠ 56% waste
+  Avg latency: 156ms ✓
+
+Recommendations:
+
+1. Reduce topK from 5 to 3
+   Why: You only use 1.4 patterns on average, retrieving 5 is wasteful
+   Impact: -35% tokens injected, -20ms latency
+
+2. Disable userContext source
+   Why: Only 3% of hits, adds query overhead for minimal value
+   Impact: -15ms latency, simpler config
+
+3. Review zero-hit patterns
+   Why: 14 patterns never retrieved in 30 days
+   Action: Run /context-doctor --calibrate for list
+
+4. Switch to 'auto' capture mode
+   Why: 47 [new] proposals in 30 days, you approved 43 (91%)
+   Impact: Save time, fewer manual approvals
+
+5. Consider per-category thresholds (v2)
+   Why: 'testing' patterns have lower avg similarity (0.68) than 'framework' (0.82)
+   Note: Requires custom config, not yet implemented
+
+Apply changes: /configure
 ```
 
-### Retrieval Quality (Last 30 Sessions)
+## Usage-Driven Insights
 
-```
-Hit Rate Analysis:
-  High-frequency patterns (10+ hits): 12 files
-  Medium-frequency (3-9 hits): 28 files
-  Low-frequency (1-2 hits): 41 files
-  Zero-hit patterns: 23 files ⚠
+### Retrieval Efficiency
 
-Top Retrieved Patterns:
-  1. wdio-element-visibility (47 hits)
-  2. logger-helper (34 hits)
-  3. test-data-setup (29 hits)
+Compares `topK` setting vs. actual usage:
+- If you retrieve 5 but only use 2 → reduce topK
+- If similarity scores show sharp dropoff (0.85, 0.84, 0.62, 0.61, 0.58) → threshold is better than topK
 
-Zero-Hit Patterns (candidates for review):
-  - old-api-endpoint.md (last hit: never, created 4 months ago)
-  - temp-workaround.md (last hit: never, created 2 months ago)
-```
+### Source Utilization
 
-### Configuration
+Analyzes which sources are actually valuable:
+- If userContext is <5% of hits → consider disabling
+- If projectDocs is >50% → increase its weight in re-ranking
 
-```
-Config: .claude/settings.json
+### Pattern Health
 
-Retrieval:
-  topK: 5
-  similarityThreshold: 0.7
-  dedupThreshold: 0.85
-  maxTokens: 3000
+- Zero-hit patterns → candidates for deletion
+- High-frequency patterns → ensure they're well-maintained
+- Patterns with high retrieval but low use → too generic, consider splitting
 
-Capture:
-  mode: propose ℹ️ (switch to 'auto' once calibrated)
+### Capture Mode Readiness
 
-Sources:
-  ✓ projectContext: .claude/context
-  ✓ projectDocs: docs  
-  ✓ userContext: ~/.claude/contextus/user-context
-  ✗ userDocs: disabled
-```
+Tracks proposal accuracy:
+- If 90%+ of [new] proposals get approved → ready for `auto`
+- If <70% approval rate → stay in `propose`, tune dedup threshold
 
-### Calibration Guidance
+### Threshold Tuning
 
-```
-Status: 🟡 Calibration recommended
+Analyzes similarity score distribution:
+- If 80% of retrievals are >0.85 → threshold is too low, increase to 0.75
+- If <40% of retrievals → threshold too high, lower to 0.65
 
-Observations:
-  ✓ 104 files indexed, good corpus size
-  ⚠ 23 zero-hit patterns after 30 sessions
-    → Review for relevance or consider deletion
-  ⚠ 3 stale files detected
-    → Run /rebuild-embeddings
-  ℹ️ Running in 'propose' mode
-    → Switch to 'auto' once thresholds feel right
-
-Suggestions:
-  1. Review zero-hit patterns: /context-search "topic" to test retrieval
-  2. If you see [similar: x] proposals that should be separate:
-     → Lower dedupThreshold (currently 0.85)
-  3. If you see [new] proposals that are duplicates:
-     → Raise dedupThreshold
-  4. Run A/B test: try MiniLM model on same queries for comparison
-```
-
-## Usage
+## Flags
 
 ```bash
-/context-debug
+/context-calibrate              # Full analysis with recommendations
+/context-calibrate --apply      # Show config diff for recommended changes
+/context-calibrate --source userContext  # Focus on specific source
 ```
 
-### Flags
+## Implementation
 
-```bash
-/context-debug --zero-hits   # Show only zero-hit patterns with details
-/context-debug --stale       # Show only stale files needing re-embed
-/context-debug --config      # Show configuration only (no metrics)
-```
-
-## Implementation Status
-
-⏳ **Not yet implemented** — requires daemon + ChromaDB integration.
-
-When implemented:
-- Query ChromaDB for hit_count metadata (from retrieval frequency tracking)
-- Compare file mtimes against last_embedded timestamps
-- Read config from `.claude/settings.json`
-- Calculate corpus size from DB stats
+Requires:
+1. **Usage log analysis**: Parse `usage.jsonl` for last 30 days
+2. **Pattern metadata**: Query ChromaDB hit_count, compare to retrieval log
+3. **Config comparison**: Current config vs. optimal based on patterns
+4. **Footer parsing** (optional): Extract "Context: used:" to measure waste
 
 ## Design Notes
 
-This is the primary calibration tool. Users run it to:
-1. Verify embeddings are up to date
-2. Identify patterns that aren't being retrieved (zero-hit)
-3. Decide when to switch from `propose` → `auto` mode
-4. Debug retrieval quality issues
+This is **proactive optimization** based on real usage data. Unlike `/context-doctor` (reactive troubleshooting), calibrate suggests improvements even when things are working.
 
-The "Calibration Guidance" section should be opinionated and actionable, not just raw stats.
+Key insight: Most users won't manually tune config. Calibrate does the analysis and says "based on how you actually use it, here's what to change."
+
+Complements:
+- `/context-status`: Shows impact ("tokens saved")
+- `/context-calibrate`: Shows optimization potential ("could save 35% more")
+- `/context-doctor`: Fixes problems ("why broken?")
