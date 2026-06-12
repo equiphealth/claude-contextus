@@ -6,7 +6,7 @@
     "sourceType": "module",
     "project": "./tsconfig.json"
   },
-  "plugins": ["@typescript-eslint"],
+  "plugins": ["@typescript-eslint", "import"],
   "extends": [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
@@ -43,7 +43,15 @@
       "ignoreTrailingComments": true,
       "ignoreUrls": true
     }],
-    "max-lines": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }]
+    "max-lines": ["warn", { "max": 500, "skipBlankLines": true, "skipComments": true }],
+    "import/order": [
+      "error",
+      {
+        "groups": ["builtin", "external", "internal", "parent", "sibling", "index"],
+        "newlines-between": "never",
+        "alphabetize": { "order": "asc", "caseInsensitive": true }
+      }
+    ]
   },
   "ignorePatterns": ["dist/", "node_modules/", "*.js", "examples/"]
 }
