@@ -209,24 +209,49 @@ Analyzes similarity score distribution:
 2. Set `calibration.targetSamples: 100` (configurable)
 3. Set `calibration.startedAt: <timestamp>`
 
-### Phase 2: PostToolUse Hook (per prompt)
+### Phase 2: Stop Hook (per prompt)
 
-After Claude responds, if `evaluateUsage` is true:
+After Claude's complete response, if `evaluateUsage` is true, the Stop hook fires with full context:
 
-1. **Call Haiku** (not Sonnet) with evaluation prompt — it has full context (original prompt, injected patterns, Claude's response):
+**Stop Hook Payload**:
+```json
+{
+  "event_type": "Stop",
+  "user_message": "How do I handle flaky Appium tests?",
+  "assistant_message": "You can add retry logic with wdio-retry...",
+  "preceding_reasoning": "<thinking>Looking at logger-helper.md context... I'll incorporate that logging guidance...</thinking>",
+  "stop_reason": "end_turn"
+}
+```
+
+**Implementation**:
+
+1. **UserPromptSubmit hook** stores injected patterns in session state:
+   ```json
+   {
+     "injected_patterns": [
+       {"id": "logger-helper", "snippet": "Log retry attempts for debugging..."},
+       {"id": "test-data-setup", "snippet": "Use fixtures to isolate test state..."}
+     ]
+   }
    ```
-   Original prompt: <user's question>
+
+2. **Stop hook** retrieves session state and calls evaluation model (Haiku/Ollama):
+   ```
+   User prompt: {user_message}
    
    Context patterns injected:
-   1. logger-helper.md: <content snippet>
-   2. test-data-setup.md: <content snippet>
-   3. wdio-session-handling.md: <content snippet>
-   4. browserstack-caps.md: <content snippet>
-   5. appium-timeout-config.md: <content snippet>
+   1. logger-helper.md: {snippet}
+   2. test-data-setup.md: {snippet}
+   3. wdio-session-handling.md: {snippet}
+   4. browserstack-caps.md: {snippet}
+   5. appium-timeout-config.md: {snippet}
    
-   Claude's response: <full response>
+   Claude's thinking: {preceding_reasoning}
    
-   Which patterns were used and how helpful? Reply: number:rating
+   Claude's response: {assistant_message}
+   
+   Which patterns did Claude use? Reply: number:rating
    
    Ratings:
    - critical: Essential to the response, answer would be wrong/incomplete without it
@@ -237,20 +262,22 @@ After Claude responds, if `evaluateUsage` is true:
    Reply format: "1:critical, 3:helpful, 4:mentioned, 2:unused, 5:unused"
    ```
 
-2. Parse Haiku's response (e.g., `"1:critical, 2:helpful, 3:unused, 4:unused, 5:mentioned"`)
-3. Map numbers → pattern slugs
-4. Calculate weighted score: `(critical×1.0 + helpful×0.7 + mentioned×0.3) / total`
-5. Log `calibration_eval` event to `usage.jsonl`
-6. Increment sample counter
+3. Parse evaluation response (e.g., `"1:critical, 2:helpful, 3:unused, 4:unused, 5:mentioned"`)
+4. Map numbers → pattern slugs
+5. Calculate weighted score: `(critical×1.0 + helpful×0.7 + mentioned×0.3) / total`
+6. Log `calibration_eval` event to `usage.jsonl`
+7. Increment sample counter
+
+**Why thinking blocks matter**: `preceding_reasoning` shows Claude's internal deliberation about the injected context. If Claude explicitly reasons "I'll use pattern X" or "pattern Y isn't relevant here," the evaluation becomes trivial — just check if Claude mentioned using it. This makes even Ollama models viable since the task becomes "did Claude say they used this?" not "infer whether this was semantically relevant."
 
 **Why Haiku for evaluation:**
 - 10× cheaper than Sonnet ($0.0015 vs $0.015 per eval)
-- Has full context (prompt + patterns + response) so can judge accurately
+- Has full context (prompt + patterns + thinking + response) so can judge accurately
 - Structured task (pattern matching + classification) is well within Haiku's capability
 - Over 100 samples: $0.15 vs $1.50 — meaningful savings for background task
 - **Proven reliable**: Haiku consistently follows format and distinguishes rating categories
 
-**Ollama quality caveat**: Smaller open-source models (Llama 3.1 8B, 3.2, Mistral 7B) have shown poor reliability for this task in practice — inconsistent ratings, format compliance issues, difficulty with nuanced categories. Larger quantized models (70B-q4) may perform better but are unproven. If using Ollama for privacy, validate quality against Haiku baseline (run first 20 evals with both, compare ratings).
+**Ollama quality caveat**: Smaller open-source models (Llama 3.1 8B, 3.2, Mistral 7B) showed poor reliability in semantic search quality evaluation (the vector-inspector use case). However, **the contextus evaluation task is easier** — we're asking "did Claude use this?" with thinking blocks as evidence, not "is this semantically relevant?" without ground truth. With thinking blocks included, even small models may be viable. Validate quality against Haiku baseline (run first 20 evals with both, compare ratings) before trusting.
 
 ### Phase 3: Auto-Disable
 
