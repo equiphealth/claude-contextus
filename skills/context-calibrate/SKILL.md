@@ -1,62 +1,160 @@
 # Context Calibrate
 
-Usage-driven optimization suggestions — analyzes your actual retrieval patterns and recommends config changes.
+Usage-driven optimization through quality evaluation — runs a calibration sample to measure real retrieval quality, then recommends config changes.
 
 ## When to Use
 
-- After 1-2 weeks of using contextus (need usage data)
-- When switching from `propose` to `auto` mode
+- **First time**: After 1-2 weeks of use (start calibration mode)
 - When retrieval feels too noisy or too sparse
-- Quarterly optimization check
+- Every 3-6 months to detect corpus drift
+- When switching embedding models
 
-## What It Shows
+## Two Modes
 
-Analyzes usage patterns (last 30 days) and suggests concrete config changes:
+### 1. Start Calibration (interactive evaluation)
+
+Enables quality evaluation for the next 100 prompts (configurable). Claude will rate each retrieved pattern as `critical`, `helpful`, `mentioned`, or `unused`. Shows live progress and preliminary insights.
+
+### 2. Review Calibration (post-analysis)
+
+After calibration completes, analyzes the collected quality data and recommends concrete config changes.
+
+## Calibration Mode Output
+
+### Starting Calibration
+
+```bash
+/context-calibrate --start
+```
 
 ```
-Calibration Analysis (based on 847 retrievals)
+Contextus Calibration Started
 
-Usage Patterns:
+Target: 100 evaluated retrievals
+Mode: Quality evaluation enabled
+Duration: ~1-2 weeks at typical usage
 
-Source Distribution:
-  projectContext: 680 hits (80%) ✓ Primary source
-  projectDocs: 142 hits (17%)
-  userContext: 25 hits (3%) ⚠ Underutilized
+What's happening:
+  • After each response, Claude rates injected patterns:
+    - critical: Essential to the response
+    - helpful: Improved the answer
+    - mentioned: Referenced but not central
+    - unused: Injected but not relevant
+  
+  • Results logged to ~/.contextus/logs/usage.jsonl
+  • Auto-disables after 100 samples
+  • Zero impact on your workflow (happens in background)
 
-Pattern Frequency:
-  High-frequency (10+/week): 8 patterns
-  Medium (3-9/week): 18 patterns  
-  Low (1-2/week): 32 patterns
-  Zero-hit: 14 patterns ⚠
+Check progress: /context-calibrate --status
+```
 
-Retrieval Quality:
-  Avg patterns retrieved: 3.2 per query
-  Avg patterns used (in footer): 1.4 per query ⚠ 56% waste
-  Avg latency: 156ms ✓
+### During Calibration (status check)
+
+```bash
+/context-calibrate --status
+```
+
+```
+Contextus Calibration Progress
+
+Status: 67/100 samples collected
+Started: 8 days ago
+Estimated completion: 5 days (at current usage rate)
+
+Early Results (preliminary, n=67):
+
+Quality Metrics:
+  🎯 Weighted hit rate: 71% 
+     ├─ Critical: 48 patterns (23%)
+     ├─ Helpful: 62 patterns (30%)  
+     ├─ Mentioned: 37 patterns (18%)
+     └─ Unused: 60 patterns (29%)
+  📊 Injection rate: 81% of prompts received context
+
+Top Performers (weighted >85%):
+  ✓ logger-helper.md: 92% (11 critical, 1 helpful, 1 unused)
+  ✓ test-data-setup.md: 87% (7 critical, 2 helpful, 1 mentioned)
+  ✓ wdio-retry-config.md: 85% (5 critical, 3 helpful, 0 unused)
+
+Low Performers (weighted <20%, retrieved 5+ times):
+  ⚠ generic-best-practices.md: 15% (retrieved 11×, 0 critical, 2 mentioned, 9 unused)
+  ⚠ old-api-reference.md: 8% (retrieved 8×, 0 critical, 1 mentioned, 7 unused)
+
+Preliminary Insights:
+  • 29% unused rate suggests injection floor may be too low
+  • 2 patterns with <20% weighted score are strong prune candidates
+  • 3 patterns with >90% score should get re-ranking boost
+
+Full analysis available after 100 samples: /context-calibrate --report
+```
+
+### After Calibration (final report)
+
+```bash
+/context-calibrate --report
+```
+
+```
+Contextus Calibration Report (100 samples, 14 days)
+
+Quality Summary:
+  🎯 Weighted hit rate: 73% 
+     ├─ Critical: 71 patterns (24%)
+     ├─ Helpful: 89 patterns (30%)  
+     ├─ Mentioned: 56 patterns (19%)
+     └─ Unused: 79 patterns (27%)
+  
+  📊 Injection rate: 79% of prompts received context
+  ⚡ Avg retrieval: 156ms
+  📈 Trend: Quality improved from 71% (early) to 75% (final)
+
+Pattern Analysis:
+
+Top Performers (weighted >80%, n=12):
+  ✓ logger-helper.md: 92% (13 critical, 2 helpful, 1 unused)
+  ✓ test-data-setup.md: 88% (9 critical, 3 helpful, 1 mentioned)
+  ✓ wdio-retry-config.md: 86% (7 critical, 4 helpful, 1 unused)
+  ... (9 more)
+
+Prune Candidates (weighted <20%, retrieved 5+ times, n=3):
+  ⚠ generic-best-practices.md: 14% (retrieved 14×, 0 critical, 2 mentioned, 12 unused)
+  ⚠ old-api-reference.md: 9% (retrieved 11×, 0 critical, 1 mentioned, 10 unused)
+  ⚠ deprecated-wdio-v7.md: 18% (retrieved 6×, 1 helpful, 1 mentioned, 4 unused)
+
+Zero-Hit Patterns (never retrieved, n=9):
+  • mobile-gestures.md
+  • ios-simulator-tips.md
+  ... (7 more)
 
 Recommendations:
 
-1. Reduce topK from 5 to 3
-   Why: You only use 1.4 patterns on average, retrieving 5 is wasteful
-   Impact: -35% tokens injected, -20ms latency
+1. 🎯 Raise injection floor from 0.65 → 0.72
+   Why: 27% unused rate indicates noise getting through
+   Impact: Estimated 22% reduction in unused injections
+   Validation: Replay calibration samples with new floor (0 false negatives)
 
-2. Disable userContext source
-   Why: Only 3% of hits, adds query overhead for minimal value
-   Impact: -15ms latency, simpler config
+2. 🗑️ Remove 3 low-performers
+   Files: generic-best-practices.md, old-api-reference.md, deprecated-wdio-v7.md
+   Why: <20% weighted score across 10+ retrievals each
+   Impact: -45 tokens/injection (avg), cleaner corpus
 
-3. Review zero-hit patterns
-   Why: 14 patterns never retrieved in 30 days
-   Action: Run /context-doctor --calibrate for list
+3. 📈 Boost 12 high-performers in re-ranking
+   Apply +0.05 similarity bonus to patterns with >80% weighted score
+   Impact: Critical patterns surface more reliably
 
-4. Switch to 'auto' capture mode
-   Why: 47 [new] proposals in 30 days, you approved 43 (91%)
-   Impact: Save time, fewer manual approvals
+4. 🔍 Review 9 zero-hit patterns
+   Never retrieved in 100 samples — likely too specific or stale
+   Action: Archive or delete (estimated -65 tokens/rebuild)
 
-5. Consider per-category thresholds (v2)
-   Why: 'testing' patterns have lower avg similarity (0.68) than 'framework' (0.82)
-   Note: Requires custom config, not yet implemented
+5. 📊 Reduce topK from 5 to 4
+   Why: Avg 3.1 patterns used per retrieval (5 is overkill)
+   Impact: -18% tokens injected, -15ms latency
 
-Apply changes: /configure
+Apply changes automatically: /context-calibrate --apply
+Review config diff: /context-calibrate --diff
+Manual review: /configure
+
+Next calibration recommended: 2026-12-12 (6 months)
 ```
 
 ## Usage-Driven Insights
@@ -94,26 +192,99 @@ Analyzes similarity score distribution:
 ## Flags
 
 ```bash
-/context-calibrate              # Full analysis with recommendations
-/context-calibrate --apply      # Show config diff for recommended changes
-/context-calibrate --source userContext  # Focus on specific source
+/context-calibrate              # Show current status (or start if not running)
+/context-calibrate --start      # Begin quality evaluation (100 samples)
+/context-calibrate --status     # Progress and preliminary insights
+/context-calibrate --report     # Final analysis after completion
+/context-calibrate --apply      # Auto-apply recommended config changes
+/context-calibrate --diff       # Show config diff without applying
+/context-calibrate --stop       # Cancel calibration early
 ```
 
 ## Implementation
 
-Requires:
-1. **Usage log analysis**: Parse `usage.jsonl` for last 30 days
-2. **Pattern metadata**: Query ChromaDB hit_count, compare to retrieval log
-3. **Config comparison**: Current config vs. optimal based on patterns
-4. **Footer parsing** (optional): Extract "Context: used:" to measure waste
+### Phase 1: Enable Evaluation
+
+1. Set `calibration.evaluateUsage: true` in config
+2. Set `calibration.targetSamples: 100` (configurable)
+3. Set `calibration.startedAt: <timestamp>`
+
+### Phase 2: PostToolUse Hook (per prompt)
+
+After Claude responds, if `evaluateUsage` is true:
+
+1. **Call Haiku** (not Sonnet) with evaluation prompt — it has full context (original prompt, injected patterns, Claude's response):
+   ```
+   Original prompt: <user's question>
+   
+   Context patterns injected:
+   1. logger-helper.md: <content snippet>
+   2. test-data-setup.md: <content snippet>
+   3. wdio-session-handling.md: <content snippet>
+   4. browserstack-caps.md: <content snippet>
+   5. appium-timeout-config.md: <content snippet>
+   
+   Claude's response: <full response>
+   
+   Which patterns were used and how helpful? Reply: number:rating
+   
+   Ratings:
+   - critical: Essential to the response, answer would be wrong/incomplete without it
+   - helpful: Improved the answer, provided useful detail
+   - mentioned: Referenced but not central
+   - unused: Injected but not relevant
+   
+   Reply format: "1:critical, 3:helpful, 4:mentioned, 2:unused, 5:unused"
+   ```
+
+2. Parse Haiku's response (e.g., `"1:critical, 2:helpful, 3:unused, 4:unused, 5:mentioned"`)
+3. Map numbers → pattern slugs
+4. Calculate weighted score: `(critical×1.0 + helpful×0.7 + mentioned×0.3) / total`
+5. Log `calibration_eval` event to `usage.jsonl`
+6. Increment sample counter
+
+**Why Haiku for evaluation:**
+- 10× cheaper than Sonnet ($0.0015 vs $0.015 per eval)
+- Has full context (prompt + patterns + response) so can judge accurately
+- Structured task (pattern matching + classification) is well within Haiku's capability
+- Over 100 samples: $0.15 vs $1.50 — meaningful savings for background task
+
+### Phase 3: Auto-Disable
+
+After `targetSamples` reached:
+1. Set `calibration.evaluateUsage: false`
+2. Set `calibration.completedAt: <timestamp>`
+3. Log completion event
+4. Notify user: "Calibration complete. Run /context-calibrate --report"
+
+### Phase 4: Analysis
+
+Parse all `calibration_eval` events:
+1. Aggregate weighted scores per pattern
+2. Identify top performers (>80%), low performers (<20%), zero-hit patterns
+3. Simulate threshold changes (replay scores, measure false negatives)
+4. Calculate optimal `topK` (percentile analysis on used patterns)
+5. Generate recommendations with impact estimates
 
 ## Design Notes
 
-This is **proactive optimization** based on real usage data. Unlike `/context-doctor` (reactive troubleshooting), calibrate suggests improvements even when things are working.
+This is **honest quality measurement** via explicit evaluation, not inference from token metrics.
 
-Key insight: Most users won't manually tune config. Calibrate does the analysis and says "based on how you actually use it, here's what to change."
+**Why evaluation mode instead of always-on footer parsing?**
+- More explicit and reliable than parsing `Context: used:` footers
+- Structured ratings (critical/helpful/mentioned/unused) give richer signal than binary
+- Only runs during calibration (no ongoing overhead)
+- 100 samples provides statistical significance without being burdensome
+- Weighted scores enable re-ranking and pruning decisions
 
-Complements:
-- `/context-status`: Shows impact ("tokens saved")
-- `/context-calibrate`: Shows optimization potential ("could save 35% more")
-- `/context-doctor`: Fixes problems ("why broken?")
+**Key insight**: "Tokens saved" measures compression efficiency. Calibration measures retrieval quality. The first is easy to compute but answers the wrong question. The second requires human judgment but tells you whether the system actually works.
+
+**Complements:**
+- `/context-status`: Shows current health and usage trends
+- `/context-calibrate`: Measures quality and suggests optimization
+- `/context-doctor`: Reactive troubleshooting (fixes breakage)
+
+**Calibration cadence:**
+- First time: After 1-2 weeks of use
+- Ongoing: Every 3-6 months (detects corpus drift)
+- After major changes: Embedding model switch, corpus rewrite, threshold adjustment

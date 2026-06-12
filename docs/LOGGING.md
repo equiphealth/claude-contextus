@@ -44,6 +44,8 @@ One line per retrieval or capture event. Machine-readable for analytics.
 - `tokens_saved`: `tokens_full_files - tokens_injected` (compression benefit)
 - `similarity_scores`: Top result scores (for threshold analysis)
 
+**Note**: During normal operation, `tokens_saved` measures compression efficiency (injected vs full-file baseline). The honest quality metric — whether injected context was actually useful — comes from calibration evaluation events, not retrieval events. See "Calibration Evaluation Event" below.
+
 ### No-Results Event
 
 ```json
@@ -76,6 +78,64 @@ One line per retrieval or capture event. Machine-readable for analytics.
   "category": "testing"
 }
 ```
+
+### Calibration Evaluation Event
+
+Logged only when `calibration.evaluateUsage: true`. Records quality ratings for retrieved patterns.
+
+```json
+{
+  "type": "calibration_eval",
+  "timestamp": "2026-06-12T14:23:43.892Z",
+  "project": "automation",
+  "prompt_hash": "a3f5c9d2",
+  "retrieved": ["logger-helper", "test-data-setup", "wdio-session-handling", "browserstack-caps", "appium-timeout"],
+  "evaluations": [
+    {"pattern": "logger-helper", "rating": "critical"},
+    {"pattern": "test-data-setup", "rating": "helpful"},
+    {"pattern": "wdio-session-handling", "rating": "helpful"},
+    {"pattern": "browserstack-caps", "rating": "mentioned"},
+    {"pattern": "appium-timeout", "rating": "unused"}
+  ],
+  "weighted_score": 0.68,
+  "evaluation_latency_ms": 234
+}
+```
+
+**Quality Ratings**:
+- `critical`: Essential to the response, answer would be wrong/incomplete without it (weight: 1.0)
+- `helpful`: Improved the answer, provided useful detail (weight: 0.7)
+- `mentioned`: Referenced but not central to the response (weight: 0.3)
+- `unused`: Injected but not relevant (weight: 0.0)
+
+**Weighted Score Calculation**:
+```
+(critical_count × 1.0 + helpful_count × 0.7 + mentioned_count × 0.3) / total_retrieved
+```
+
+**Implementation**: PostToolUse hook sends a follow-up evaluation query after Claude's response:
+```
+Of the context patterns injected:
+1. logger-helper.md
+2. test-data-setup.md
+3. wdio-session-handling.md
+4. browserstack-caps.md
+5. appium-timeout-config.md
+
+Which were used and how helpful? Reply: number:rating
+
+Ratings:
+- critical: Essential to the response, answer would be wrong/incomplete without it
+- helpful: Improved the answer, provided useful detail
+- mentioned: Referenced but not central to the response
+- unused: Injected but not relevant
+
+Example: "1:critical, 3:helpful, 4:mentioned, 2:unused, 5:unused"
+```
+
+Parse response, map numbers back to pattern slugs, log event.
+
+**Auto-disable**: After `calibration.targetSamples` evaluations (default: 100), flip `evaluateUsage` back to false and generate calibration report.
 
 ### Rebuild Event
 

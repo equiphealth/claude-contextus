@@ -12,22 +12,23 @@ Knowledge Base:
   📄 Documentation: 22 files  
   🔢 Vector entries: 142 chunks
 
-Impact (last 30 days):
-  💾 Tokens saved: ~847k (vs. full file injection)
-  📊 Usage rate: 73% of prompts used context
+Activity (last 30 days):
+  📊 Injection rate: 73% of prompts received context
   ⚡ Avg retrieval: 156ms
+  📈 Growth: +12 context patterns, +5 docs
 
-Growth (last 30 days):
-  + 12 new context patterns
-  + 5 new docs
+Efficiency (last 30 days):
+  💾 Compression: 69% (847k injected vs 2.7M full-file baseline)
+  📉 Trend: -15% tokens/injection (getting leaner)
 
-Recent Activity:
+Recent:
   ✓ Last retrieval: 2 minutes ago (logger-helper.md)
   ✓ Last capture: 4 hours ago (wdio-workaround.md)
   ✓ Last rebuild: 2 days ago
 
-Run /context-status --details for technical details.
-Run /context-calibrate for optimization suggestions.
+Quality: Run /context-calibrate to measure retrieval effectiveness
+Details: /context-status --details
+Optimize: /context-calibrate
 ```
 
 ## Detailed Mode
@@ -47,15 +48,23 @@ Knowledge Base:
   🔢 Vector entries: 142 chunks
   🗄️  Database: ~/.contextus/data/automation/ (4.2 MB)
 
-Impact (last 30 days):
-  💾 Tokens saved: ~847k (vs. full file injection)
-  📊 Usage rate: 73% of prompts used context
-  ⚡ Avg retrieval: 156ms (p50), 278ms (p95)
+Activity (last 30 days):
+  📊 Injection rate: 73% of prompts received context
+     ├─ Injected: 620 prompts
+     ├─ Skipped (below floor): 228 prompts (27%)
+     └─ Total: 848 prompts
+  ⚡ Retrieval latency: 156ms (p50), 278ms (p95)
   🎯 Avg similarity: 0.79
 
-Growth (last 30 days):
-  + 12 new context patterns
-  + 5 new docs
+Efficiency (last 30 days):
+  💾 Compression: 69% (847k injected vs 2.7M full-file baseline)
+  📉 Trend: -15% tokens/injection (getting leaner)
+  📈 Growth: +12 context patterns, +5 docs
+
+Quality:
+  Last calibration: 67 days ago (2026-04-06)
+  ⚠ Recommend re-calibration (target: every 3-6 months)
+  Run: /context-calibrate --start
 
 Embedding:
   Model: nomic-ai/nomic-embed-text-v1.5 (768 dim)
@@ -64,6 +73,7 @@ Embedding:
 
 Configuration:
   topK: 5
+  injectionFloor: 0.65
   similarityThreshold: 0.7
   dedupThreshold: 0.85
   captureMode: propose
@@ -76,8 +86,8 @@ Recent Activity:
   ✓ Last capture: 4 hours ago (wdio-workaround.md)
   ✓ Last rebuild: 2 days ago
 
-For troubleshooting: /context-doctor
-For optimization: /context-calibrate
+Troubleshoot: /context-doctor
+Measure quality: /context-calibrate
 ```
 
 ## What It Shows
@@ -87,10 +97,13 @@ For optimization: /context-calibrate
 - **Documentation**: Files in `docs/` (if enabled)
 - **Vector entries**: Total chunks (after splitting long docs)
 
-### Impact Metrics
-- **Tokens saved**: Compression benefit (injected compressed patterns vs full files)
-- **Usage rate**: % of prompts that retrieved context
+### Activity Metrics
+- **Injection rate**: % of prompts that received context (rest skipped by injection floor)
 - **Avg retrieval**: Typical query latency
+
+### Efficiency Metrics
+- **Compression**: Ratio of injected tokens vs full-file baseline (measures compression pipeline efficiency, not retrieval quality)
+- **Trend**: Change in tokens/injection over time (negative = getting leaner)
 
 ### Growth Tracking
 - New context patterns added (by mtime)

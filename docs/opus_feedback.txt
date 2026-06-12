@@ -1,0 +1,61 @@
+Okay. I've read the actual code (lib/*.ts), the full DESIGN.md, the addendum, the embedding decision, and the plugin/skill surface. Here's my honest read — first-time eyes, no deference to the session history.
+
+The concept: strong, with one unexamined assumption
+
+The claude-mem separation is the best idea here. "Normative knowledge (what you learned) vs. observational history (what you did)" is a real distinction that most memory tools blur, and getting it right upfront is worth a lot. The proactive framing — context appears instead of being searched for — is the right north star.
+
+But there's a load-bearing assumption the whole design rests on and barely interrogates:
+
+That injecting context on every prompt is net-positive.
+
+Irrelevant injected context isn't free — it dilutes attention and can actively degrade answers. The design treats retrieval as always-beneficial and gates only on a similarity threshold... which you've already documented as unreliable and model-dependent. So the one safeguard against "inject noise into every prompt" is the mechanism you've flagged as untrustworthy. There's no discussion anywhere of when not to inject — "fix this typo" gets the same 1-3k token treatment as "how should I structure error handling." That's the biggest risk to the concept and it's the least explored.
+
+"Tokens saved" is a vanity metric
+
+The status dashboard leads with "tokens saved vs. full-file injection." But nobody's baseline is "inject whole files" — it's "inject nothing" or "the old MEMORY.md scan." Measuring against full-file injection is a strawman that makes contextus look good by ow a big number.
+
+The metric that actually matters is the v2 deferred one: did the injected cohe better? (use_count vs hit_count). That's not a nice-to-have — it's the only honest measure of whether this works, and it's pushed to v2 while three dashboards ship around a number that can't go down. I'd promote "used vs. retrieved" to the core loop and let
+the vanity metric go.
+
+The design has outrun validation
+
+This is the thing I'd most want you to hear: ~1,400 lines of design + 10 ski observability dashboards, sitting on ~4 stub files and zero workingretrieval.
+
+- chroma-client.ts / embedder.ts are plain JS in .ts clothing — no types, MiniLM hardcoded despite nomic being "the decision," default path still .claude/context-db (pre-migration).
+- No daemon, no chunking, no re-ranking, no compression, no hit tracking — aist only in prose.
+- You're designing /context-calibrate's optimization suggestions before a single retrieval has happened.
+
+The riskiest hypothesis (above) has the most machinery built on top of it and the least evidence under it. I'd stop designing and run a dead-simple spike: embed the corpus, inject
+top-3 raw, use it for a week, manually judge whether injections helped. Then/re-ranking are worth building. Right now you're optimizing a pipeline whosecore value is unproven.
+
+A likely real bug in the foundation
+
+new ChromaClient({ path: resolve(dbPath) }) — the JS Chroma client's path is a server URL, not an embedded file path. True embedded/file mode is a Python-client thing; the Node client
+has historically needed a running Chroma server. "File-based ChromaDB with npremise that doesn't hold for the JS client. Verify this before anything else — it could invalidate the "no external service" selling point and the entire daemon-owns-Chroma design. (Worth a 30-min spike on its own.)
+
+Tension you haven't resolved: capture volume vs. retrieval quality
+
+The addendum says "more noise is acceptable" for capture (opt-out, propose on ANY new detail). But you also note that session-written patterns often capture conversational fluff, not
+durable rules — and that retrieval quality is what makes the whole thing wor directions: aggressive capture → noisier corpus → worse retrieval. Garbagein, garbage out, on every prompt. The propose/auto modes and dedup threshold are partial answers, but the strategy is "capture lots, sort it out later" and "later" is the deferred
+quality loop.
+
+Credit where it's due
+
+- Daemon + HTTP thin-client pattern: correct, well-reasoned, and the resilieients) is sharp.
+- Threshold → top-K correction, model name in collection metadata + validate on query, dual embedding for freeform docs: these are sophisticated and right. Someone thought hard.
+- Storage in user-space, not git: correct call, and resolving the contradictis good discipline.
+- The docs flag their own weaknesses inline (frequency-bias warning, top-k false-positive note). That's a healthy engineering culture and rarer than it should be.
+
+If I were steering
+
+1. Verify the Chroma JS file-mode assumption. Today. Everything downstream depends on it.
+2. Build the thinnest possible end-to-end spike — embed, top-3, inject raw, hypothesis manually for a week.
+3. Promote "used vs. retrieved" to v1. It's your only real quality signal.
+4. Add an injection gate — some prompts should get nothing. Decide how you'l
+5. Then build the elaborate pipeline, against evidence instead of intuition.
+
+The bones are good and the thinking is unusually careful. The trap you're inhe cathedral is more pleasant than laying one stone and checking it holds
+weight. Lay the stone.
+
+---Context: used: DESIGN.md, DESIGN ADDENDUM.md, DECISION-embedding-footprinoma-js-file-mode-risk, injection-gating-open-question
+[mem-value: injection=Y (design observations were useful framing) search=N r
