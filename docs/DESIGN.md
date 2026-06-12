@@ -801,7 +801,26 @@ async function detectAvailableModels(): Promise<ModelOption[]> {
 | **Availability** | Requires API key + internet | Requires API key + internet | Requires Ollama installed |
 | **Best For** | Default (balanced) | Cost-sensitive | Privacy-sensitive, low-frequency |
 
-**Ollama Latency Reality**: Advertised "~500ms" assumes powerful hardware (M3 Max, RTX 4090). On typical hardware (M1, older GPUs), expect 3-5+ seconds per inference. This makes Ollama **acceptable for low-frequency background tasks** (calibration: 100 calls over 2 weeks = 5-8 minutes total) but **impractical for high-frequency tasks** (compression: 850 calls/month = 42-70 hours cumulative).
+**Ollama Latency Reality** (highly hardware-dependent):
+- **High-end** (RTX 4090, M3 Max/M4): ~500ms-1.5s per eval
+- **Mid-range GPU** (RTX 3060 12GB, M2/M3): ~1-2.5s per eval
+- **Entry-level** (M1, older GPUs): ~3-5s per eval
+- **CPU-only** (no GPU acceleration): ~8-15s per eval
+
+**Model size matters**: Times above assume Llama 3 8B. Larger models (70B) or smaller (3B) scale accordingly.
+
+This makes Ollama **acceptable for low-frequency background tasks** across all hardware:
+- Calibration (100 evals over 2 weeks):
+  - High-end: 1-2.5 minutes total
+  - Mid-range: 2-4 minutes total
+  - Entry-level: 5-8 minutes total
+  - CPU-only: 13-25 minutes total
+
+**Hardware-dependent for high-frequency tasks** (850 calls/month):
+- High-end GPU: 7-21 hours/month (viable for always-on desktop)
+- Mid-range GPU: 14-35 hours/month (tractable on always-on desktop, marginal on laptop)
+- Entry-level: 42-70 hours/month (probably not worth it)
+- CPU-only: 113-213 hours/month (impractical)
 
 ### Configuration UI Example
 
