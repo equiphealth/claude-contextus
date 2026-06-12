@@ -74,7 +74,8 @@
     "skills/add-patterns",
     "skills/rebuild-embeddings",
     "skills/context-search",
-    "skills/context-debug",
+    "skills/context-status",
+    "skills/context-calibrate",
     "skills/audit-context",
     "skills/audit-stale"
   ]
