@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="assets/logo.png" width="140" alt="contextus logo">
+  <img src="assets/wordmark.png" width="400" alt="contextus">
 </p>
-
-<h1 align="center">claude-contextus</h1>
 
 <p align="center">
   <strong>Proactive context for Claude Code</strong><br>
