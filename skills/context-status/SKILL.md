@@ -26,7 +26,58 @@ Recent Activity:
   ✓ Last capture: 4 hours ago (wdio-workaround.md)
   ✓ Last rebuild: 2 days ago
 
-Run /context-calibrate for detailed tuning metrics.
+Run /context-status --details for technical details.
+Run /context-calibrate for optimization suggestions.
+```
+
+## Detailed Mode
+
+```bash
+/context-status --details
+```
+
+Includes technical metrics for power users:
+
+```
+Contextus Status (Detailed)
+
+Knowledge Base:
+  📁 Context patterns: 68 files
+  📄 Documentation: 22 files  
+  🔢 Vector entries: 142 chunks
+  🗄️  Database: ~/.contextus/data/automation/ (4.2 MB)
+
+Impact (last 30 days):
+  💾 Tokens saved: ~847k (vs. full file injection)
+  📊 Usage rate: 73% of prompts used context
+  ⚡ Avg retrieval: 156ms (p50), 278ms (p95)
+  🎯 Avg similarity: 0.79
+
+Growth (last 30 days):
+  + 12 new context patterns
+  + 5 new docs
+
+Embedding:
+  Model: nomic-ai/nomic-embed-text-v1.5 (768 dim)
+  Last rebuild: 2 days ago
+  ⚠ 3 files stale (2.9%) → run /rebuild-embeddings
+
+Configuration:
+  topK: 5
+  similarityThreshold: 0.7
+  dedupThreshold: 0.85
+  captureMode: propose
+
+Recent Errors:
+  ✓ None (last 7 days)
+
+Recent Activity:
+  ✓ Last retrieval: 2 minutes ago (logger-helper.md)
+  ✓ Last capture: 4 hours ago (wdio-workaround.md)
+  ✓ Last rebuild: 2 days ago
+
+For troubleshooting: /context-doctor
+For optimization: /context-calibrate
 ```
 
 ## What It Shows
