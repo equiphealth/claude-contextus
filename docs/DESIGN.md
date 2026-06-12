@@ -82,7 +82,7 @@ Retrieval quality directly determines the ROI of everything captured. The `propo
 
 ## Calibration Strategy
 
-The path from install to `auto` mode:
+The path from install to a tuned, trusted retrieval pipeline:
 
 1. **Calibrate the injection floor first** (see below). Until the floor is set, retrieval will either inject noise or stay silent unpredictably.
 1. Run in `propose` mode. Review footer proposals after each session.
