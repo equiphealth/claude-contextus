@@ -12,17 +12,17 @@ This document describes how to implement automatic semantic retrieval for the `.
 
 **Important**: This is a **separate system** from claude-mem. Both use Chroma but serve different purposes:
 
-| Feature             | claude-contextus (this doc)                        | claude-mem                               |
-| ------------------- | -------------------------------------------------- | ---------------------------------------- |
-| **Purpose**         | Inject curated `.claude/context/` patterns         | Track tool use observations (memory)     |
-| **Source**          | Hand-written markdown files + docs                 | Auto-generated from PostToolUse hook     |
-| **Scope**           | Normative rules/patterns (context)                 | Historical activity log (memory)         |
-| **Retrieval Mode**  | **Automatic** (every prompt, no commands)          | **Manual** (`/mem-search`, `timeline()`) |
-| **User Experience** | Proactive, ambient, zero-query                     | Reactive, explicit search required       |
+| Feature             | claude-contextus (this doc)                 | claude-mem                               |
+| ------------------- | ------------------------------------------- | ---------------------------------------- |
+| **Purpose**         | Inject curated `.claude/context/` patterns  | Track tool use observations (memory)     |
+| **Source**          | Hand-written markdown files + docs          | Auto-generated from PostToolUse hook     |
+| **Scope**           | Normative rules/patterns (context)          | Historical activity log (memory)         |
+| **Retrieval Mode**  | **Automatic** (every prompt, no commands)   | **Manual** (`/mem-search`, `timeline()`) |
+| **User Experience** | Proactive, ambient, zero-query              | Reactive, explicit search required       |
 | **Chroma Mode**     | File-based (`~/.contextus/data/{project}/`) | Server-based (`localhost:8000`)          |
-| **Version Control** | Source files committed; DB in user space           | Stored in `~/.claude-mem/`               |
-| **Config**          | `CONTEXTUS_RAG_*` env vars                         | `CLAUDE_MEM_*` env vars                  |
-| **Team Sharing**    | Source files yes (git-tracked); DB no              | No (local per-user)                      |
+| **Version Control** | Source files committed; DB in user space    | Stored in `~/.claude-mem/`               |
+| **Config**          | `CONTEXTUS_RAG_*` env vars                  | `CLAUDE_MEM_*` env vars                  |
+| **Team Sharing**    | Source files yes (git-tracked); DB no       | No (local per-user)                      |
 
 ## Key Architectural Decisions
 
@@ -41,6 +41,7 @@ These decisions are settled. Do not re-litigate without strong evidence.
 1. **Proposal format**: Footer includes slug + novelty signal derived from injected context already present — no extra daemon round trip on UserPromptSubmit.
 1. **Retrieval frequency tracking**: Increment hit counter in Chroma metadata on every retrieval. Used for re-ranking and calibration dashboard.
 1. **Dedup and retrieval thresholds**: Tuned independently. Dedup threshold (creation) and retrieval threshold (query) serve different purposes and should not share a value.
+1. **Injection floor**: A similarity floor below which nothing is injected. Vector search always returns a top-K with no natural zero; the floor restores the self-gating that keyword search provided implicitly. No-inject is a first-class, logged outcome — not every prompt should receive context. Calibrate empirically per model, do not hardcode.
 
 ## Vision: Proactive Context, Not Search
 
@@ -83,12 +84,25 @@ Retrieval quality directly determines the ROI of everything captured. The `propo
 
 The path from install to `auto` mode:
 
+1. **Calibrate the injection floor first** (see below). Until the floor is set, retrieval will either inject noise or stay silent unpredictably.
 1. Run in `propose` mode. Review footer proposals after each session.
 1. Use `/context-debug` as your calibration dashboard — precision, recall, zero-hit patterns, stale embeddings.
 1. Watch for `[similar: x]` proposals you’d actually want to capture separately → lower dedup threshold.
 1. Watch for `[new]` proposals that are obvious duplicates → raise dedup threshold.
 1. A/B test nomic vs MiniLM on a fixed query set before committing (at ~90 docs, reindex cost is minutes).
 1. Once thresholds feel right, flip to `auto`.
+
+### Calibrating the Injection Floor (Do This First)
+
+The floor is model-dependent and is best derived from real data, not guessed. This is the highest-leverage early task because it gates retrieval quality entirely — and it doubles as the validation that semantic retrieval beats the keyword baseline.
+
+1. Embed the existing corpus.
+1. Replay a set of real historical prompts through retrieval. Log every prompt's top-K similarity scores.
+1. For each result, judge (by hand) whether that injection would have been _wanted_.
+1. Plot wanted/unwanted against similarity. The floor is the score below which "wanted" essentially never occurs.
+1. This same replay is an A/B harness: keyword (baseline) vs. embeddings (new) on identical prompts. If embeddings don't beat keyword on judged usefulness, the floor calibration has told you something important before any daemon code exists.
+
+This requires a real prompt history and a curated corpus — both of which a current keyword-based user already has.
 
 **Note on existing corpus**: Context patterns written during long single-session workflows may be written for a different use case — they may capture conversational context rather than durable patterns. Retrieval frequency tracking will surface these quickly (zero-hit patterns after 20-30 sessions are candidates for rewrite or deletion).
 
@@ -538,6 +552,41 @@ function hitCountBoost(count: number): number {
   return 1 + Math.log10(1 + (count || 0)) * 0.15;
 }
 ```
+
+## Injection Floor: Don't Inject Just to Inject
+
+**The single most important quality control in the system.** Vector similarity always returns a top-K — there is no natural zero. A cosine query for "fix this typo" will still return a "best match" at 0.43 and, without a floor, inject it. Irrelevant injected context is not free: it dilutes attention and can actively degrade the response. **Some prompts should receive nothing.**
+
+This replaces a property we currently get for free from keyword search. Keyword matching is self-gating — no lexical match means no injection, so low-signal prompts naturally receive nothing. Embeddings remove that safety: confident-but-wrong top-K results are the default failure mode. The floor restores the "inject nothing" behavior that keyword retrieval provided implicitly.
+
+```typescript
+const reranked = rerank(matches);
+const keep = reranked.filter((m) => m.similarity >= injectionFloor);
+
+if (keep.length === 0) {
+  logNoInject({ prompt_hash, best_score: reranked[0]?.similarity ?? 0, reason: 'below_floor' });
+  return { continue: true }; // Inject nothing — this is a success, not a failure
+}
+```
+
+**No-inject is a first-class outcome.** It is logged as its own event (`reason: below_floor, best_score: 0.43`), surfaced in `/context-status` ("injected 62% of prompts, skipped 38%"), and used to tune the floor. A high skip rate is not a bug — it is the system correctly declining to add noise.
+
+**The floor is model-dependent — calibrate it empirically, do not hardcode 0.7.** Different embedding models have different similarity distributions. The right way to set it:
+
+1. Embed the existing corpus.
+2. Replay real historical prompts through retrieval, logging every similarity score.
+3. For each, judge whether that injection would have been wanted.
+4. The floor is the score below which "wanted it" essentially never happens.
+
+This is distinct from `similarityThreshold` as a ranking filter. The floor answers "inject anything at all?"; ranking answers "in what order?". They are tuned against different questions and should not share a value.
+
+**Floor vs. ranking vs. dedup thresholds** (three independent knobs):
+
+| Threshold             | Question it answers                | Failure if wrong                           |
+| --------------------- | ---------------------------------- | ------------------------------------------ |
+| `injectionFloor`      | Inject anything at all?            | Too low → noise on every prompt            |
+| `similarityThreshold` | Which of the kept results, ranked? | Too high → relevant patterns dropped       |
+| `dedupThreshold`      | Is this a duplicate at creation?   | Too low → corpus fragments into near-dupes |
 
 ## Staleness Handling
 
