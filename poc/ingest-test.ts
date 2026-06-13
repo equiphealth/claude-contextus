@@ -1,76 +1,90 @@
 /**
- * POC: Markdown ingestion to ChromaDB with Transformers.js embeddings
+ * POC: Markdown ingestion to LanceDB with Transformers.js embeddings
  *
  * Tests the full pipeline:
  * 1. Scan .claude/context/ for markdown files
  * 2. Generate embeddings via Transformers.js (nomic-embed-text-v1.5)
- * 3. Store in ChromaDB collection
+ * 3. Store in LanceDB (file-based, embedded)
  * 4. Query test to verify retrieval
  *
- * Run: npx tsx poc/ingest-test.ts
+ * Run: npx tsx poc/ingest-test.ts [path]
  *
- * Dependencies: npm install chromadb glob @xenova/transformers
+ * Examples:
+ *   npx tsx poc/ingest-test.ts
+ *   npx tsx poc/ingest-test.ts "/path/to/automation/.claude/memory/[star][star]/[star].md"
+ *
+ * Dependencies: pnpm add @lancedb/lancedb glob @xenova/transformers
  */
 
-import { ChromaClient } from 'chromadb';
+import * as lancedb from '@lancedb/lancedb';
 import fs from 'fs';
 import { glob } from 'glob';
-import { pipeline } from '@xenova/transformers';
 
-const EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
-
-// Initialize embedding pipeline once
-let embedder: any = null;
-
-async function initEmbedder() {
-  if (!embedder) {
-    console.log('⏳ Loading embedding model (first run may download ~500MB)...');
-    embedder = await pipeline('feature-extraction', EMBEDDING_MODEL);
-    console.log('✓ Model loaded');
-  }
-  return embedder;
-}
+const OLLAMA_API = 'http://localhost:11434/api/embeddings';
+const EMBEDDING_MODEL = 'nomic-embed-text';
 
 async function generateEmbedding(text: string): Promise<number[]> {
-  const pipe = await initEmbedder();
-  const output = await pipe(text, { pooling: 'mean', normalize: true });
-  return Array.from(output.data);
+  // Truncate if too long (nomic-embed-text has 8192 token context ~2000 chars safe)
+  const MAX_CHARS = 2000;
+  const truncated = text.length > MAX_CHARS ? text.slice(0, MAX_CHARS) : text;
+
+  const response = await fetch(OLLAMA_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      prompt: truncated
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Ollama embedding failed: ${response.statusText} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.embedding;
 }
 
 async function main() {
+  // Allow specifying custom path via CLI arg
+  const customPath = process.argv[2];
+  const scanPath = customPath || '.claude/context/**/*.md';
+
   console.log('🔍 Scanning for markdown files...');
+  console.log(`   Path: ${scanPath}`);
 
   // 1. Scan for markdown files
-  const files = await glob('.claude/context/**/*.md');
+  const files = await glob(scanPath);
   console.log(`✓ Found ${files.length} markdown files`);
 
   if (files.length === 0) {
-    console.log('⚠️  No files found. Create some .md files in .claude/context/ first.');
+    console.log('⚠️  No files found.');
+    console.log('\nUsage:');
+    console.log('  npx tsx poc/ingest-test.ts [path]');
+    console.log('\nExamples:');
+    console.log('  npx tsx poc/ingest-test.ts                              # Default: .claude/context/');
+    console.log('  npx tsx poc/ingest-test.ts ".claude/memory/**/*.md"     # Test on memories');
+    console.log('  npx tsx poc/ingest-test.ts "docs/**/*.md"               # Test on docs');
     return;
   }
 
-  // 2. Initialize ChromaDB
-  console.log('\n📦 Connecting to ChromaDB...');
-  const client = new ChromaClient();
+  // 2. Initialize LanceDB (embedded, file-based)
+  console.log('\n📦 Initializing LanceDB (file-based)...');
+  const db = await lancedb.connect('./.lancedb-poc');
 
-  // Delete collection if exists (fresh start for POC)
-  try {
-    await client.deleteCollection({ name: 'contextus-test' });
-  } catch (e) {
-    // Collection doesn't exist, that's fine
+  // Drop table if exists (fresh start for POC)
+  const tableNames = await db.tableNames();
+  if (tableNames.includes('contextus_test')) {
+    await db.dropTable('contextus_test');
   }
 
-  const collection = await client.createCollection({
-    name: 'contextus-test',
-    metadata: {
-      embedding_model: EMBEDDING_MODEL,
-      embedding_source: 'transformers.js'
-    }
-  });
-  console.log('✓ Created collection "contextus-test"');
+  console.log('✓ Connected to LanceDB');
 
   // 3. Ingest each file
   console.log('\n📝 Ingesting files...');
+  const records = [];
+
   for (const file of files) {
     const content = fs.readFileSync(file, 'utf-8');
 
@@ -82,18 +96,19 @@ async function main() {
 
     const embedding = await generateEmbedding(content);
 
-    await collection.add({
-      ids: [file],
-      embeddings: [embedding],
-      documents: [content],
-      metadatas: [{
-        filename: file,
-        size: content.length,
-        ingested_at: new Date().toISOString()
-      }]
+    records.push({
+      id: file,
+      vector: embedding,
+      document: content,  // Vector Inspector expects 'document' field
+      content: content,   // Keep for compatibility
+      filename: file,
+      size: content.length,
+      ingested_at: new Date().toISOString()
     });
   }
 
+  // Create table with all records
+  const table = await db.createTable('contextus_test', records);
   console.log(`✓ Ingested ${files.length} files`);
 
   // 4. Query test
@@ -108,23 +123,22 @@ async function main() {
     console.log(`\n  Query: "${query}"`);
 
     const queryEmbedding = await generateEmbedding(query);
-    const results = await collection.query({
-      queryEmbeddings: [queryEmbedding],
-      nResults: 3
-    });
+    const results = await table
+      .search(queryEmbedding)
+      .limit(3)
+      .execute();
 
-    if (results.ids[0].length === 0) {
+    if (results.length === 0) {
       console.log('    No results');
       continue;
     }
 
-    // ChromaDB returns results as nested arrays
-    for (let i = 0; i < results.ids[0].length; i++) {
-      const id = results.ids[0][i];
-      const distance = results.distances?.[0][i] ?? 0;
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const distance = result._distance;
       const similarity = 1 - distance; // Convert distance to similarity
 
-      console.log(`    ${i + 1}. ${id} (similarity: ${similarity.toFixed(3)})`);
+      console.log(`    ${i + 1}. ${result.filename} (similarity: ${similarity.toFixed(3)})`);
     }
   }
 

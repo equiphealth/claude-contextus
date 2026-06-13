@@ -8,38 +8,26 @@ _Last updated: June 12, 2026_
 
 ## Overview
 
-This document describes how to implement automatic semantic retrieval for the `.claude/context/` system using vector embeddings and Chroma. This upgrades manual index scanning to automatic, meaning-based context injection.
+This document describes how to implement automatic semantic retrieval for the `.claude/context/` system using vector embeddings and LanceDB. Proactive context injection on every prompt — no search commands required.
 
-**Important**: This is a **separate system** from claude-mem. Both use Chroma but serve different purposes:
-
-| Feature             | claude-contextus (this doc)                 | claude-mem                               |
-| ------------------- | ------------------------------------------- | ---------------------------------------- |
-| **Purpose**         | Inject curated `.claude/context/` patterns  | Track tool use observations (memory)     |
-| **Source**          | Hand-written markdown files + docs          | Auto-generated from PostToolUse hook     |
-| **Scope**           | Normative rules/patterns (context)          | Historical activity log (memory)         |
-| **Retrieval Mode**  | **Automatic** (every prompt, no commands)   | **Manual** (`/mem-search`, `timeline()`) |
-| **User Experience** | Proactive, ambient, zero-query              | Reactive, explicit search required       |
-| **Chroma Mode**     | File-based (`~/.contextus/data/{project}/`) | Server-based (`localhost:8000`)          |
-| **Version Control** | Source files committed; DB in user space    | Stored in `~/.claude-mem/`               |
-| **Config**          | `CONTEXTUS_RAG_*` env vars                  | `CLAUDE_MEM_*` env vars                  |
-| **Team Sharing**    | Source files yes (git-tracked); DB no       | No (local per-user)                      |
+**Relationship with claude-mem**: contextus provides curated patterns (normative), claude-mem provides activity history (observational). They complement each other: claude-mem captures what happened, contextus injects reusable patterns. In v2, contextus can promote frequently-used observations to patterns.
 
 ## Key Architectural Decisions
 
 These decisions are settled. Do not re-litigate without strong evidence.
 
 1. **Default embedding model**: `nomic-ai/nomic-embed-text-v1.5` (768 dim, 138MB). Rationale: technical domain vocabulary (Appium, WebdriverIO, BrowserStack), negligible size overhead at target corpus scale (<200 docs), better semantic understanding for technical prose than MiniLM. Model is user-configurable — see Embedding Providers.
-1. **Storage location**: ChromaDB in `~/.contextus/data/{project}/` (user space), not git-committed.
+1. **Storage location**: LanceDB in `~/.contextus/data/{project}/` (user space), not git-committed.
 1. **Daemon architecture**: Persistent HTTP daemon instead of stateless hooks (solves model warm-up latency).
 1. **Daemon lifecycle**: Single shared daemon across all projects (one embedding model loaded once), graceful degradation on crash.
 1. **Chunking strategy**: Chunk long docs with breadcrumb injection; freeform human-written docs use dual embedding (whole-doc overview + chunks).
 1. **Embedding model validation**: Store model name in collection metadata, validate on query to prevent silent failures. Model change requires full rebuild.
 1. **Awareness hook**: Opt-out framing (“omit only if trivial”), separate JS script for cross-platform safety.
-1. **Result destructuring**: Correct Chroma parallel array handling (ids/documents/metadatas/distances).
+1. **Result destructuring**: Correct LanceDB parallel array handling (ids/documents/metadatas/distances).
 1. **Proactive capture**: The awareness hook handles proactive context creation. Retrieval quality is what makes captured patterns useful. These are complementary, not competing concerns.
 1. **Capture modes**: `propose` (default, safe) vs `auto` (autonomous) vs `silent` (retrieval only). These are a permanent tradeoff, not a ramp — `propose`'s human judgment is the corpus quality gate, and for most users it is the right permanent home. Auto-_injection_ (retrieval) is always on regardless; only auto-_capture_ carries the corpus-quality cost. See "Capture Mode Is a Tradeoff, Not a Graduation."
 1. **Proposal format**: Footer includes slug + novelty signal derived from injected context already present — no extra daemon round trip on UserPromptSubmit.
-1. **Retrieval frequency tracking**: Increment hit counter in Chroma metadata on every retrieval. Used for re-ranking and calibration dashboard.
+1. **Retrieval frequency tracking**: Increment hit counter in LanceDB metadata on every retrieval. Used for re-ranking and calibration dashboard.
 1. **Dedup and retrieval thresholds**: Tuned independently. Dedup threshold (creation) and retrieval threshold (query) serve different purposes and should not share a value.
 1. **Injection floor**: A similarity floor below which nothing is injected. Vector search always returns a top-K with no natural zero; the floor restores the self-gating that keyword search provided implicitly. No-inject is a first-class, logged outcome — not every prompt should receive context. Calibrate empirically per model, do not hardcode.
 
@@ -216,7 +204,7 @@ No confirmation prompt — act or ignore. Passive rejection signal is inferred f
 
 **How it would work:**
 
-1. All context files + docs embedded into Chroma vector database
+1. All context files + docs embedded into LanceDB vector database
 1. On every `UserPromptSubmit`, semantic search for top-k relevant patterns
 1. Inject top 3-5 pattern contents directly into context
 1. Dynamic relevance: only load what’s needed for this specific prompt
@@ -239,14 +227,14 @@ No confirmation prompt — act or ignore. Passive rejection signal is inferred f
 │                                                         │
 │  1. User sends prompt                                   │
 │  2. Query hook: POST to daemon /query                   │
-│  3. Daemon embeds prompt, queries Chroma                │
+│  3. Daemon embeds prompt, queries LanceDB                │
 │  4. Inject top-k context patterns into context           │
 │  5. Awareness hook: propose footer from injected set    │
 │  6. Claude responds with relevant patterns available      │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│                   Chroma Database                       │
+│                   LanceDB Database                       │
 │                                                         │
 │  Collection: "contextus"                                │
 │    - Documents (one per context file / chunk)            │
@@ -275,7 +263,7 @@ Query hook: POST { prompt, project } to localhost:37800/query
    ↓
 Daemon: embed prompt → [0.12, -0.43, 0.87, ...] (768 dim)
    ↓
-Query Chroma (cosine similarity)
+Query LanceDB (cosine similarity)
    ↓
 Re-rank: similarity × sourceWeight × typeBoost × freshnessDecay × hitCountBoost
    ↓
@@ -448,7 +436,7 @@ A shared daemon only works if all projects use the **same embedding model**. Dif
 
 ```typescript
 async function validateProjectDB(projectName: string): Promise<void> {
-  const collection = await chromaClient.getCollection('contextus');
+  const collection = await lanceClient.getCollection('contextus');
   const metadata = await collection.metadata();
 
   if (metadata.embeddingModel !== DAEMON_MODEL) {
@@ -501,7 +489,7 @@ async function validateProjectDB(projectName: string): Promise<void> {
 **End-to-end query latency** (UserPromptSubmit → context injected):
 
 - Embedding generation: 50-100ms (nomic, warm daemon)
-- Chroma query: 5-20ms
+- LanceDB query: 5-20ms
 - Re-ranking: <5ms
 - File reads (if needed): 5-30ms
 - Compression + formatting: 5-15ms
@@ -646,7 +634,7 @@ Output compressed version only (no commentary).
 **Recommendation**: **Defer to v2+, validate need first.** Alternatives that avoid per-retrieval cost:
 1. **Write tighter patterns** — most patterns shouldn't need 400+ tokens
 2. **Cache compressed versions** — compress once at rebuild time, serve compressed version
-3. **Pre-compute summaries** — store both full + compressed in ChromaDB metadata
+3. **Pre-compute summaries** — store both full + compressed in LanceDB metadata
 
 If on-demand compression is truly needed: use **Haiku** (200ms, predictable) not Ollama (cheap but 10-20× slower for high-frequency task).
 
@@ -687,7 +675,7 @@ If mislabeled: suggest better filename/category
 ```
 Error: Query timeout (2400ms)
 Recent changes: Added 40 new docs 3 days ago
-System: ChromaDB file mode, nomic embeddings, 142 chunks
+System: LanceDB file mode, nomic embeddings, 142 chunks
 Logs: <relevant lines>
 
 Likely cause? Reply: diagnosis + fix suggestion
@@ -1422,13 +1410,13 @@ claude-contextus/
 
 ### Phase 1: Embedding Pipeline
 
-**Goal**: Populate Chroma with all context patterns and doc embeddings
+**Goal**: Populate LanceDB with all context patterns and doc embeddings
 
 ```javascript
 async function embedContexts({ rebuild = false, verbose = false }) {
   const EMBEDDING_MODEL = loadConfig().embedding.model; // From config, not hardcoded
 
-  const client = new ChromaClient({ path: resolveDBPath() });
+  const client = new LanceDBClient({ path: resolveDBPath() });
   const collection = await client.getOrCreateCollection('contextus', {
     metadata: {
       embeddingModel: EMBEDDING_MODEL,
@@ -1469,7 +1457,7 @@ async function embedContexts({ rebuild = false, verbose = false }) {
 ```
 SessionStart hook (JS script)
   → ensureDaemonRunning() — polls /health until modelLoaded: true
-  → daemon loads embedding model (nomic default), initializes Chroma client
+  → daemon loads embedding model (nomic default), initializes LanceDB client
 
 UserPromptSubmit hook (thin HTTP client)
   → POST { prompt, project } to localhost:37800/query
@@ -1513,7 +1501,7 @@ app.get('/health', async (req, res) => {
     status: 'ok',
     uptime: process.uptime(),
     modelLoaded: embedder !== null,
-    chromaConnected: await chromaClient.heartbeat(),
+    chromaConnected: await lanceClient.heartbeat(),
     embeddingModel: DAEMON_MODEL,
   });
 });
@@ -1526,7 +1514,7 @@ app.get('/health', async (req, res) => {
 ```
 ~/.contextus/
   data/
-    automation/          # File-based ChromaDB per project
+    automation/          # File-based LanceDB per project
     backend/
   runtime/
     daemon.pid
@@ -1643,7 +1631,7 @@ Useful for identifying clusters of near-duplicate memories, visualizing coverage
 
 ## Storage & Git Integration
 
-### ChromaDB Location
+### LanceDB Location
 
 ```
 # In project (git-tracked)
@@ -1658,7 +1646,7 @@ Useful for identifying clusters of near-duplicate memories, visualizing coverage
 # In user space (not in git)
 ~/.contextus/
   data/
-    {project-name}/      # Per-project ChromaDB instance
+    {project-name}/      # Per-project LanceDB instance
       chroma.sqlite3
       index/
   runtime/
@@ -1729,6 +1717,66 @@ Total: 102 knowledge files indexed
 
 On first plugin load or `/configure discover`, scan parent directories and siblings for `.claude/context/` and prompt to enable.
 
+## Design Principle: Optimize for Recall, Not Precision
+
+**Core insight**: LLMs respond to meaning, not token count. Once semantic content is preserved, further token optimization doesn't reduce output cost.
+
+### The Injection Floor Trade-off
+
+**Over-injection (false positive)**:
+- Input tokens: ✗ slightly higher
+- Output tokens: ✓ unchanged (high-quality models ignore irrelevant context)
+- Quality: ✓ unchanged
+- **Cost**: Input tokens only (cheap)
+
+**Under-injection (false negative)**:
+- Input tokens: ✓ slightly lower  
+- Output tokens: ✗ might increase (model struggles without necessary context)
+- Quality: ✗✗ wrong or incomplete answer
+- **Cost**: Quality failure (expensive in debugging/redo)
+
+### Why This Asymmetry Matters
+
+This cost asymmetry means contextus **prefers false positives over false negatives**:
+- Start with a permissive floor (0.6–0.7)
+- Only raise it if calibration shows patterns are consistently unused
+- The downside risk of over-injection is minimal — just a few extra input tokens that frontier models will ignore
+
+### Model Quality Works in Your Favor
+
+**High-quality models** (Claude, GPT-4):
+- Ignore irrelevant facts
+- Stay on-task
+- Don't inflate output tokens
+- Cost more per token but handle noise gracefully
+
+**Lower-quality models** (7B–13B local):
+- More sensitive to irrelevant facts
+- May produce longer outputs or hallucinate
+- But cost almost nothing to run
+
+This quality spectrum means contextus doesn't require heavy tuning:
+- Expensive models are robust to over-injection
+- Cheap models are sensitive but their inefficiency costs pennies
+
+### Implication for Implementation
+
+**Injection floor defaults**:
+- Start at 0.6 or 0.65 (more permissive than restrictive)
+- Let calibration data show if patterns are unused
+- Only tighten if false positives are proven costly
+
+**Validation focus**:
+- Measure false negatives (missed relevant context) via quality failures
+- Tolerate false positives (extra irrelevant context) unless proven wasteful
+- Trust frontier model quality to filter noise at inference time
+
+**Why this works**: The injection floor controls semantic density, not token count. As long as meaning is preserved, token micro-optimization hits diminishing returns.
+
+See [token_optimization.md](token_optimization.md) for detailed explanation.
+
+---
+
 ## Configuration Reference
 
 ### Environment Variables
@@ -1781,7 +1829,7 @@ During implementation:
 
 - [ ] **Add `/health` endpoint** with `modelLoaded` field — session start hook polls this, not sleep()
 - [ ] **Implement `ensureDaemonRunning()`** as shared JS utility (SessionStart + crash recovery)
-- [ ] **Store embedding model + dimensions** in Chroma metadata at collection creation
+- [ ] **Store embedding model + dimensions** in LanceDB metadata at collection creation
 - [ ] **Validate model + dimensions** on every query — fail fast with actionable error
 - [ ] **Handle chunked results** with breadcrumb deduplication in `formatContextInjection`
 - [ ] **Implement hit count tracking** — increment on every retrieval, expose in `/context-debug`
@@ -1791,7 +1839,7 @@ During implementation:
 
 ## Server Mode (Optional)
 
-For users already running a ChromaDB server:
+For users already running a LanceDB server:
 
 ```json
 {
@@ -1817,10 +1865,10 @@ interface VectorStore {
   delete(id: string): Promise<void>;
   count(): Promise<number>;
 }
-// ChromaStore, PineconeStore, QdrantStore, WeaviateStore, PGVectorStore
+// LanceDBStore, PineconeStore, QdrantStore, WeaviateStore, PGVectorStore
 ```
 
-Low priority — ChromaDB covers the use case. Add when users request specific providers.
+Low priority — LanceDB covers the use case. Add when users request specific providers.
 
 ### Retrieval Quality Feedback Loop (High Value, v2)
 
@@ -1860,7 +1908,7 @@ Over time, this becomes training data:
 
 - [DESIGN ADDENDUM.md](./DESIGN%20ADDENDUM.md) — Addendum decisions incorporated into this doc
 - [Global Memory System](global-memory.md) — Current manual system
-- [claude-mem](~/.claude-mem/settings.json) — Companion Chroma observation tracker
+- [claude-mem](~/.claude-mem/settings.json) — Companion LanceDB observation tracker
 - [vector-inspector](https://github.com/anthonypdawson/vector-inspector) — Embedding visualization and debugging
 
 ---
