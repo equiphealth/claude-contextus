@@ -207,7 +207,7 @@ HTTP request → Daemon (warm model)
     ↓
 Embed prompt (50-100ms)
     ↓
-Query ChromaDB (5-20ms)
+Query LanceDB (5-20ms)
     ↓
 Re-rank by source/type/freshness/hits (<5ms)
     ↓
@@ -222,7 +222,7 @@ Track hit counts → learn what's useful
 
 **Total latency**: 100-200ms typical (p50), 300-500ms worst case (p95)
 
-**Storage**: `~/.contextus/data/{project}/` — per-user, per-project ChromaDB instances. No git conflicts, automatic rebuilds on context file changes.
+**Storage**: `~/.contextus/data/{project}/` — per-user, per-project LanceDB databases. No git conflicts, automatic rebuilds on context file changes.
 
 ## Development
 
@@ -283,4 +283,4 @@ Issues and PRs welcome! This is a vacation project but I'm happy to collaborate.
 
 ---
 
-**Status**: 🚧 In Development (Week 0: Planning & Scaffolding)
+**Status**: 🚧 Design Complete, Implementation Starting (see [IMPLEMENTATION_ESTIMATE.md](docs/IMPLEMENTATION_ESTIMATE.md))
