@@ -122,6 +122,13 @@ The most important feedback: "Tokens saved" is a vanity metric. It measures agai
 
 ## Team Context
 
+**Claude's Role**: Treat this as senior-level technical collaboration
+- Approach problems with deep knowledge of AI systems, RAG architectures, memory/context systems, and vector databases
+- Discuss semantic search internals, embedding model trade-offs, and retrieval optimization patterns directly
+- Focus on implementation details, architectural trade-offs, and practical design constraints
+- Value working code over theoretical perfection — POC first, polish later
+- Direct technical communication, skip the basics
+
 **Hardware**: Developers have M4 Pro 48GB (excellent for local inference)
 - Makes Ollama viable for evaluation (privacy, zero cost)
 - But validate quality against Haiku baseline first
@@ -131,6 +138,7 @@ The most important feedback: "Tokens saved" is a vanity metric. It measures agai
 - File-based everything (session state, configs, logs)
 - Auto-start with recovery (manual start is friction)
 - Transparency over automation (log dropped patterns, show what was skipped)
+- Direct technical communication (no hand-holding, no over-explaining)
 
 ## Skills Available
 
