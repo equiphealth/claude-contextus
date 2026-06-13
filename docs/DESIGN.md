@@ -10,6 +10,8 @@ _Last updated: June 12, 2026_
 
 This document describes how to implement automatic semantic retrieval for the `.claude/context/` system using vector embeddings and LanceDB. Proactive context injection on every prompt — no search commands required.
 
+**Vector DB Strategy**: v1 uses LanceDB in file-based mode only (no server required). References to "server mode" or other vector DBs in this doc are artifacts from the ChromaDB prototype and will be updated. Future versions may support pluggable vector DB backends (ChromaDB server, Pinecone, etc.).
+
 **Relationship with claude-mem**: contextus provides curated patterns (normative), claude-mem provides activity history (observational). They complement each other: claude-mem captures what happened, contextus injects reusable patterns. In v2, contextus can promote frequently-used observations to patterns.
 
 ## Key Architectural Decisions
