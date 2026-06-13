@@ -438,7 +438,7 @@ A shared daemon only works if all projects use the **same embedding model**. Dif
 
 ```typescript
 async function validateProjectDB(projectName: string): Promise<void> {
-  const collection = await lanceClient.getCollection('contextus');
+  const table = await db.openTable('contextus');
   const metadata = await collection.metadata();
 
   if (metadata.embeddingModel !== DAEMON_MODEL) {
@@ -1503,7 +1503,7 @@ app.get('/health', async (req, res) => {
     status: 'ok',
     uptime: process.uptime(),
     modelLoaded: embedder !== null,
-    chromaConnected: await lanceClient.heartbeat(),
+    lancedbConnected: !!db,
     embeddingModel: DAEMON_MODEL,
   });
 });
@@ -1839,14 +1839,14 @@ During implementation:
 - [ ] **Wire PostToolUse hook** to daemon `/notify` for incremental re-embed
 - [ ] **Add dual embedding path** for freeform docs (doc-overview + doc-chunk types)
 
-## Server Mode (Optional)
+## Future: Server Mode (v2+)
 
-For users already running a LanceDB server:
+LanceDB v1 uses file-based mode only. Future versions may support server-based vector DBs:
 
 ```json
 {
-  "chroma": {
-    "mode": "server",
+  "vectorDB": {
+    "type": "lancedb-server",  // or "chromadb", "pinecone", etc.
     "host": "localhost",
     "port": 8000,
     "collection": "{project-name}-contextus"
@@ -1854,7 +1854,7 @@ For users already running a LanceDB server:
 }
 ```
 
-File mode is the default and preferred for most users — no separate server to manage.
+File mode avoids server management overhead and works behind corporate proxies.
 
 ## Future Improvements
 
