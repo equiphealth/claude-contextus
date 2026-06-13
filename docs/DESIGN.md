@@ -1909,8 +1909,10 @@ Over time, this becomes training data:
 
 **Implementation**:
 - PostToolUse hook detects `/mem-search` or `observation_search` calls
-- If observation is retrieved >N times (e.g., 5+), flag as “candidate pattern”
-- Suggest converting high-value observations → `.claude/context/` files
+- If observation is retrieved ≥N times, flag as “candidate pattern”
+  - **Recommended default: N=1** (successful claude-mem searches are rare, signal is already filtered)
+  - Configurable: `claudeMemPromotionThreshold` (1=aggressive, 3-5=conservative)
+- Suggest converting high-value observations → `.claude/context/` files in footer
 - Bonus: claude-mem's `observation_add` could propose contextus pattern creation for “this feels reusable”
 
 **Why this matters**: Without contextus, valuable patterns stay buried in claude-mem's timeline. Without claude-mem, you lose temporal/debugging context. Together, they cover normative (contextus) and observational (claude-mem) knowledge.
