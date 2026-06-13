@@ -20,6 +20,8 @@ Comprehensive documentation for the contextus project. Design decisions, impleme
 
 - **[POC_IMPLEMENTATION.md](POC_IMPLEMENTATION.md)** — Ground-up build sequence from first script to working prototype. Phases, success criteria, and validation steps.
 
+- **[IMPLEMENTATION_ESTIMATE.md](IMPLEMENTATION_ESTIMATE.md)** — Effort estimates (engineer-days + AI wall-clock/token cost), scaffolding reality check, unit testing strategy, and a recommended 7-phase build order with exit criteria.
+
 ---
 
 ## Design Philosophy

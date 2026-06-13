@@ -1897,6 +1897,26 @@ Over time, this becomes training data:
 
 **Implementation**: Store `use_count` alongside `hit_count` in metadata. Exposure without usage = false positive signal.
 
+### claude-mem Integration (v2+, when claude-mem is installed)
+
+**Vision**: contextus + claude-mem as natural counterparts — observations → patterns promotion pipeline.
+
+**What claude-mem provides**: Session activity history, debugging observations, temporal context (what happened when)
+
+**What contextus provides**: Curated, reusable patterns that proactively inject without search
+
+**The missing link**: Automatic promotion from observations to patterns
+
+**Implementation**:
+- PostToolUse hook detects `/mem-search` or `observation_search` calls
+- If observation is retrieved >N times (e.g., 5+), flag as “candidate pattern”
+- Suggest converting high-value observations → `.claude/context/` files
+- Bonus: claude-mem's `observation_add` could propose contextus pattern creation for “this feels reusable”
+
+**Why this matters**: Without contextus, valuable patterns stay buried in claude-mem's timeline. Without claude-mem, you lose temporal/debugging context. Together, they cover normative (contextus) and observational (claude-mem) knowledge.
+
+**Trigger for this feature**: User has both `~/.contextus/` and `~/.claude-mem/` directories → enable integration automatically
+
 ### Other Potential Improvements
 
 - **Hybrid search**: Combine semantic + keyword for exact term matches
