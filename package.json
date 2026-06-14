@@ -12,7 +12,7 @@
     "query": "npm run build && node dist/scripts/query-hook.js",
     "dev": "tsc --watch",
     "test": "npm run build && node --test dist/tests/**/*.test.js",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint lib scripts --ext .ts",
     "format": "prettier --write \"**/*.{ts,json,md}\"",
     "type-check": "tsc --noEmit"
   },

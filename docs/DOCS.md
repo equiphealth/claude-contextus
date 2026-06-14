@@ -30,6 +30,8 @@ Comprehensive documentation for the contextus project. Design decisions, impleme
 
 - **[IMPLEMENTATION_ESTIMATE.md](IMPLEMENTATION_ESTIMATE.md)** — Effort estimates (engineer-days + AI wall-clock/token cost), scaffolding reality check, unit testing strategy, and a recommended 7-phase build order with exit criteria.
 
+- **[BUILD_LOG.md](BUILD_LOG.md)** — Per-phase completion summaries appended at each build stop: what changed, what was verified vs. needs user verification, DESIGN.md divergences, decisions applied, and token/cost. The durable record of what was *actually built*.
+
 ---
 
 ## Design Philosophy
