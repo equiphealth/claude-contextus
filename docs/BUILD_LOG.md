@@ -106,7 +106,11 @@ Per-phase completion summaries for the claude-contextus v1 build. One entry per 
 
 ## Phase 2 — The Spine: Daemon + Query Hook (2026-06-14)
 
-**Exit criteria — status:** ✅ Met on my side, ⏳ awaiting your live-session confirmation. The full spine runs end-to-end **out of process over HTTP** (not just unit-callable): cold-start spawns a detached daemon, warm-loads the model, and a real prompt injects the right context chunk while an off-topic prompt correctly injects nothing. "A real prompt in a live Claude Code session injects relevant context" is the one thing I **cannot** self-verify (no live session) — that's yours to drive (steps below).
+**Exit criteria — status:** ✅ **Met and live-verified.** The full spine runs end-to-end out of process over HTTP, AND a real prompt in a live Claude Code session (loaded via `claude --plugin-dir`) injected the right context — confirmed by the user. The injected instance's *thinking* explicitly referenced the block ("From the system reminders, I have a highly relevant context pattern: implementation/lancedb-api-surface.md (similarity: 0.57)... This is exactly what the user is asking about. Let me read this file.") and ended with `Context: used lancedb-api-surface.md`. This is the DESIGN.md §4.5 validation — the model *noticed, named, and used* the injection, not just received it.
+
+**Live signal — query-shape sensitivity confirmed:** the live sentence-shaped prompt scored **0.57** vs. **0.48** for a similar curl-test query, exactly as the `floor-calibration-signals` memory predicted (real prompts trend above terse fragments). Reassuring for the permissive 0.35 floor default.
+
+**Post-build wiring fix (commit `b74e8f7`):** initial plugin wiring would have silently failed `--plugin-dir` loading — three issues fixed after checking current Claude Code docs: (1) added the manifest at `.claude-plugin/plugin.json` (distinct from root `plugin.json`, which `lib/config.ts` reads); (2) `hooks.json` needs a top-level `"hooks"` wrapper and the env var is `${CLAUDE_PLUGIN_ROOT}`, not `$PLUGIN_PATH`; (3) removed the `PostToolUse → watch-contexts.js` wiring (Phase 3 file, would throw on every edit). `claude plugin validate` passes.
 
 **What changed:**
 | File | Change |
