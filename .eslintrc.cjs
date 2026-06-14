@@ -1,0 +1,28 @@
+/* ESLint 8 legacy config (flat config lands with the v9 bump). */
+module.exports = {
+  root: true,
+  env: { node: true, es2022: true },
+  parser: '@typescript-eslint/parser',
+  parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
+  plugins: ['@typescript-eslint', 'import'],
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+  ],
+  rules: {
+    // Daemon/scripts use console as their primary output channel.
+    'no-console': 'off',
+    'no-unused-vars': 'off',
+    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    // The LanceDB row<->Record casts are deliberate and documented.
+    '@typescript-eslint/no-explicit-any': 'off',
+  },
+  ignorePatterns: ['dist/', 'node_modules/', '*.config.js', '.eslintrc.cjs'],
+  overrides: [
+    {
+      // Salvage prototypes rewritten in later phases — don't gate Phase 0 on them.
+      files: ['lib/embedder.ts', 'lib/context-loader.ts', 'poc/**/*.ts'],
+      rules: { '@typescript-eslint/no-unused-vars': 'off' },
+    },
+  ],
+};

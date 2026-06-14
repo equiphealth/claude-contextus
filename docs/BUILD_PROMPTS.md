@@ -4,7 +4,14 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 
 **How to use:** `/clear`, paste the next prompt, let it run to the stop, verify what it flags, then `/clear` and paste the next. The project `MEMORY.md` and `docs/DOCS.md` indexes auto-load each session, so later prompts stay short.
 
-**Six prompts, four genuine decision points (1, 2, 3, 5).** Commit at each stop.
+**Six prompts, four genuine decision points (1, 2, 3, 5).**
+
+**Standing instruction (every prompt), in order at the stop:**
+1. Append a phase entry to [`docs/BUILD_LOG.md`](BUILD_LOG.md) using that file's entry template (exit-criteria status, what changed, verified vs. needs-user-verification, DESIGN.md divergences, decisions applied, token/cost).
+2. **Commit** all phase changes (including the BUILD_LOG entry) with a descriptive message, then **push**.
+3. Give the same summary in chat.
+
+The doc is the durable record; chat is the convenience copy. Commit/push at every stop so each `/clear` starts from a clean, pushed tree.
 
 ---
 
@@ -18,7 +25,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Also set up linting/formatting: add `.prettierrc` + `.eslintrc.js` configs, wire `pnpm lint` and `pnpm format` scripts in `package.json`. Run both before reporting.
 >
-> Exit criteria: `lib/lance-client.ts` connects, creates a table, round-trips one record; linting/formatting is configured and passing. Then stop and report what you verified vs. what I should check, any DESIGN.md divergence, and input/output token counts with estimated cost (Opus 4.8: $15/M input, $75/M output; estimate cache hit rate).
+> Exit criteria: `lib/lance-client.ts` connects, creates a table, round-trips one record; linting/formatting is configured and passing. Then stop, append a Phase 0 entry to `docs/BUILD_LOG.md` (use the template there) and report the same in chat: what you verified vs. what I should check, any DESIGN.md divergence, and input/output token counts with estimated cost (Opus 4.8: $15/M input, $75/M output; estimate cache hit rate).
 
 ---
 
@@ -34,7 +41,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Before reporting: run `pnpm lint && pnpm format`.
 >
-> Stop and report; I'll spot-check the embedded content is true before it hardens. Include input/output token counts with estimated cost.
+> Stop, append a Phase 1 entry to `docs/BUILD_LOG.md` (template there) and report the same in chat; I'll spot-check the embedded content is true before it hardens. Include input/output token counts with estimated cost.
 
 ---
 
@@ -46,7 +53,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Before reporting: run `pnpm lint && pnpm format`.
 >
-> Exit criteria: a real prompt in a live session injects relevant context. **I will drive a live Claude Code session to verify this — you can't self-verify it**, so when you reach the exit, stop and tell me exactly how to test it (commands, what to look for in the injected block). Flag any daemon spawn/detach issues you hit. Report input/output token counts with estimated cost.
+> Exit criteria: a real prompt in a live session injects relevant context. **I will drive a live Claude Code session to verify this — you can't self-verify it**, so when you reach the exit, append a Phase 2 entry to `docs/BUILD_LOG.md` (template there), then stop and tell me exactly how to test it (commands, what to look for in the injected block). Flag any daemon spawn/detach issues you hit. Report input/output token counts with estimated cost.
 
 ---
 
@@ -61,7 +68,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Before reporting: run `pnpm lint && pnpm format`.
 >
-> Exit criteria: editing a context file re-embeds without a full rebuild; proposals appear in footers; green test suite (<5s, no model load). Then stop and report input/output token counts with estimated cost.
+> Exit criteria: editing a context file re-embeds without a full rebuild; proposals appear in footers; green test suite (<5s, no model load). Then stop, append a Phases 3+4 entry to `docs/BUILD_LOG.md` (template there), and report input/output token counts with estimated cost.
 
 ---
 
@@ -73,7 +80,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Before reporting: run `pnpm lint && pnpm format`.
 >
-> Exit criteria: a calibration run produces a floor recommendation **from my real historical prompts** — so when ready, stop and tell me how to run it; I need to eyeball whether the recommended floor is sane before we adopt it. Report input/output token counts with estimated cost.
+> Exit criteria: a calibration run produces a floor recommendation **from my real historical prompts** — so when ready, append a Phase 5 entry to `docs/BUILD_LOG.md` (template there), then stop and tell me how to run it; I need to eyeball whether the recommended floor is sane before we adopt it. Report input/output token counts with estimated cost.
 
 ---
 
@@ -85,7 +92,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Before reporting: run `pnpm lint && pnpm format`.
 >
-> Exit criteria: kill the daemon mid-session → the next prompt recovers gracefully. Run the migration for real (`/migrate-memory`) once everything's green, then give me a final v1 status: what works, what's deferred to v2, anything that diverged from DESIGN.md along the way, and input/output token counts with estimated cost.
+> Exit criteria: kill the daemon mid-session → the next prompt recovers gracefully. Run the migration for real (`/migrate-memory`) once everything's green, then append a Phase 6 entry to `docs/BUILD_LOG.md` (template there) and give me a final v1 status: what works, what's deferred to v2, anything that diverged from DESIGN.md along the way, and input/output token counts with estimated cost.
 
 ---
 

@@ -45,16 +45,18 @@
         "exclude": ["**/DOCS.md", "**/README.md"]
       }
     },
-    "chroma": {
+    "lancedb": {
       "mode": "file",
       "path": "~/.contextus/data/{project-name}"
     },
     "embedding": {
-      "model": "Xenova/all-MiniLM-L6-v2",
+      "model": "nomic-ai/nomic-embed-text-v1.5",
+      "dimensions": 768,
       "batchSize": 32
     },
     "retrieval": {
       "topK": 5,
+      "_similarityThreshold_note": "UNVALIDATED floor — calibrate against real similarity distribution in Phase 5 before trusting 0.7 (model-dependent).",
       "similarityThreshold": 0.7,
       "maxTokens": 3000,
       "mergeStrategy": "interleaved"
