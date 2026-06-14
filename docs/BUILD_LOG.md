@@ -156,3 +156,19 @@ Per-phase completion summaries for the claude-contextus v1 build. One entry per 
 **Daemon spawn/detach notes (the flagged-risk area):** No zombie issues hit. `detached:true` + `stdio:'ignore'` + `.unref()` cleanly outlives the hook (verified: daemon PID ≠ hook PID, survived hook exit). `EADDRINUSE` guard makes a double-spawn race safe (loser exits 0, no double model load). One thing to watch in your live run: `$PLUGIN_PATH` must resolve to this repo so `scripts/lib/daemon-control.js` finds `node_modules/.bin/tsx` (it resolves relative to its own file, so an installed-plugin path works too; `npx tsx` is the fallback if the local bin is absent).
 
 **Token/cost:** ~165K input (CLAUDE.md + SessionStart + DESIGN.md full read + the lib/config/hook reads replayed each turn), ~30K output (7 new source files + 2 thin hooks + this entry). At Opus 4.8 rates with Claude Code caching (most input is cache reads ~$1.50/M after turn 1), realistic **~$3–5**. Rough, not metered.
+
+### Post-verification refinements (same day, after live verification)
+
+Spine polish prompted by the two live test sessions — still Phase 2 (no new phase). Commits `3181d31`, `e9d4ac3`, `e6ce7b0`.
+
+| Change | File(s) | Why |
+|---|---|---|
+| **Source-tagged injection header** — block now leads `[contextus — retrieved from your project's context patterns…]` | `lib/inject-format.ts` | Live sessions stack ≥4 context injectors (contextus, claude-mem, lean-ctx, the memory-reminder echo hook). Without a source tag a reader can't attribute a block to contextus — a verification instance misread another injector's similarity as contextus's. The tag makes contextus's block unmistakable. Verified live: the 2nd test instance quoted contextus's 2-decimal score off its own block |
+| **Daemon-state transparency** via `systemMessage` (user-facing), never `additionalContext` | `scripts/session-start-hook.js` | User preference: surface what the system did. `systemMessage` renders to the USER in the UI; using `additionalContext` would announce the daemon to Claude every session and pollute the context window contextus exists to keep clean |
+| **Configurable verbosity** — `silent` / `normal` / `verbose` (heartbeat with uptime when a daemon is found) | `scripts/session-start-hook.js`, `scripts/lib/daemon-control.js`, `plugin.json`, `lib/config.ts` | Heartbeat-vs-quiet is a personal call. `config.notifications.verbosity` (deployed default **verbose**; code default `normal`); `CONTEXTUS_VERBOSITY` env override. Hooks read it from `plugin.json` directly (plain JS, no ts import); type + default single-sourced in `config.ts`. All 5 state×level combos verified |
+
+**Live findings folded into memory** (not code): the floor's query-shape instability — the SAME off-topic doc scored **-0.075** (terse) vs **+0.39** (live phrasing), a 0.47 swing — is decisive evidence for top-K/relative-separation gating over an absolute floor in Phase 5. Recorded in the `floor-calibration-signals` memory along with the multi-injector verification hazard.
+
+**Known edge:** `verbosity: silent` suppresses *everything*, including the daemon-failed-to-start message. Deliberate (silent means silent); revisit if failures should always punch through.
+
+**DESIGN.md gap (tracked, not yet closed):** `injectionFloor`, `notifications.verbosity`, and the `systemMessage` transparency channel are new decisions made during the build that DESIGN.md doesn't yet describe. They're documented here, in code comments, and in commits; DESIGN.md proper should absorb them in a docs pass (candidate: alongside the Phase 5 floor calibration write-up, since the floor section is what most needs updating).
