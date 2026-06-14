@@ -28,6 +28,39 @@ const RUNTIME_DIR = path.join(os.homedir(), '.contextus', 'runtime');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
 const DAEMON_TS = path.join(REPO_ROOT, 'daemon', 'server.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
+const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
+
+/** Valid notification verbosity levels (least → most chatty). */
+export const VERBOSITY_LEVELS = ['silent', 'normal', 'verbose'];
+
+/**
+ * Resolve notification verbosity for the hooks. Precedence:
+ *   1. CONTEXTUS_VERBOSITY env (quick testing / per-session override)
+ *   2. plugin.json → config.notifications.verbosity
+ *   3. 'normal' (code default)
+ * Plain JS can't import config.ts, so this reads plugin.json directly — the same
+ * file lib/config.ts reads, just the one field the hooks care about.
+ */
+export function getVerbosity() {
+  const env = process.env.CONTEXTUS_VERBOSITY;
+  if (env && VERBOSITY_LEVELS.includes(env)) return env;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(PLUGIN_JSON, 'utf8'));
+    const v = cfg?.config?.notifications?.verbosity;
+    if (VERBOSITY_LEVELS.includes(v)) return v;
+  } catch {
+    /* fall through to default */
+  }
+  return 'normal';
+}
+
+/** Format a daemon uptime (seconds) as a compact human string: 4h, 12m, 8s. */
+export function formatUptime(seconds) {
+  const s = Math.round(seconds || 0);
+  if (s >= 3600) return `${Math.floor(s / 3600)}h`;
+  if (s >= 60) return `${Math.floor(s / 60)}m`;
+  return `${s}s`;
+}
 
 /** GET /health with a short timeout. Returns the parsed body or null on failure. */
 export async function getHealth(timeoutMs = 1000) {

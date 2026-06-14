@@ -92,10 +92,26 @@ export interface RetrievalConfig {
   mergeStrategy: 'interleaved' | 'prioritize-context' | 'prioritize-docs';
 }
 
+/** SessionStart daemon-state message verbosity (user-facing systemMessage). */
+export type NotificationVerbosity = 'silent' | 'normal' | 'verbose';
+
+export interface NotificationsConfig {
+  /**
+   * silent  — never emit a daemon-state message
+   * normal  — only noteworthy events (fresh spawn, still-warming, failure)
+   * verbose — also a heartbeat with uptime when an existing daemon is found
+   * Overridable per-session via the CONTEXTUS_VERBOSITY env var. The hooks read
+   * this from plugin.json directly (plain JS can't import this module); kept here
+   * so the type + default are single-sourced and available to the daemon.
+   */
+  verbosity: NotificationVerbosity;
+}
+
 export interface ContextusConfig {
   embedding: EmbeddingConfig;
   storage: StorageConfig;
   retrieval: RetrievalConfig;
+  notifications: NotificationsConfig;
 }
 
 /** Hard defaults — embedding locked to Transformers.js + nomic. */
@@ -124,6 +140,9 @@ const DEFAULTS: ContextusConfig = {
     injectionFloor: 0.35, // UNVALIDATED permissive gate — calibrate in Phase 5
     maxTokens: 3000,
     mergeStrategy: 'interleaved',
+  },
+  notifications: {
+    verbosity: 'normal', // code default; deployed plugin.json sets 'verbose'
   },
 };
 
@@ -157,6 +176,7 @@ export function loadConfig(): ContextusConfig {
       }
       if (c.lancedb?.path) merged.storage.path = c.lancedb.path;
       if (c.retrieval) Object.assign(merged.retrieval, c.retrieval);
+      if (c.notifications) Object.assign(merged.notifications, c.notifications);
     } catch {
       /* fall back to defaults on any parse error */
     }
