@@ -13,6 +13,8 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 
 The doc is the durable record; chat is the convenience copy. Commit/push at every stop so each `/clear` starts from a clean, pushed tree.
 
+**Keep paths tidy as you go.** `lib/` is grouped into subdirs (`embedding/`, `storage/`, `retrieval/`, `calibration/`, `capture/`; cross-cutting `config`/`logger`/`types`/`session-state`/`introspect` at lib root). New files go in the subdir that fits — don't drop them flat at `lib/` root and let it re-flatten. If a file genuinely doesn't fit an existing group, flag it rather than defaulting to root.
+
 ---
 
 ## ▶ Prompt 1 — Phase 0: Demolition & Foundation
@@ -96,14 +98,6 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 > Before reporting: run `pnpm lint && pnpm format`.
 >
 > Exit criteria: kill the daemon mid-session → the next prompt recovers gracefully; a fresh project with populated `.claude/context/` but no table auto-embeds in the background (no manual `pnpm run embed`); `/contextus-setup` is idempotent (re-running doesn't duplicate the CLAUDE.md stanza). Run the migration for real (`/migrate-memory`) once everything's green, then append a Phase 6 entry to `docs/BUILD_LOG.md` (template there) and give me a final v1 status: what works, what's deferred to v2, anything that diverged from DESIGN.md along the way, and input/output token counts with estimated cost.
-
----
-
-## Cleanup — lib/ reorganization (standalone, between phases)
-
-Not a numbered phase — a structural tidy the user asked for (`lib-reorg-plan` memory). **Run it in a fresh session**, on a clean tree, as its own commit.
-
-> Tidy the `lib/` directory — it grew to ~23 flat files through Phase 5. Read the `lib-reorg-plan` memory for the full plan, then group the files into subdirs (`embedding/`, `storage/`, `retrieval/`, `calibration/`, `capture/`, with cross-cutting `config`/`logger`/`types` staying at lib root — confirm the grouping with me first). Fix every import path across `daemon/`, `scripts/*.ts`, and `tests/*.ts`. **Leave `scripts/lib/daemon-control.js` and the `.js` hooks alone** — they don't import `lib/`. This is mechanical-only: no logic changes. Gate with `pnpm exec tsc --noEmit && pnpm lint && pnpm test` (all 75 tests must stay green) before committing as a standalone "refactor: group lib/ into subdirs" commit. Don't tangle any feature work into it.
 
 ---
 
