@@ -172,3 +172,52 @@ Spine polish prompted by the two live test sessions — still Phase 2 (no new ph
 **Known edge:** `verbosity: silent` suppresses *everything*, including the daemon-failed-to-start message. Deliberate (silent means silent); revisit if failures should always punch through.
 
 **DESIGN.md gap (tracked, not yet closed):** `injectionFloor`, `notifications.verbosity`, and the `systemMessage` transparency channel are new decisions made during the build that DESIGN.md doesn't yet describe. They're documented here, in code comments, and in commits; DESIGN.md proper should absorb them in a docs pass (candidate: alongside the Phase 5 floor calibration write-up, since the floor section is what most needs updating).
+
+---
+
+## Phases 3 + 4 — Capture, Incremental Updates, Unit Tests + `/migrate-memory` (2026-06-14)
+
+**Exit criteria — status:** ✅ **Met, self-verified** (no live session needed — this batch is deterministic, per the cadence's "3+4 always batch"). Editing a context file re-embeds incrementally without a full rebuild (verified: new→embed, unchanged→skip, edited→re-embed). Proposals appear in the awareness footer, enriched with the daemon's novelty signal. Test suite is green and fast: **51/51 in ~190ms, no model load**.
+
+**What changed:**
+| File | Change |
+|---|---|
+| `scripts/watch-contexts.js` | **New** — PostToolUse hook. **Event-driven, NOT `fs.watch`** (see note below): reads the tool payload, extracts the edited path (`file_path`/`notebook_path`), and if it's a `.md` under `.claude/context/`, POSTs `/notify` for a single-file re-embed. Always `{continue:true}`; daemon-down → background respawn |
+| `scripts/awareness-hook.js` | **New** — UserPromptSubmit capture nudge. Replaces the Phase-2 inline `echo` footer placeholder. Appends a propose/used footer instruction, folding in a **novelty signal** (`GET /novelty`) so Claude is told what contextus already has and only proposes genuinely-new patterns. Honors `contextCapture.mode` (`silent` suppresses) |
+| `lib/novelty.ts` | **New** — bounded (12), per-project, in-memory ring of recently-injected pattern names. `recordInjection()` (called by `/query`) + `noveltyFor()` (read by `/novelty`). Session-scoped soft hint by design — a restart resetting it is fine |
+| `lib/staleness.ts` | **New** — `contentHash()` (sha256, whitespace-insensitive) + `isStale()`. Drives the incremental-embed skip. Pure logic; sidecar I/O stays in lance-client |
+| `lib/dedup.ts` | **New** — cosine near-duplicate folding on the already-computed vectors (no LLM — that's v2 CAE). Greedy keep-first, default threshold 0.95, defensive on missing vectors. Wired into `/query` between rerank and floor |
+| `lib/chunker.ts` | **New** — header-split + token-fallback-with-overlap markdown chunker. **Tested but NOT pipeline-wired** (v1 stays whole-doc embed); exists so v2 can turn on chunking without re-deriving boundary rules |
+| `lib/memory-migrate.ts` | **New** — pure migration mapping (`planFile`/`planMigration`): slug→prefix rename, type inference (frontmatter→filename-prefix→`reference` default), tag preservation (never fabricated), folder-per-type, target nested-metadata frontmatter. Forces filename-head == type so the prefix↔type gate + typeBoost fire |
+| `lib/lance-client.ts` | Added `content_hash` column to `ContextRow`; **`incrementHits()`** (single SQL `update` with `id IN (...)` + `valuesSql: hit_count + 1`, the doc's recommended path over per-row); **`getContentHashes()`** (id→hash map for staleness) |
+| `lib/embed-file.ts` | `/notify` path now skips unchanged content (staleness gate) and stamps `content_hash`; `reason:'unchanged'` is a non-error skip |
+| `daemon/server.ts` | `/query` pipeline now `rerank → dedupe → floor → format`; after a successful inject, **best-effort `incrementHits()`** (off the response path) + `recordInjection()`. New **`GET /novelty?project=`** endpoint |
+| `scripts/embed-contexts.ts` | Full-rebuild rows now carry `content_hash` (so incremental rows match full-rebuild rows) |
+| `scripts/migrate-memory.ts` | **New** — orchestration + safety: **dry-run by default**, **idempotent** (skips existing targets), **verify-before-embed** (never auto-embeds; prints `pnpm run embed` for you to run after review), optional `--repoint` for plugin.json |
+| `skills/migrate-memory/SKILL.md` | **New** — `/migrate-memory` skill doc; registered in `plugin.json` skills |
+| `hooks/hooks.json` | Added `PostToolUse` (`Write\|Edit\|MultiEdit\|NotebookEdit` → watch-contexts.js, 8s); swapped the inline-echo UserPromptSubmit footer for `awareness-hook.js` |
+| `tests/*.test.ts` | **New** — 51 pure-logic tests across reranker, floor, formatter, staleness, chunker, dedup, novelty, memory-migrate |
+| `package.json` | `test` → `node --import tsx --test tests/*.test.ts` (runs TS directly, no `dist/` build); added `test:types` (`tsc --noEmit`) and `migrate-memory` scripts |
+
+**Verified (ran, not assumed):**
+- `pnpm test` → **51 pass / 0 fail, ~190ms** (no model load, well under the <5s target)
+- `pnpm exec tsc --noEmit` → clean; `pnpm lint` → exit 0; `pnpm format` → clean
+- **Incremental re-embed lifecycle** (live, real daemon + real corpus): new file → `embedded:true`; immediate re-notify → `embedded:false, reason:unchanged`; after appending content → `embedded:true` again
+- **Hit-count tracking** (live): two on-topic `/query` calls left `lancedb-api-surface.md` at `hit_count=2`, `last_hit` set; the two untouched rows stayed at 0 — confirmed by querying the table directly
+- **`/novelty`** (live): after a query, `GET /novelty?project=claude-contextus` → `{recent:["implementation/lancedb-api-surface.md"]}`
+- **`content_hash`** populated on all 3 rows after `pnpm run embed`
+- **`/migrate-memory` dry-run** (live): mapped all 13 memory files to correct prefix/folder targets, preserved tags (5 on floor-calibration, 3 on lancedb-connect), **wrote nothing** — `.claude/context/` tree byte-identical before/after. Did **not** run `--apply` (per the prompt — build + test only, not on real data yet)
+
+**Needs user verification:** Nothing blocking — this batch is deterministic and self-verifies. Optional when convenient: drive a live session and confirm the **awareness footer + novelty hint** read sensibly in practice, and that editing a context file mid-session triggers the PostToolUse re-embed (the hook contract is verified; the in-session UX is yours to feel out).
+
+**`fs.watch` note (your flag, addressed):** the Phase-3 watcher deliberately does **not** use `fs.watch` — it's hook-driven (PostToolUse → `/notify`), precisely because `fs.watch` is unreliable cross-platform (missed events on some network/FUSE mounts, double-fire on others). The one `fs.watch` in the repo is `daemon/eval-worker.js`, which is **Phase 5's** territory (Haiku calibration) and not wired yet — flagged here to replace it with a polling or queue-drain loop when Phase 5 wires the eval worker.
+
+**DESIGN.md divergences:**
+1. **Dedup runs in v1's hot path** (rerank → **dedupe** → floor). DESIGN.md lists LLM-based dedup as v2; this is the *cheap* cosine version on already-computed vectors (no model call), so it's a v1-appropriate subset, not the deferred v2 work. Threshold 0.95 is conservative — only genuine restatements fold.
+2. **`content_hash` is a new table column** not in DESIGN.md's schema sketch — required for the staleness skip. Additive; old rows without it read as stale (re-embed once), which is correct.
+3. **Tests run TS directly via `node --import tsx`** (no `dist/` build step), matching the Phase 0/1 tsx-everywhere choice. DESIGN.md's `test` ran compiled JS from `dist/`.
+4. **`/novelty` endpoint** is new (DESIGN.md lists `/health`, `/query`, `/notify`). Cheap in-memory read serving the awareness hook's novelty signal.
+
+**Decisions applied:** event-driven watcher over `fs.watch` (your note + cross-platform reliability); novelty signal sourced from the daemon's actual injection history, not a separate index; dedup cheap-cosine in v1, LLM dedup deferred to v2; migration dry-run/idempotent/verify-before-embed (selfdoc-build-practice — never auto-embed migrated truth); chunker built-and-tested but not wired (whole-doc embed stays v1).
+
+**Token/cost:** ~210K input (CLAUDE.md + SessionStart + the Phase docs + the full lib/daemon/hook/skill reads replayed each turn; this batch touched the most files of any phase so far), ~38K output (3 hooks + 4 new libs + migration script + skill + 8 test files + this entry). At Opus 4.8 rates with Claude Code caching (most input is cache reads ~$1.50/M after turn 1), realistic **~$4–6**. Rough, not metered.

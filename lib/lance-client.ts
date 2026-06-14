@@ -59,6 +59,8 @@ export interface ContextRow {
   last_hit: string;
   /** ISO timestamp written at ingest */
   updated_at: string;
+  /** SHA-256 of the embedded body — lets incremental re-embed skip unchanged files */
+  content_hash: string;
 }
 
 /** A search result: a row plus LanceDB's `_distance` and derived similarity. */
@@ -191,6 +193,38 @@ export async function search(
 export async function countRows(projectName?: string): Promise<number> {
   const table = await openTable(projectName);
   return table.countRows();
+}
+
+/**
+ * Increment the hit counter for a set of retrieved rows and stamp last_hit.
+ * Called after a successful injection so the re-ranker's hitCountBoost learns
+ * which patterns actually get retrieved (DESIGN.md §"Re-ranking"). Best-effort:
+ * a failed update must never break the query response, so the caller swallows.
+ *
+ * Uses a single SQL `update` with an `id IN (...)` predicate and `valuesSql` so
+ * `hit_count = hit_count + 1` happens server-side in one pass (the doc's
+ * recommended path over per-row updates).
+ */
+export async function incrementHits(ids: string[], projectName?: string): Promise<void> {
+  if (ids.length === 0) return;
+  const table = await openTable(projectName);
+  const inList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
+  const nowIso = new Date().toISOString();
+  await table.update({
+    where: `id IN (${inList})`,
+    valuesSql: { hit_count: 'hit_count + 1', last_hit: `'${nowIso}'` },
+  });
+}
+
+/** Map of id → stored content_hash for staleness checks (empty if no table). */
+export async function getContentHashes(projectName?: string): Promise<Map<string, string>> {
+  if (!(await tableExists(projectName))) return new Map();
+  const table = await openTable(projectName);
+  const rows = (await table.query().select(['id', 'content_hash']).toArray()) as Array<{
+    id: string;
+    content_hash?: string;
+  }>;
+  return new Map(rows.map((r) => [r.id, r.content_hash ?? '']));
 }
 
 /** Reset memoized connections (tests / daemon restart). */

@@ -97,6 +97,7 @@
     "skills/context-doctor",
     "skills/context-calibrate",
     "skills/audit-context",
-    "skills/audit-stale"
+    "skills/audit-stale",
+    "skills/migrate-memory"
   ]
 }

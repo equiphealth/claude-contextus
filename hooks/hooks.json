@@ -28,7 +28,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\", \"additionalContext\": \"Context awareness: For substantial responses, end with footer: Context: used: filename(s) | Context: propose: topic-name. Omit if brief/trivial. CRITICAL: If propose: in footer, MUST invoke /create-context before sending response.\"}}'"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/awareness-hook.js\"",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/watch-contexts.js\"",
+            "timeout": 8000
           }
         ]
       }

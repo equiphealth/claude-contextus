@@ -12,7 +12,8 @@ import fs from 'fs';
 import path from 'path';
 import { loadContext, categoryPrefix } from './context-loader.js';
 import { embedDocument } from './embedder.js';
-import { upsertRows, type ContextRow } from './lance-client.js';
+import { upsertRows, getContentHashes, type ContextRow } from './lance-client.js';
+import { contentHash, isStale } from './staleness.js';
 
 /** Compose the embedded text (richer than the stored body) — mirrors embed-contexts. */
 function embedText(name: string, description: string, content: string): string {
@@ -21,9 +22,9 @@ function embedText(name: string, description: string, content: string): string {
 
 /** Outcome of an incremental embed attempt. */
 export interface EmbedFileResult {
-  /** false when the file wasn't a context file we index (skipped, not an error) */
+  /** false when the file wasn't re-embedded — either not indexable or unchanged */
   embedded: boolean;
-  /** the row id (relative path) when embedded */
+  /** the row id (relative path) when embedded (or skipped-as-unchanged) */
   id?: string;
   /** why it was skipped, when embedded is false */
   reason?: string;
@@ -60,6 +61,14 @@ export async function embedSingleFile(
     return { embedded: false, reason: `prefix_type_mismatch (${prefix} vs ${ctx.type})` };
   }
 
+  // Staleness gate: a save that didn't change the body shouldn't pay for a
+  // re-embed. Compare the new content hash against the stored one.
+  const hash = contentHash(ctx.content);
+  const stored = (await getContentHashes(projectName)).get(ctx.id);
+  if (!isStale(stored, ctx.content)) {
+    return { embedded: false, id: ctx.id, reason: 'unchanged' };
+  }
+
   const vector = await embedDocument(embedText(ctx.name, ctx.description, ctx.content));
   const row: ContextRow = {
     id: ctx.id,
@@ -71,6 +80,7 @@ export async function embedSingleFile(
     hit_count: 0,
     last_hit: '',
     updated_at: new Date().toISOString(),
+    content_hash: hash,
   };
   await upsertRows([row], projectName);
   return { embedded: true, id: ctx.id };
