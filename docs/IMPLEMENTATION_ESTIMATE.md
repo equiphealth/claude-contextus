@@ -1,11 +1,26 @@
 # Implementation Estimate & Phased Approach
 
-_Authored: 2026-06-13 by Claude (Opus 4.8)_
+_Authored: 2026-06-13 by Claude (Opus 4.8). Updated 2026-06-14 to fold in the CAE, category/tag, self-documentation, and removal designs (see [CONTEXT_APPLICABILITY_EVALUATOR.md](CONTEXT_APPLICABILITY_EVALUATOR.md), [CATEGORIES_AND_TAGS.md](CATEGORIES_AND_TAGS.md), [SELF_DOCUMENTATION.md](SELF_DOCUMENTATION.md))._
 
 **Purpose**: Honest estimate of what it takes to build claude-contextus v1 end-to-end, plus a recommended phase-based build order. Two estimate lenses are given because they answer different questions:
 
 1. **Engineer-days** — how long a human engineer would take.
 2. **AI wall-clock + token cost** — how long *I* (Claude Code) would take if told "do it now," and what that costs.
+
+---
+
+## What the new designs change (and don't)
+
+Four design docs landed after this estimate was first written. The decisions on where they slot in:
+
+| New design | v1 impact | Verdict |
+|---|---|---|
+| **CAE** — LLM-per-candidate applicability gate | **Deferred to v2.** The v1 gate stays the cheap similarity floor + re-ranker — no hot-path LLM call, preserving zero-latency proactive injection. CAE becomes the "advanced re-ranking" v2 item. | Floor and CAE are *both* gates; running CAE on every prompt reintroduces the per-prompt cost we deliberately pushed to background calibration. v1 keeps `retrieve → re-rank → floor → inject`. |
+| **Categories & tags** | **Authored in v1, partially consumed.** Frontmatter carries `metadata.type` + `tags` from day one (cheap, future-proofs the corpus). The re-ranker reads `type` for `typeBoost`; **tags are inert until CAE exists in v2.** | Low cost, high future value. Don't defer the *vocabulary* just because its main consumer is v2. |
+| **Self-documentation (Layer 1)** | **Minimal in v1:** one `/introspect` endpoint feeding `/context-status`. `generate-docs` + the 7 auto-doc files are v2 (and will live under `docs/generated/` to avoid clobbering hand-written docs). | Full auto-doc collides with hand-written `DESIGN.md` et al. and isn't load-bearing for the spine. |
+| **Removal / governance** | **Concept only in v1**, with one concrete hook: the daemon **logs rejection signals** (floor drops, low-score chunks) starting now, so v2 governance has evidence to act on. Soft/hard/replacement removal mechanisms are v2. | Cheap to log now; expensive to backfill later. |
+
+**Net effect on the spine: none.** Phases 0–2 are unchanged. The additions show up as light v1 touches (frontmatter schema, `/introspect`, rejection logging) and a fuller v2 list.
 
 ---
 
@@ -140,13 +155,15 @@ Ordered to get something real working fastest, then harden. Each phase ends with
 ### Phase 1 — Embedding Pipeline (~45 min)
 - `lib/embedder.ts`: Transformers.js nomic, mean pooling + normalize, model warm-load.
 - `scripts/embed-contexts.js`: scan sources, whole-doc embed (defer chunking), store model + dimensions in metadata.
-- **Exit criteria**: `npm run embed` populates LanceDB from real `.claude/context/`; `vector-inspector` can open it.
+- **Parse + persist frontmatter** `metadata.type` and `tags` per chunk (the category/tag schema). `type` will feed the re-ranker; `tags` are stored-but-unused until v2 CAE. Reject files whose prefix and `metadata.type` disagree (cheap corpus hygiene).
+- **Exit criteria**: `npm run embed` populates LanceDB from real `.claude/context/`; rows carry `type` + `tags`; `vector-inspector` can open it.
 
 ### Phase 2 — The Spine: Daemon + Query Hook (~1–1.5 hr) ← **first "wow" moment**
 - `daemon/server.js`: `/health` (with `modelLoaded`), `/query`, `/notify`. Model loaded once.
 - `scripts/session-start-hook.js` + `ensureDaemonRunning()` shared util (poll `/health`, don't sleep).
 - `scripts/query-hook.js`: thin HTTP client, graceful degradation on daemon-down.
-- Re-ranker + injection floor + injection format block.
+- Re-ranker (`typeBoost` reads `metadata.type`) + injection floor + injection format block.
+- **Log rejection signals**: every chunk dropped by the floor is logged with its score (groundwork for v2 removal/governance — cheap now, can't backfill).
 - **Exit criteria**: real prompt in a live session injects relevant context. *This is the demo.*
 
 ### Phase 3 — Capture & Incremental Updates (~45 min)
@@ -163,7 +180,8 @@ Ordered to get something real working fastest, then harden. Each phase ends with
 ### Phase 5 — Quality Measurement (~1 hr)
 - Stop hook + eval worker wiring (Haiku calibration, parser-tested).
 - Floor calibration harness: replay historical prompts, log similarity distribution.
-- **Exit criteria**: a calibration run produces a floor recommendation from real data.
+- `/introspect` endpoint (Self-doc Layer 1, minimal): returns version, model + dimensions, loaded packs, chunk counts, floor, re-rank weights, hit-count stats, uptime. Feeds `/context-status`. **Defer** `generate-docs` and the 7 auto-doc files to v2.
+- **Exit criteria**: a calibration run produces a floor recommendation from real data; `/context-status` reads live numbers from `/introspect`.
 
 ### Phase 6 — Hardening (~1 hr)
 - Crash recovery, stale-PID cleanup, integration tests for daemon + hooks.
@@ -174,6 +192,81 @@ Ordered to get something real working fastest, then harden. Each phase ends with
 
 ---
 
+## How to Run the Build (Execution Cadence)
+
+**Principle: the stop boundary is not the phase number — it's where verification needs a human or a live environment.** Stop where I can't self-verify; batch where the exit criterion is deterministic and I can check it myself. Tighter boundaries are also a guardrail against my own optimistic "done!" narration (see SELF_DOCUMENTATION.md §4.5) — catch a broken spine at Phase 2, not underneath Phase 4.
+
+| Prompt | Phases | Stop reason |
+|---|---|---|
+| 1 | **0** | **Highest-risk unknown.** Does `@lancedb/lancedb` actually match the doc's API assumptions? If not, every later phase shifts. Cheap stop, huge information gain. |
+| 2 | **1** | **Corpus exists now.** First moment §4.5 "verify before embedding" bites — you glance that the context files I authored are *true*, not just plausible, before they harden into the injected corpus. |
+| 3 | **2** | **The spine / the demo.** "Real prompt injects real context in a live session" — *you* drive a live Claude Code session to verify. I cannot. Mandatory return. |
+| 4 | **3 + 4** | Capture + incremental + pure-logic unit tests, **plus the `/migrate-memory` skill** (pipeline now exists to embed into). Deterministic, no live session; a green suite self-verifies. Safe to batch. |
+| 5 | **5** | Calibration produces a floor recommendation from *your* historical prompts. Needs your data and your eyes on whether the number's sane. |
+| 6 | **6** | Hardening → done. |
+
+**Six prompts, four genuine decision points** (1, 2, 3, 5). Batching rules:
+
+- **0→1 batch only if Phase 0's API check passes.** If LanceDB diverges from the doc, stop and re-plan before embedding anything. They're both "embedding pipeline" and mechanical, so combining is fine *given a green API check*.
+- **3+4 always batch.** Tests are the verification; no reason to interrupt between writing capture logic and proving it.
+- **Never batch across Phase 2.** The daemon spawn/detach/poll loop is the fiddly part; building capture or tests on top of a subtly-broken spine cross-contaminates debugging and burns tokens re-sending context.
+
+**Token note:** returning at these seams lets you `/clear` or compact between prompts — that's where the real cost savings live, far more than terse output. A long unbroken run re-sends accumulated context every turn.
+
+**At each stop I will:** state the exit criterion, what I verified vs. what needs *you* to verify, and any divergence from DESIGN.md. I won't claim a phase is done on something I haven't actually run.
+
+---
+
+## v2 Backlog (shaped by the new designs)
+
+Deferred deliberately — none of these block a trustworthy v1, but the new docs gave them concrete shape. Listed roughly by dependency order.
+
+| Item | Source design | Depends on |
+|---|---|---|
+| **CAE gate** — Haiku applicability sub-agent per candidate, scoring rubric (§4), hard overrides, conflict priority. Slots in as `… → floor → CAE → inject`. | CAE spec | v1 floor + rejection logging |
+| **Tag-driven gating** — tags become live constraint modifiers once CAE consumes them (`tag_alignment`, deprecated/canonical overrides). | CAE §3, Categories §8 | CAE gate |
+| **Hard-override authorship** — define *who/how* `deprecated`, `canonical`, `manually-promoted` get written. (Open question — no mechanism yet.) | CAE §4.3 | CAE gate |
+| **Per-category retrieval config** — Category Rule 4: each category declares injection trigger, weight, scope, merge/compete behavior. Re-ranker reads it. | Categories §3 (Rule 4) | re-ranker |
+| **Removal / governance** — soft (CAE demotion) / hard (deletion) / replacement (supersession), driven by accumulated rejection evidence. | CAE §7 | rejection logging (v1) |
+| **Full Layer-1 auto-docs** — `generate-docs` + `docs/generated/*.md`, overwritten each run. **Requires** namespacing under `docs/generated/` so it never clobbers hand-written `DESIGN.md` et al. | Self-doc §2.2 | `/introspect` (v1) |
+| **Model self-doc (Layer 2)** — 5-field phase-boundary entries → `docs/SELF_DOCUMENTING_IMPLEMENTATION.md`. (Process convention, can start anytime.) | Self-doc §3 | — |
+
+---
+
+## Memory → Context Migration (`/migrate-memory` skill)
+
+Not a v2 design item — a **v1-era cleanup that must wait for the pipeline.** The canonical store is moving from `.claude/memory/` (named-slug files + `MEMORY.md` index) to `.claude/context/` (prefix-scoped, `metadata.type` + tags). The existing plumbing still points at `memory/`.
+
+**Scope is small because it's config-driven, not hardcoded:**
+
+| Touchpoint | Change |
+|---|---|
+| `plugin.json` → `config.sources.projectMemory.path` (`.claude/memory`) | repoint to `.claude/context` (or add a `context` source) |
+| `plugin.json` → `config.sources.userMemory.path` (`~/.claude/memory`) | same |
+| Content files | `decision_foo.md` (slug `foo`) → `decision-foo.md`; add `tags`, prefix-matched `type` |
+| `MEMORY.md` index | folds into the corpus / `arch-overview` |
+
+No `memory/` strings are hardcoded in hook JS, so this is **content conversion + a config flip**, not a code rewrite.
+
+**The skill** (`/migrate-memory`) owns the conversion because the slug→prefix rename, `type` inference, and tag seeding recur and are easy to do inconsistently by hand:
+- **Dry-run by default** — proposes each `slug → prefix-name` + inferred `type` + seed `tags`, shows the diff, converts on confirm.
+- **Idempotent** — re-running skips already-migrated files; safe to resume if interrupted (no half-converted corpus).
+- **Verify-before-embed** baked in (it's moving truth into the *injected* corpus — see SELF_DOCUMENTATION.md §4.5).
+
+**Sequencing**: build the spine first (Phases 0–2) — there's no `embed-contexts` to land converted files into until then. The skill is built in **Prompt 4 (Phase 3)** and run once the pipeline is proven. Migrating earlier just creates orphaned files.
+
+**Adjacent `plugin.json` staleness** (fix during Phase 0, not part of migration): `config.chroma` → `lancedb`; `embedding.model` is `Xenova/all-MiniLM-L6-v2` but DESIGN.md default is nomic; `similarityThreshold: 0.7` is the unvalidated floor.
+
+---
+
+### Open questions still live
+- **CAE cost model**: Haiku-per-candidate on every injected prompt — acceptable, or batch candidates into one call? (CAE §12 lists batching as a future layer.)
+- **Floor vs CAE authority**: once both exist, CAE §4.4 ranks similarity *last*. Confirm the floor still short-circuits cheaply before any CAE call (don't pay for an LLM verdict on a chunk the floor already killed).
+- **Hard-override provenance**: nothing currently writes `canonical`/`deprecated`/`manually-promoted`. Needs an authoring path before those overrides do anything.
+- **Auto-doc namespace**: lock `docs/generated/` (or similar) before building `generate-docs` so the "never hand-written" rule can't overwrite the hand-written specs.
+
+---
+
 ## Bottom Line
 
 - **Feasible**: yes, low risk. The thinking is done; this is execution.
@@ -181,3 +274,4 @@ Ordered to get something real working fastest, then harden. Each phase ends with
 - **AI wall-clock**: ~2 hrs to spine, ~5–7 hrs to full v1 with tests.
 - **AI token cost**: ~$12–20 spine, ~$30–50 full v1 with caching.
 - **Recommended start**: Phases 0–2 in one sustained pass → one real injection working → then layer tests and quality.
+- **The new designs don't move these numbers.** CAE, full auto-docs, and removal mechanics are v2; v1 only gains lightweight touches (frontmatter schema in Phase 1, rejection logging in Phase 2, `/introspect` in Phase 5) already folded into the estimates above. The estimate holds.
