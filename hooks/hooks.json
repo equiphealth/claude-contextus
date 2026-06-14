@@ -1,47 +1,37 @@
 {
-  "SessionStart": [
-    {
-      "hooks": [
-        {
-          "command": "node $PLUGIN_PATH/scripts/session-start-hook.js",
-          "type": "command",
-          "timeout": 20000
-        }
-      ],
-      "matcher": ".*"
-    }
-  ],
-  "UserPromptSubmit": [
-    {
-      "hooks": [
-        {
-          "command": "node $PLUGIN_PATH/scripts/query-hook.js",
-          "type": "command",
-          "timeout": 5000
-        }
-      ],
-      "matcher": ".*"
-    },
-    {
-      "hooks": [
-        {
-          "command": "echo '{\"hookSpecificOutput\": {\"additionalContext\": \"Context awareness: For substantial responses, end with footer: Context: used: filename(s) | Context: propose: topic-name. Omit if brief/trivial. CRITICAL: If propose: in footer, MUST invoke /create-context before sending response.\"}}'",
-          "type": "command"
-        }
-      ],
-      "matcher": ".*"
-    }
-  ],
-  "PostToolUse": [
-    {
-      "hooks": [
-        {
-          "command": "node $PLUGIN_PATH/scripts/watch-contexts.js",
-          "type": "command",
-          "timeout": 2000
-        }
-      ],
-      "matcher": "Write|Edit"
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start-hook.js\"",
+            "timeout": 20000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/query-hook.js\"",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\", \"additionalContext\": \"Context awareness: For substantial responses, end with footer: Context: used: filename(s) | Context: propose: topic-name. Omit if brief/trivial. CRITICAL: If propose: in footer, MUST invoke /create-context before sending response.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
 }
