@@ -72,9 +72,22 @@ export interface StorageConfig {
 
 export interface RetrievalConfig {
   topK: number;
-  /** UNVALIDATED floor — see DESIGN.md "Validate during POC". Measure the
-   *  real similarity distribution before trusting 0.7. */
+  /** UNVALIDATED ranking filter — see DESIGN.md "Validate during POC". A quality
+   *  filter AFTER ranking, NOT the retrieval gate. Tuned independently of the
+   *  injection floor below; do not share a value (DESIGN.md §"Floor vs ranking"). */
   similarityThreshold: number;
+  /**
+   * Injection floor on RAW similarity — "inject anything at all?" (DESIGN.md
+   * §"Injection Floor"). SEPARATE from similarityThreshold by design.
+   *
+   * ⚠ UNVALIDATED — Phase 5's replay harness sets the real value. Default 0.35 is
+   * deliberately permissive because Phase-1 measurement (floor-calibration-signals
+   * memory) found ollama-nomic puts CORRECT hits at 0.45–0.68 with noise ~0.0–0.09;
+   * DESIGN.md's placeholder 0.7 would inject nothing. 0.35 clears the noise band
+   * while admitting real matches so the spine demonstrably injects. NOT a tuned
+   * value — calibrate before trusting.
+   */
+  injectionFloor: number;
   maxTokens: number;
   mergeStrategy: 'interleaved' | 'prioritize-context' | 'prioritize-docs';
 }
@@ -107,7 +120,8 @@ const DEFAULTS: ContextusConfig = {
   },
   retrieval: {
     topK: 5,
-    similarityThreshold: 0.7, // UNVALIDATED — calibrate in Phase 5
+    similarityThreshold: 0.7, // UNVALIDATED ranking filter — calibrate in Phase 5
+    injectionFloor: 0.35, // UNVALIDATED permissive gate — calibrate in Phase 5
     maxTokens: 3000,
     mergeStrategy: 'interleaved',
   },

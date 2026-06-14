@@ -101,3 +101,54 @@ Per-phase completion summaries for the claude-contextus v1 build. One entry per 
 **Decisions applied:** whole-doc embed (chunking deferred per estimate); embed `name+description+body`, store body only; prefix↔type gate is advisory-strict (only flags files that have *both* a known prefix and a conflicting declared type); `format` scope narrowed to stop cosmetic churn polluting phase commits.
 
 **Token/cost:** ~140K input (CLAUDE.md + SessionStart + Phase docs + salvage/config reads replayed each turn; the network-debugging detour added turns), ~22K output (3 source files + this entry). At Opus 4.8 rates with Claude Code caching (most input is cache reads ~$1.50/M after turn 1), realistic **~$2.50–4.00**. Rough, not metered — the HF-block investigation was the main cost-add over the estimate's ~45min ideal.
+
+---
+
+## Phase 2 — The Spine: Daemon + Query Hook (2026-06-14)
+
+**Exit criteria — status:** ✅ Met on my side, ⏳ awaiting your live-session confirmation. The full spine runs end-to-end **out of process over HTTP** (not just unit-callable): cold-start spawns a detached daemon, warm-loads the model, and a real prompt injects the right context chunk while an off-topic prompt correctly injects nothing. "A real prompt in a live Claude Code session injects relevant context" is the one thing I **cannot** self-verify (no live session) — that's yours to drive (steps below).
+
+**What changed:**
+| File | Change |
+|---|---|
+| `daemon/server.ts` | **New** — stdlib `http` daemon. `GET /health` (`modelLoaded` gates readiness), `POST /query` (spine: embedQuery→search→rerank→floor→format), `POST /notify` (incremental single-file re-embed). Model warm-loaded once *after* the socket listens (so `/health` answers `modelLoaded:false` while loading). Per-project corpus by request field; query-time provider/model validated against the sidecar; `EADDRINUSE`→defer-and-exit so a race can't double-load the model; SIGINT/SIGTERM cleanup of the PID file |
+| `lib/reranker.ts` | **New** — `rerank()` = similarity × sourceWeight × typeBoost × freshnessDecay × hitCountBoost. `typeBoost` reads `metadata.type` (legacy memory types **and** new category vocab); `sourceWeight` wired but neutral until a `source` column exists. Unknown type/source → neutral 1.0 (never drops a row). Re-rank changes ORDER only |
+| `lib/floor.ts` | **New** — `applyFloor()` gates on **raw** similarity (not finalScore), returns `{kept, dropped, bestScore, noInject}`. `dropped` carries the below-floor chunks for rejection logging |
+| `lib/inject-format.ts` | **New** — bracketed user-message-prepend block (per `injection-format` decision), greedy token-budget trim (~4 ch/token estimate), always admits the top chunk |
+| `lib/logger.ts` | **New** — dual-format (`usage.jsonl` + `daemon.log` + `errors.jsonl`) per LOGGING.md. `logRetrieval`/`logNoInject` both record `floor_dropped` (chunk + score) — the v2 governance groundwork the prompt asked for. SHA-256 prompt hash; all writes best-effort (never throw into the hot path) |
+| `lib/embed-file.ts` | **New** — `embedSingleFile()`: re-embed one file + `mergeInsert` upsert (the unit behind `/notify`, shared with Phase 3's watcher). Mirrors embed-contexts' embed-text/stored-body split + prefix↔type gate; non-context files skip (no throw) |
+| `lib/lance-client.ts` | Connection cache moved single→**per-project `Map`** (the shared daemon serves many projects; one global conn would pin every query to the first project) |
+| `lib/config.ts` | Added **`retrieval.injectionFloor`** (default **0.35**) — a knob SEPARATE from `similarityThreshold` (DESIGN.md treats floor vs ranking as independent). Permissive default is deliberate; see calibration note |
+| `plugin.json` | Added annotated `injectionFloor: 0.35` (+ reworded the `similarityThreshold` note to "ranking filter, not the gate") |
+| `scripts/lib/daemon-control.js` | **New** — shared `ensureDaemonRunning()` (health-check → stale-PID cleanup → detached `tsx` spawn) + `waitForModel()` (bounded `/health` poll). Plain ESM JS (hooks have no build step) |
+| `scripts/session-start-hook.js` | **New** — ensure daemon + bounded poll until warm; always emits `{continue:true}` |
+| `scripts/query-hook.js` | **New** — reads UserPromptSubmit stdin payload, derives project = cwd basename, POSTs `/query`, relays the daemon's response verbatim; daemon-down → background respawn + `{continue:true}` (one missed injection, never a blocked prompt) |
+| `hooks/hooks.json` | Added `SessionStart` → `session-start-hook.js` (20s timeout). `query-hook.js`/`watch-contexts.js` wiring already present |
+| `package.json` | `daemon` script (`tsx daemon/server.ts`); `lint`/`format` extended to `daemon/` |
+
+**Verified (ran, not assumed) — daemon driven over HTTP, not just imported:**
+- `pnpm exec tsc --noEmit` → clean; `pnpm lint` → exit 0; `pnpm format` → clean
+- **Cold `/health`** → `modelLoaded:true` within ~2s (Ollama warm-loads fast)
+- **`/query` on-topic** ("how does the lancedb api work…") → injects `lancedb-api-surface.md` @ sim **0.4783**, bracketed block, **131ms**
+- **`/query` off-topic** ("chocolate chip cookie recipe") → `{continue:true}`, **no injection**, logged `below_floor` best **-0.0659**, **43ms**
+- **`floor_dropped` logging confirmed** in `usage.jsonl`: retrieval event recorded the 2 below-floor chunks with scores; no-inject event recorded all 3
+- **`/notify`** → real context file re-embedded (`embedded:true`); non-context file skipped (`outside_context_dir`)
+- **Thin hooks via stdin** (real hook contract): on-topic injects, off-topic doesn't
+- **Graceful degradation**: killed the daemon → `query-hook.js` returned `{continue:true}` and fired a background respawn
+- **session-start cold** → spawned + waited for warm (~0.57s); **warm** → 0.06s no-respawn; **detach confirmed** — daemon (a distinct PID) outlived the hook process
+
+**Needs user verification (the mandatory return):**
+- **Drive a live Claude Code session** and confirm a real prompt injects context (steps in my chat message). I verified the HTTP spine; I can't verify Claude actually *receives and references* the injected block — that's the §4.5 "does thinking reference the injected context?" validation DESIGN.md flags.
+- **Sanity-check the floor default (0.35)** is reasonable for the demo. It's a placeholder, not calibrated (Phase 5's job) — but if it feels too permissive/strict on your real prompts, say so and I'll nudge it.
+
+**DESIGN.md divergences:**
+1. **Two thresholds are now physically separate config knobs.** DESIGN.md describes `injectionFloor` and `similarityThreshold` as distinct concepts but `plugin.json`/`config.ts` only had `similarityThreshold`. Added `injectionFloor: 0.35` as the gate; `similarityThreshold` stays as the (still-unused-in-v1) post-rank quality filter. This *implements* DESIGN.md's stated separation rather than diverging from it.
+2. **Floor default is 0.35, not DESIGN.md's 0.7.** Forced by data, not preference: Phase-1 measured ollama-nomic correct hits at 0.45–0.68 with noise ~0.0–0.09 (`floor-calibration-signals` memory). A 0.7 floor would inject **nothing** and the demo would fail. 0.35 clears the noise band; the on-topic 0.4783 hit clears it, the off-topic -0.07 doesn't. Phase 5's harness sets the real value from real prompts — this is an explicit "make the spine demonstrably inject" placeholder, loudly annotated in both `config.ts` and `plugin.json`.
+3. **Daemon uses Node stdlib `http`, not Express** (DESIGN.md sketches `app.get(...)`). No framework dependency added to the hot path; same endpoints.
+4. **Hooks are `.js`, daemon/libs are `.ts`** — the thin/thick split DESIGN.md intends. Hooks run via bare `node` (no build step) so they can't import `.ts`; the daemon runs via `tsx` and imports the libs directly. `ensureDaemonRunning` spawns the repo-local `tsx` binary.
+
+**Decisions applied:** injection floor separated from ranking threshold (DESIGN.md intent); floor default chosen from Phase-1 empirical data, not the doc's placeholder; stdlib http over a framework; per-project connection cache; rejection logging via `floor_dropped` on both event types.
+
+**Daemon spawn/detach notes (the flagged-risk area):** No zombie issues hit. `detached:true` + `stdio:'ignore'` + `.unref()` cleanly outlives the hook (verified: daemon PID ≠ hook PID, survived hook exit). `EADDRINUSE` guard makes a double-spawn race safe (loser exits 0, no double model load). One thing to watch in your live run: `$PLUGIN_PATH` must resolve to this repo so `scripts/lib/daemon-control.js` finds `node_modules/.bin/tsx` (it resolves relative to its own file, so an installed-plugin path works too; `npx tsx` is the fallback if the local bin is absent).
+
+**Token/cost:** ~165K input (CLAUDE.md + SessionStart + DESIGN.md full read + the lib/config/hook reads replayed each turn), ~30K output (7 new source files + 2 thin hooks + this entry). At Opus 4.8 rates with Claude Code caching (most input is cache reads ~$1.50/M after turn 1), realistic **~$3–5**. Rough, not metered.

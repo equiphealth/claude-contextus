@@ -67,8 +67,10 @@
     },
     "retrieval": {
       "topK": 5,
-      "_similarityThreshold_note": "UNVALIDATED floor — calibrate against real similarity distribution in Phase 5 before trusting 0.7 (model-dependent).",
+      "_similarityThreshold_note": "UNVALIDATED ranking filter (applied after re-rank, not the gate) — calibrate in Phase 5.",
       "similarityThreshold": 0.7,
+      "_injectionFloor_note": "UNVALIDATED gate on raw similarity — 'inject anything at all?'. SEPARATE from similarityThreshold. Default 0.35 is permissive because Phase-1 measured ollama-nomic correct hits at 0.45–0.68 / noise ~0.0–0.09 (floor-calibration-signals memory); 0.7 would inject nothing. Phase 5 sets the real value from real prompts.",
+      "injectionFloor": 0.35,
       "maxTokens": 3000,
       "mergeStrategy": "interleaved"
     },
