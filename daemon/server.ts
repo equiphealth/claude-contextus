@@ -26,10 +26,12 @@ import path from 'path';
 import fs from 'fs';
 import { loadConfig, expandHome } from '../lib/config.js';
 import { warmup, embedQuery } from '../lib/embedder.js';
-import { search, tableExists, readTableMeta } from '../lib/lance-client.js';
+import { search, tableExists, readTableMeta, incrementHits } from '../lib/lance-client.js';
 import { rerank } from '../lib/reranker.js';
+import { dedupe } from '../lib/dedup.js';
 import { applyFloor } from '../lib/floor.js';
 import { formatInjection } from '../lib/inject-format.js';
+import { recordInjection, noveltyFor } from '../lib/novelty.js';
 import { embedSingleFile } from '../lib/embed-file.js';
 import {
   logRetrieval,
@@ -41,6 +43,7 @@ import {
 } from '../lib/logger.js';
 
 const PORT = 37800;
+const BASE_URL = `http://127.0.0.1:${PORT}`;
 const RUNTIME_DIR = expandHome('~/.contextus/runtime');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
 const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
@@ -135,7 +138,10 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const vec = await embedQuery(prompt);
   const raw = await search(vec, cfg.retrieval.topK, undefined, project);
   const ranked = rerank(raw);
-  const { kept, dropped, bestScore, noInject } = applyFloor(ranked, cfg.retrieval.injectionFloor);
+  // Fold near-duplicate chunks before the floor so we don't spend budget saying
+  // the same thing twice (deduped chunks are logged separately from floor drops).
+  const { kept: deduped } = dedupe(ranked);
+  const { kept, dropped, bestScore, noInject } = applyFloor(deduped, cfg.retrieval.injectionFloor);
 
   const floorDropped: DroppedChunkLog[] = dropped.map((d) => ({
     pattern: d.filename || d.id,
@@ -154,11 +160,25 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   }
 
   const { block, included, tokens } = formatInjection(kept, cfg.retrieval.maxTokens);
+  const injectedNames = included.map((r) => r.filename || r.id);
+
+  // Learn from this injection (best-effort, off the response path):
+  //  - bump hit_count so the re-ranker favors patterns that actually surface
+  //  - remember the set so /novelty can tell the awareness hook what we have
+  incrementHits(
+    included.map((r) => r.id),
+    project
+  ).catch((err) =>
+    logError('warn', 'daemon', 'hit-count update failed', {
+      message: err instanceof Error ? err.message : String(err),
+    })
+  );
+  recordInjection(projectLabel, injectedNames);
 
   logRetrieval({
     project: projectLabel,
     promptHash: hash,
-    retrieved: included.map((r) => r.filename || r.id),
+    retrieved: injectedNames,
     similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
     tokensInjected: tokens,
     latencyMs: Date.now() - started,
@@ -203,6 +223,13 @@ const server = http.createServer((req, res) => {
 
   if (method === 'GET' && url === '/health') {
     return handleHealth(res);
+  }
+
+  // GET /novelty?project=foo — recently-injected pattern names for the awareness
+  // hook's novelty signal. Cheap in-memory read; no body.
+  if (method === 'GET' && url.startsWith('/novelty')) {
+    const project = new URL(url, BASE_URL).searchParams.get('project') ?? 'default';
+    return sendJson(res, 200, { project, recent: noveltyFor(project) });
   }
 
   if (method === 'POST' && (url === '/query' || url === '/notify')) {

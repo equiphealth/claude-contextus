@@ -30,6 +30,7 @@ import {
 } from '../lib/context-loader.js';
 import { embedDocuments } from '../lib/embedder.js';
 import { createTable, type ContextRow } from '../lib/lance-client.js';
+import { contentHash } from '../lib/staleness.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
     hit_count: 0,
     last_hit: '',
     updated_at: now,
+    content_hash: contentHash(c.content),
   }));
 
   await createTable(rows, { replace: true });

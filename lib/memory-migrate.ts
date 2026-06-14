@@ -1,0 +1,159 @@
+/**
+ * Memory → Context migration mapping (pure logic).
+ *
+ * Converts a legacy `.claude/memory/` slug file into its `.claude/context/`
+ * target: prefix-scoped filename, a category folder, and target-schema
+ * frontmatter (`metadata.type` + `tags`). See the memory-to-context-migration
+ * decision + IMPLEMENTATION_ESTIMATE "Memory → Context Migration".
+ *
+ * I/O lives in scripts/migrate-memory.ts; this module only computes the plan so
+ * the slug→prefix rename, type inference, and tag seeding are unit-testable
+ * without touching disk.
+ *
+ * Naming: legacy `decision_build_execution_cadence.md` (frontmatter
+ * name: build-execution-cadence, metadata.type: decision) becomes
+ * `decisions/decision-build-execution-cadence.md` with type `decision`. The
+ * filename head MUST equal the type so the prefix↔type gate (context-loader) and
+ * the re-ranker's typeBoost both fire.
+ */
+
+import { KNOWN_CATEGORY_PREFIXES } from './context-loader.js';
+
+/** Parsed input: a memory file's filename + its frontmatter + body. */
+export interface MemoryFile {
+  /** original filename, e.g. `decision_build_execution_cadence.md` */
+  filename: string;
+  /** parsed frontmatter (top-level and/or nested metadata) */
+  data: Record<string, unknown>;
+  /** markdown body (frontmatter stripped) */
+  body: string;
+}
+
+/** The computed migration target for one memory file. */
+export interface MigrationPlanItem {
+  /** source filename */
+  from: string;
+  /** target path relative to `.claude/context/`, e.g. `decisions/decision-foo.md` */
+  toRelPath: string;
+  /** inferred semantic type (= filename prefix) */
+  type: string;
+  /** kebab slug (without the type prefix) */
+  slug: string;
+  /** seeded tags (existing tags preserved; never fabricated) */
+  tags: string[];
+  /** rendered target frontmatter + body */
+  content: string;
+  /** non-fatal notes (e.g. "type inferred from filename prefix") */
+  notes: string[];
+}
+
+/** Folder per category. Defaults to the type name when not specially mapped. */
+const TYPE_FOLDER: Record<string, string> = {
+  decision: 'decisions',
+  feedback: 'feedback',
+  reference: 'reference',
+  project: 'project',
+  implementation: 'implementation',
+  arch: 'architecture',
+  tradeoff: 'tradeoffs',
+  gotcha: 'gotchas',
+  api: 'api',
+  phase: 'phases',
+  schema: 'schema',
+  security: 'security',
+  perf: 'perf',
+};
+
+/** Normalize any string to kebab-case (lower, non-alnum → single dash). */
+export function kebab(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** Pull `{type, tags}` from top-level or nested `metadata.*` frontmatter. */
+function readMeta(data: Record<string, unknown>): { type?: string; tags: string[] } {
+  const meta = (data.metadata ?? {}) as Record<string, unknown>;
+  const type = (meta.type ?? data.type) as string | undefined;
+  const rawTags = meta.tags ?? data.tags;
+  let tags: string[] = [];
+  if (Array.isArray(rawTags)) tags = rawTags.map((t) => String(t).trim()).filter(Boolean);
+  else if (typeof rawTags === 'string')
+    tags = rawTags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+  return { type: type ? String(type) : undefined, tags };
+}
+
+/**
+ * Infer the semantic type. Prefer explicit frontmatter `type`; else the filename
+ * prefix before the first `_`/`-` (legacy `decision_foo.md`). Falls back to
+ * `reference` (the most neutral known category) with a note.
+ */
+function inferType(file: MemoryFile, frontmatterType?: string): { type: string; note?: string } {
+  if (frontmatterType && (KNOWN_CATEGORY_PREFIXES as readonly string[]).includes(frontmatterType)) {
+    return { type: frontmatterType };
+  }
+  const head = file.filename.replace(/\.md$/, '').split(/[-_]/)[0];
+  if ((KNOWN_CATEGORY_PREFIXES as readonly string[]).includes(head)) {
+    return { type: head, note: `type inferred from filename prefix '${head}'` };
+  }
+  if (frontmatterType) {
+    return { type: frontmatterType, note: `type '${frontmatterType}' is not a known category` };
+  }
+  return { type: 'reference', note: 'no type found; defaulted to reference' };
+}
+
+/** Render YAML frontmatter + body in the target (nested-metadata) schema. */
+function renderContent(
+  name: string,
+  description: string,
+  type: string,
+  tags: string[],
+  body: string
+): string {
+  const tagLine = tags.length ? `\n  tags: [${tags.join(', ')}]` : '';
+  return (
+    `---\n` +
+    `name: ${name}\n` +
+    `description: ${description}\n` +
+    `metadata:\n` +
+    `  type: ${type}${tagLine}\n` +
+    `---\n\n` +
+    `${body.trim()}\n`
+  );
+}
+
+/** Compute the migration target for a single memory file. */
+export function planFile(file: MemoryFile): MigrationPlanItem {
+  const notes: string[] = [];
+  const { type: fmType, tags } = readMeta(file.data);
+  const { type, note } = inferType(file, fmType);
+  if (note) notes.push(note);
+
+  // Slug = frontmatter name (kebabed), else filename stem with prefix stripped.
+  const rawName = typeof file.data.name === 'string' ? file.data.name : '';
+  let slug = rawName
+    ? kebab(rawName)
+    : kebab(file.filename.replace(/\.md$/, '').replace(new RegExp(`^${type}[-_]`), ''));
+  // Never double the type prefix (slug 'decision-foo' under type 'decision').
+  if (slug.startsWith(`${type}-`)) slug = slug.slice(type.length + 1);
+
+  const folder = TYPE_FOLDER[type] ?? type;
+  const toRelPath = `${folder}/${type}-${slug}.md`;
+
+  const description = typeof file.data.description === 'string' ? file.data.description : '';
+  const content = renderContent(slug, description, type, tags, file.body);
+
+  if (tags.length === 0) notes.push('no tags — seed manually if useful (stored inert until v2)');
+
+  return { from: file.filename, toRelPath, type, slug, tags, content, notes };
+}
+
+/** Compute the full plan for a set of memory files (sorted by target path). */
+export function planMigration(files: MemoryFile[]): MigrationPlanItem[] {
+  return files.map(planFile).sort((a, b) => a.toRelPath.localeCompare(b.toRelPath));
+}
