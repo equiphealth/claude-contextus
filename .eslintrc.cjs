@@ -20,8 +20,8 @@ module.exports = {
   ignorePatterns: ['dist/', 'node_modules/', '*.config.js', '.eslintrc.cjs'],
   overrides: [
     {
-      // Salvage prototypes rewritten in later phases — don't gate Phase 0 on them.
-      files: ['lib/embedder.ts', 'lib/context-loader.ts', 'poc/**/*.ts'],
+      // POC prototypes superseded by lib/ — don't gate the build on them.
+      files: ['poc/**/*.ts'],
       rules: { '@typescript-eslint/no-unused-vars': 'off' },
     },
   ],

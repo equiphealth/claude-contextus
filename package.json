@@ -7,13 +7,13 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "embed": "npm run build && node dist/scripts/embed-contexts.js",
-    "rebuild": "npm run build && node dist/scripts/embed-contexts.js --rebuild",
-    "query": "npm run build && node dist/scripts/query-hook.js",
+    "embed": "tsx scripts/embed-contexts.ts",
+    "rebuild": "tsx scripts/embed-contexts.ts --rebuild",
     "dev": "tsc --watch",
-    "test": "npm run build && node --test dist/tests/**/*.test.js",
+    "test": "tsc --noEmit && node --test dist/tests/**/*.test.js",
     "lint": "eslint lib scripts --ext .ts",
-    "format": "prettier --write \"**/*.{ts,json,md}\"",
+    "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"*.json\"",
+    "format:all": "prettier --write \"**/*.{ts,json,md}\"",
     "type-check": "tsc --noEmit"
   },
   "keywords": [
