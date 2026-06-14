@@ -13,7 +13,7 @@
     "test": "tsc --noEmit && node --test dist/tests/**/*.test.js",
     "lint": "eslint lib scripts --ext .ts",
     "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"*.json\"",
-    "format:all": "prettier --write \"**/*.{ts,json,md}\"",
+    "format:all": "prettier --write \"**/*.{ts,json}\"",
     "type-check": "tsc --noEmit"
   },
   "keywords": [
