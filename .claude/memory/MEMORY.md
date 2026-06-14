@@ -15,6 +15,7 @@ Design decisions and feedback for claude-contextus. One line per memory; load th
 ## Feedback
 - [opus-metrics-critique](feedback_opus_metrics_critique.md) — "tokens saved" is a vanity metric; measure usage not injection
 - [selfdoc-build-practice](feedback_selfdoc_build_practice.md) — verify context files before embedding; one ledger not four
+- [hook-files-esm-and-smoke-test](feedback_hook_files_esm_smoke_test.md) — hooks must be ESM (repo is type:module); smoke-test by executing the file via stdin, not just unit-testing imported functions
 
 ## Project
 - [package-manager](project_package_manager.md) — repo uses pnpm; always use pnpm commands
