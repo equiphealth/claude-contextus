@@ -8,23 +8,33 @@
  * session; a cold first prompt just degrades to no-injection (DESIGN.md graceful
  * degradation).
  *
- * Transparency (user preference: surface what the system did, don't hide it): we
- * report daemon state via `systemMessage` — which renders to the USER in the UI,
- * NOT to Claude's context. We deliberately do NOT use `additionalContext` for
- * this: telling Claude "daemon spawned" on every session would pollute the very
- * context window contextus exists to keep clean. We stay SILENT on the common
- * happy path (found a warm daemon) and only speak when something is noteworthy:
- * a fresh spawn, a still-warming daemon, or a failure to come up.
+ * Transparency (user preference: surface what the system did). We report daemon
+ * state via `systemMessage` — which renders to the USER in the UI, NOT to
+ * Claude's context. We deliberately never use `additionalContext` for this:
+ * announcing the daemon to Claude every session would pollute the very context
+ * window contextus exists to keep clean.
+ *
+ * Verbosity (config.notifications.verbosity, or CONTEXTUS_VERBOSITY env):
+ *   silent  — never emit a message
+ *   normal  — only noteworthy events: fresh spawn, still-warming, failure
+ *   verbose — the above PLUS a heartbeat when an existing warm daemon is found
  */
 
-import { ensureDaemonRunning, waitForModel } from './lib/daemon-control.js';
+import { ensureDaemonRunning, waitForModel, getHealth, getVerbosity, formatUptime } from './lib/daemon-control.js';
 
 async function main() {
+  const verbosity = getVerbosity();
   let systemMessage;
+
   try {
     const wasRunning = await ensureDaemonRunning();
     if (wasRunning) {
-      // Happy path: an existing warm daemon. Say nothing.
+      // Happy path: an existing warm daemon. Heartbeat only at 'verbose'.
+      if (verbosity === 'verbose') {
+        const health = await getHealth(1000);
+        const up = health ? ` (uptime ${formatUptime(health.uptime)})` : '';
+        systemMessage = `contextus: using the running daemon${up}.`;
+      }
     } else {
       // We just spawned one — wait (bounded) for the model to warm.
       const warm = await waitForModel({ attempts: 30, intervalMs: 500 });
@@ -33,13 +43,15 @@ async function main() {
         : 'contextus: started a new daemon — model still warming; the first prompt or two may not get context yet.';
     }
   } catch {
-    // ensureDaemonRunning/waitForModel swallow their own errors, so reaching here
-    // is unexpected — but still must not block the session.
+    // The helpers swallow their own errors, so reaching here is unexpected — but
+    // still must not block the session. A failure is always worth surfacing
+    // unless explicitly silenced.
     systemMessage = 'contextus: could not start the context daemon; running without context injection this session.';
   }
 
+  // 'silent' suppresses everything, including failures.
   const out = { continue: true };
-  if (systemMessage) out.systemMessage = systemMessage;
+  if (systemMessage && verbosity !== 'silent') out.systemMessage = systemMessage;
   process.stdout.write(JSON.stringify(out));
 }
 
