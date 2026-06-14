@@ -13,14 +13,15 @@
  * grader's task becomes "did Claude say it used this?" not "infer relevance" —
  * which is why even a small model can do it (ollama-model-quality).
  *
- * Plain JS (no build step for hooks) and dependency-free. The daemon-side libs
- * are .ts; this hook reads the same files (~/.contextus/...) directly to stay
- * independent of tsx at hook time.
+ * Plain ESM JS (the repo is "type": "module", like the sibling hooks — NOT
+ * CommonJS `require`). No build step for hooks and dependency-free: the
+ * daemon-side libs are .ts; this hook reads the same files (~/.contextus/...)
+ * directly to stay independent of tsx at hook time.
  */
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const HOME = os.homedir();
 const CONTEXTUS = path.join(HOME, '.contextus');
