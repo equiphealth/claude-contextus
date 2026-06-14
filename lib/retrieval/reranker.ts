@@ -10,11 +10,10 @@
  *              × freshnessDecay(updated_at)
  *              × hitCountBoost(hit_count)
  *
- * Phase-2 scope: `typeBoost` reads `metadata.type` (the only factor the corpus
- * fully carries today). `source` isn't yet a stored column — every row is
- * projectContext until multi-source ingest lands — so `sourceWeight` defaults to
- * 1.0 and is wired for when that column exists. Unknown types/sources fall back
- * to neutral 1.0 rather than dropping the row.
+ * `typeBoost` reads `metadata.type` and `sourceWeight` reads the stored `source`
+ * column (multi-source ingest, Phase 6): curated `.claude/context/` outranks
+ * noisier `docs/`. Unknown types/sources fall back to neutral 1.0 rather than
+ * dropping the row.
  *
  * IMPORTANT: re-ranking changes ORDER, not the floor decision. The injection
  * floor (lib/floor.ts) gates on RAW similarity, not finalScore — a typeBoost
@@ -100,11 +99,9 @@ export function hitCountBoost(count: number | undefined): number {
 export function rerank(results: SearchResult[], now = Date.now()): RankedResult[] {
   return results
     .map((r) => {
-      // `source` isn't a typed column yet; read it defensively if present.
-      const source = (r as unknown as { source?: string }).source;
       const finalScore =
         r.similarity *
-        weight(SOURCE_WEIGHTS, source) *
+        weight(SOURCE_WEIGHTS, r.source) *
         weight(TYPE_BOOSTS, r.type) *
         freshnessDecay(r.updated_at, now) *
         hitCountBoost(r.hit_count);

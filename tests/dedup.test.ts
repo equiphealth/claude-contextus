@@ -5,16 +5,24 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dedupe, cosine, DEFAULT_DEDUP_THRESHOLD } from '../lib/retrieval/dedup.js';
+import { dedupe, cosine, collapseByFile, DEFAULT_DEDUP_THRESHOLD } from '../lib/retrieval/dedup.js';
 import type { RankedResult } from '../lib/retrieval/reranker.js';
 
-function r(id: string, vector: number[], finalScore = 0.5): RankedResult {
+function r(
+  id: string,
+  vector: number[],
+  finalScore = 0.5,
+  opts: { filename?: string; chunk_index?: number } = {}
+): RankedResult {
   return {
     id,
     vector,
     document: '',
-    filename: `${id}.md`,
+    filename: opts.filename ?? `${id}.md`,
+    chunk_index: opts.chunk_index ?? 0,
+    heading: '',
     type: 'reference',
+    source: 'projectContext',
     tags: '',
     hit_count: 0,
     last_hit: '',
@@ -30,6 +38,30 @@ test('cosine: identical unit vectors → 1, orthogonal → 0, defensive on bad i
   assert.equal(cosine([1, 0], [0, 1]), 0);
   assert.equal(cosine(undefined, [1, 0]), 0);
   assert.equal(cosine([1, 0], [1, 0, 0]), 0); // length mismatch
+});
+
+test('collapseByFile: keeps one best-finalScore chunk per filename, preserves order', () => {
+  // file A: two chunks (0.9, 0.6) → keep 0.9; file B: one chunk (0.7).
+  const a1 = r('a#0', [1, 0], 0.6, { filename: 'a.md', chunk_index: 0 });
+  const a2 = r('a#1', [0, 1], 0.9, { filename: 'a.md', chunk_index: 1 });
+  const b0 = r('b#0', [1, 1], 0.7, { filename: 'b.md', chunk_index: 0 });
+  // input is best-first (rerank order): a2(0.9), b0(0.7), a1(0.6)
+  const out = collapseByFile([a2, b0, a1]);
+  assert.deepEqual(
+    out.map((x) => x.filename),
+    ['a.md', 'b.md'],
+    'one row per file, first-seen order'
+  );
+  assert.equal(out[0].finalScore, 0.9, "kept file A's best chunk");
+});
+
+test('collapseByFile: 5 chunks of one file collapse to a single representative', () => {
+  const chunks = [0.8, 0.7, 0.6, 0.5, 0.4].map((s, i) =>
+    r(`d#${i}`, [s, 1 - s], s, { filename: 'DESIGN.md', chunk_index: i })
+  );
+  const out = collapseByFile(chunks);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].finalScore, 0.8);
 });
 
 test('dedupe: drops a near-identical lower-ranked chunk, keeps the first', () => {

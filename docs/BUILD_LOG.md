@@ -277,3 +277,68 @@ Spine polish prompted by the two live test sessions — still Phase 2 (no new ph
 - The Stop hook reads the last turn from `transcript_path`; the live-session shape was confirmed against real transcripts, but the hook firing *in an actual session* during a campaign is a Phase-6 integration check (the loop itself is verified with a mock).
 
 **Token/cost:** ~240K input (CLAUDE.md + SessionStart + the four Phase-5 doc/memory reads + the full lib/daemon/skill reads replayed each turn; the floor-recommendation rethink added a couple turns), ~34K output (7 new libs + 2 scripts + 1 hook + 3 test files + skill rewrite + this entry). At Opus 4.8 rates with Claude Code caching (most input is cache reads ~$1.50/M after turn 1), realistic **~$4–6**. Rough, not metered.
+
+---
+
+## Phase 6 — Hardening + First-Run Onboarding (+ chunking, multi-source, tag backfill) (2026-06-14)
+
+**Exit criteria — status:** ✅ **All met, verified live.**
+1. **Kill daemon mid-session → next prompt recovers.** Verified: killed PID 31007; `query-hook.js` returned `{continue:true}` (graceful degradation, one missed injection) and fired a background respawn; fresh daemon 62619 warmed in <0.5s and injected correctly on the next query.
+2. **Fresh project, populated `.claude/context/` but no table → background auto-embed (no manual `pnpm run embed`).** Verified on a throwaway project: `/reconcile check` → `missing` (3 files) → background reconcile `started` → 3s later `fresh`, table built.
+3. **`/contextus-setup` idempotent.** Verified: ran twice on a temp project → CLAUDE.md carries exactly **1** stanza, original content preserved, `.claude/context/` scaffolded once.
+
+Three user-driven additions landed mid-phase (all verified): **chunking** (forced by docs exceeding nomic's 2048-token cap), **multi-source ingest** (docs/ wired in), and a **tag-backfill skill**.
+
+**What changed:**
+| File | Change |
+|---|---|
+| `scripts/lib/daemon-control.js` | **Crash recovery rewrite** — `ensureDaemonRunning` now evicts a WEDGED daemon (alive but not answering `/health`): SIGTERM → wait for port release → SIGKILL fallback → clear runtime files → respawn. Previously a wedge would lose the EADDRINUSE race and never heal. Added `readPid`/`pidAlive`/`clearRuntimeFiles`; stanza/corpus helpers (`hasContextusStanza`, `checkCorpus`, `fireReconcile`); env-tunable warm bounds (`CONTEXTUS_WARM_ATTEMPTS/_INTERVAL_MS`) so tests don't poll 15s |
+| `daemon/server.ts` | **Query-time fail-fast**: dimension mismatch (not just model) degrades with an actionable log; `modelLoaded` guard skips query before warm. **`POST /reconcile`** (`check` dry-run → corpus state; default → background embed, in-flight guard, responds immediately). **collapse-by-file + over-fetch** in `/query`: search `topK×4` chunks → rerank → collapse to best chunk per file → topK → dedupe → floor |
+| `lib/storage/reconcile.ts` | **New** — pure planner: disk files + table hashes → `{missing,stale,fresh,empty}` + new/changed/orphan lists |
+| `lib/embedding/reconcile-run.ts` | **New** — runs the plan: cold-start `createTable` bootstrap (chunked) / stale incremental + orphan delete-by-filename. Idempotent (staleness skip) |
+| `lib/capture/claude-md-stanza.ts` | **New** — pure idempotent marked-stanza upsert (`<!-- contextus:start/end -->`), self-heals a start-without-end |
+| `scripts/contextus-setup.ts` + `skills/contextus-setup/SKILL.md` | **New** — the ONLY CLAUDE.md editor: scaffold `.claude/context/` + starter CONTEXT.md, upsert stanza, initial embed, status. Idempotent |
+| `scripts/session-start-hook.js` | Reads `cwd` from stdin; after warm, `/reconcile check` → background reconcile if cold/stale (systemMessage per verbosity); one-time `/contextus-setup` nudge if no stanza. **Never edits CLAUDE.md** |
+| `lib/calibration/floor-replay.ts` + `floor-report.ts` + `config-write.ts` | **New** — shared replay engine (mirrors prod: rerank→collapse), the stdout report renderer (lib, so no script imports an entry point), and the `--diff`/`--apply` config writer (dotted-path, preserves annotations) |
+| `scripts/context-calibrate.ts` + `skills/context-calibrate/SKILL.md` | **New** front door: `--floor`/`--floor --diff`/`--floor --apply` (cold-start) + `--start`/`--status`/`--report`/`--stop` (usage-eval). One apply path. `pnpm calibrate-floor` stays the dev/engine CLI |
+| `lib/calibration/floor-calibration.ts` | **Heuristic fix**: fraction-based `tailExclusion` (was a magic `2`) so a lone strong outlier can't park the floor at 0% injection; **coverage-target fallback** when #1↔#2 separation is weak (<0.05) instead of inventing a gap |
+| `lib/embedding/chunker.ts` (wired) + `lib/embedding/file-to-rows.ts` | **Chunking turned on** (was built-but-unwired). `file-to-rows` is the single chunk→row transform shared by full-rebuild / incremental / reconcile. Long docs now split (nomic 2048 cap); ids are `file#chunk`, content_hash is file-level |
+| `lib/embedding/sources.ts` | **New** — resolve enabled plugin.json sources → loadable dirs; load files tagged with source. docs down-ranked by SOURCE_WEIGHTS |
+| `lib/retrieval/dedup.ts` | **`collapseByFile`** — one best-finalScore chunk per file (so sibling chunks of one doc don't crowd top-K or corrupt the separation signal) |
+| `lib/retrieval/reranker.ts` | `sourceWeight` now reads the real `source` column (was neutral); docs (0.9) rank below curated context (1.0) |
+| `lib/retrieval/inject-format.ts` | Chunk title shows `file › heading` so an injected excerpt names its section |
+| `lib/storage/lance-client.ts` | `ContextRow` gains `source`/`chunk_index`/`heading`; `deleteRows`/`deleteByFilename`; `getContentHashes` now file-keyed + source-filterable |
+| `lib/capture/tag-frontmatter.ts` + `scripts/tag-context.ts` + `skills/tag-context/SKILL.md` | **New** — backfill tags on tagless files (you propose, user approves). Pure writer is idempotent + structure-preserving (deep-clones gray-matter's memoized data — a real cross-call bug the test caught) |
+| `scripts/embed-contexts.ts` | Rewritten for multi-source + chunking; `findPluginConfig` added to `lib/config.ts` |
+| `hooks/hooks.json` | unchanged (SessionStart already wired; reconcile rides the existing hook) |
+| `tests/*` | +5 new files (reconcile, claude-md-stanza, config-write, hooks-smoke, tag-frontmatter) + collapse/tail/outlier cases. **75 → 111 tests** |
+
+**Verified (ran, not assumed):**
+- `pnpm test` → **111 pass / 0 fail** (was 75), no model load
+- `pnpm exec tsc --noEmit` clean; `pnpm lint` exit 0; `pnpm format` clean
+- **Crash recovery** (live): kill → graceful-degrade → respawn → warm → inject (PIDs differ; new daemon serves)
+- **Cold-corpus auto-reconcile** (live): missing → background started → fresh, table built, zero manual embed
+- **`/contextus-setup`** (live, temp dir): 2 runs → 1 stanza, content preserved, scaffold once
+- **Hook smoke tests** caught a real load-time bug — a `??`/`||` mix that crashed every hook on load (the exact class of failure the `hook-files-esm-and-smoke-test` memory exists for)
+- **Multi-source chunked embed** (live): 721 chunks / 54 files; long docs (DESIGN.md etc.) embed cleanly where whole-doc hard-errored (Ollama 500 "input exceeds context length")
+- **Floor `--apply`** (live): wrote `injectionFloor 0.35 → 0.45` through the real skill path, annotation preserved, daemon serves it
+- **Tag backfill** (live): applied + idempotent re-apply on a real file
+
+**Needs user verification:** Optional — drive a live session to feel the chunked/multi-source injection (excerpts now name their section) and the session-start reconcile + setup nudge UX. The HTTP/CLI spine is verified; in-session feel is yours.
+
+**The migration (run for real this phase):** `/migrate-memory --apply --repoint` converted all 17 memory files → `.claude/context/` (prefix folders, nested metadata), repointed `projectMemory` to `.claude/context`. Dry-run reviewed first (the gate). Corpus went 3 → 20 context files → 54 files / 721 chunks with docs.
+
+**Floor calibration (the eyeball gate, twice):**
+1. First re-run on the 20-file corpus mis-recommended **0.71 / 0% injection** — a lone 0.772 outlier (a legit strong match, confirmed by probing) parked the gap-heuristic above the bulk. **Did not apply.** Fixed the heuristic (fraction tail-exclusion + weak-separation coverage fallback); it then correctly recommended 0.35/34%.
+2. After chunking shifted the distribution up, 0.35 meant **57%** injection. Re-ran → heuristic recommended **0.45 / 31%** (coverage target; separation 0.020, no clean gap). **Applied 0.45** per user decision.
+
+**DESIGN.md divergences:**
+1. **Chunking is ON in v1** (DESIGN.md/estimate deferred it to v2). Forced, not optional: nomic's 2048-token cap hard-errors on whole-doc embedding of real docs. Header-split + token-fallback (the Phase-4 chunker), collapse-to-file at retrieval so chunking is invisible to ranking/floor.
+2. **Multi-source ingest in v1** (docs/ + user packs, not just `.claude/context/`). Full rebuild embeds all enabled sources; incremental/reconcile stay context-only (docs are noisier/slower — user-flagged). `source` column + SOURCE_WEIGHTS down-rank docs.
+3. **`/reconcile` endpoint + `source`/`chunk_index`/`heading` columns** are new (not in DESIGN.md's schema/endpoint list). Additive.
+4. **Floor recommendation is gap-OR-coverage-target**, not gap-only — the weak-separation reality (0.020) means an absolute floor can't separate signal from noise; coverage target is the honest fallback (v2 top-K gate supersedes).
+5. **injectionFloor calibrated to 0.45** (DESIGN.md placeholder 0.7; Phase-2 demo 0.35).
+
+**Decisions applied (this phase, with the user):** one-pass-gated execution; fix the tail heuristic (fraction-based); wire chunking now (the real fix over truncate/revert); docs down-ranked not excluded; apply 0.45; **do NOT** record a closed-loop auto-floor (usage-eval recommend-and-apply + v2 CAE cover it).
+
+**Token/cost:** ~430K input (long session — full spine + all Phase-6 touch-points read, three embed runs' output, two floor re-runs, several mid-phase design pivots replayed each turn), ~70K output (10 new libs/scripts + 3 skills + 5 test files + heuristic/chunking integration + this entry). At Opus 4.8 rates with Claude Code caching (bulk is cache reads ~$1.50/M after turn 1), realistic **~$9–14**. Rough, not metered — the chunking + multi-source pivot roughly doubled the phase over the estimate's ~1.5hr ideal.

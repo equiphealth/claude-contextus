@@ -26,6 +26,7 @@ export const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 const RUNTIME_DIR = path.join(os.homedir(), '.contextus', 'runtime');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
+const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
 const DAEMON_TS = path.join(REPO_ROOT, 'daemon', 'server.ts');
 const EVAL_WORKER_TS = path.join(REPO_ROOT, 'daemon', 'eval-worker.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
@@ -104,30 +105,129 @@ function spawnDaemon() {
  * Ensure a healthy daemon is running. Returns true if one was ALREADY healthy,
  * false if we just spawned one (caller then polls /health for modelLoaded).
  *
- * Stale-PID handling: a PID file with a dead process (or an unreachable daemon)
- * is cleaned up before spawning a replacement.
+ * Crash-recovery / stale-PID handling — three cases when /health doesn't answer:
+ *   1. No PID file, or PID points at a dead process → a clean crash. Clear the
+ *      stale runtime files and spawn fresh.
+ *   2. PID is alive but /health is unreachable → a WEDGED daemon still holding
+ *      the port. Just spawning would lose the EADDRINUSE race (the new process
+ *      exits, nothing recovers). So we KILL the wedged process first, wait for
+ *      the port to free, then spawn. This is the kill-mid-session recovery path.
+ *   3. PID is alive AND /health answered → handled above (returns true).
  */
 export async function ensureDaemonRunning() {
   const health = await getHealth(1000);
   if (health) return true;
 
-  // Not reachable. Clean up a stale PID file if the process is gone.
-  if (fs.existsSync(PID_PATH)) {
+  const pid = readPid();
+  if (pid && pidAlive(pid)) {
+    // Wedged: process is up but not serving /health. Evict it so the port frees
+    // and our respawn can bind (otherwise it'd EADDRINUSE-exit and never heal).
     try {
-      const pid = parseInt(fs.readFileSync(PID_PATH, 'utf8'), 10);
-      if (pid) process.kill(pid, 0); // throws if the process doesn't exist
-      // Process exists but /health failed → it's wedged; leave PID, still respawn.
+      process.kill(pid, 'SIGTERM');
     } catch {
+      /* may have just died — fine */
+    }
+    // Give it a moment to release the socket (its SIGTERM handler closes + unrefs).
+    for (let i = 0; i < 10; i++) {
+      await sleep(100);
+      if (!pidAlive(pid)) break;
+    }
+    if (pidAlive(pid)) {
       try {
-        fs.unlinkSync(PID_PATH);
+        process.kill(pid, 'SIGKILL');
       } catch {
         /* best-effort */
       }
     }
   }
 
+  // Either a clean crash (dead/no PID) or a freshly-evicted wedge — clear the
+  // runtime files so the next daemon writes its own, and spawn.
+  clearRuntimeFiles();
   spawnDaemon();
   return false;
+}
+
+/** Read the daemon PID from the PID file, or null if absent/unparseable. */
+function readPid() {
+  try {
+    const pid = parseInt(fs.readFileSync(PID_PATH, 'utf8'), 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Is this PID a live process? `kill(pid, 0)` throws ESRCH if it isn't. */
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM means the process exists but we can't signal it → still alive.
+    return err && err.code === 'EPERM';
+  }
+}
+
+/** Best-effort removal of the stale PID + port runtime files. */
+function clearRuntimeFiles() {
+  for (const p of [PID_PATH, PORT_PATH]) {
+    try {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
+/** The marked, idempotent stanza fences /contextus-setup writes into CLAUDE.md. */
+export const STANZA_START = '<!-- contextus:start -->';
+export const STANZA_END = '<!-- contextus:end -->';
+
+/**
+ * Does the project CLAUDE.md already carry the contextus stanza? Used by
+ * session-start for the one-time "run /contextus-setup" nudge. A missing file
+ * counts as "no stanza". Reads the file directly (plain JS, no config import).
+ */
+export function hasContextusStanza(cwd) {
+  const file = path.join(cwd || process.cwd(), 'CLAUDE.md');
+  try {
+    return fs.readFileSync(file, 'utf8').includes(STANZA_START);
+  } catch {
+    return false; // no CLAUDE.md → no stanza
+  }
+}
+
+/** POST /reconcile with `check:true` — returns the corpus state plan, or null. */
+export async function checkCorpus(project, cwd, timeoutMs = 1500) {
+  try {
+    const res = await fetch(`${BASE_URL}/reconcile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project, cwd, check: true }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** POST /reconcile (no check) — fire the background reconcile. Returns body or null. */
+export async function fireReconcile(project, cwd, timeoutMs = 2000) {
+  try {
+    const res = await fetch(`${BASE_URL}/reconcile`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project, cwd }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
 
 /** Sleep helper for polling loops. */
@@ -140,11 +240,15 @@ export function sleep(ms) {
  * session-start so the first real prompt hits a warm daemon. Does NOT block
  * forever — bounded so a broken daemon can't hang session startup.
  */
-export async function waitForModel({ attempts = 30, intervalMs = 500 } = {}) {
-  for (let i = 0; i < attempts; i++) {
+export async function waitForModel({ attempts, intervalMs } = {}) {
+  // Bounds are env-tunable so tests/CI can keep the spawn path fast without
+  // leaving a daemon mid-warm; production session-start uses the defaults.
+  const maxAttempts = attempts ?? (Number(process.env.CONTEXTUS_WARM_ATTEMPTS) || 30);
+  const wait = intervalMs ?? (Number(process.env.CONTEXTUS_WARM_INTERVAL_MS) || 500);
+  for (let i = 0; i < maxAttempts; i++) {
     const health = await getHealth(1000);
     if (health && health.modelLoaded) return true;
-    await sleep(intervalMs);
+    await sleep(wait);
   }
   return false;
 }

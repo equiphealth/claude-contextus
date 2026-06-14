@@ -47,10 +47,16 @@ export interface ContextRow {
   vector: number[];
   /** full markdown content (no frontmatter) */
   document: string;
-  /** source-relative path */
+  /** source-relative path of the FILE this chunk came from (shared across chunks) */
   filename: string;
+  /** 0-based ordinal of this chunk within its file (0 for whole-file rows) */
+  chunk_index: number;
+  /** the nearest enclosing markdown heading for this chunk ('' if none) */
+  heading: string;
   /** frontmatter type (feedback|reference|decision|project|...) */
   type: string;
+  /** source pack the row came from (re-ranker SOURCE_WEIGHTS key) */
+  source: string;
   /** comma-joined tags (LanceDB infers scalar columns; arrays need explicit schema) */
   tags: string;
   /** retrieval hit counter (re-ranking + calibration) */
@@ -216,15 +222,59 @@ export async function incrementHits(ids: string[], projectName?: string): Promis
   });
 }
 
-/** Map of id → stored content_hash for staleness checks (empty if no table). */
-export async function getContentHashes(projectName?: string): Promise<Map<string, string>> {
+/**
+ * Delete rows by id (orphan cleanup during reconcile). No-op on empty input.
+ * Best-effort, single SQL delete with an `id IN (...)` predicate.
+ */
+export async function deleteRows(ids: string[], projectName?: string): Promise<void> {
+  if (ids.length === 0) return;
+  if (!(await tableExists(projectName))) return;
+  const table = await openTable(projectName);
+  const inList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
+  await table.delete(`id IN (${inList})`);
+}
+
+/**
+ * Delete every chunk row of a file by its `filename` (used when a file is
+ * re-embedded into a DIFFERENT chunk count — stale high-index rows must go before
+ * the new chunks are upserted, or orphan chunks linger). No-op if no table.
+ */
+export async function deleteByFilename(filename: string, projectName?: string): Promise<void> {
+  if (!(await tableExists(projectName))) return;
+  const table = await openTable(projectName);
+  await table.delete(`filename = '${filename.replace(/'/g, "''")}'`);
+}
+
+/**
+ * Map of FILENAME → stored content_hash for staleness checks (empty if no table).
+ * Keyed by filename, not row id: a file is now many chunk rows that share one
+ * (file-level) content_hash, so we collapse them to one entry per file — which is
+ * exactly the unit the staleness gate and reconcile planner reason about.
+ *
+ * `sourceFilter` scopes the map to one source pack — the reconcile path uses it so
+ * it only manages `projectContext` rows and never treats doc-source rows (which
+ * refresh on a full embed, not incrementally) as orphans to delete.
+ */
+export async function getContentHashes(
+  projectName?: string,
+  sourceFilter?: string
+): Promise<Map<string, string>> {
   if (!(await tableExists(projectName))) return new Map();
   const table = await openTable(projectName);
-  const rows = (await table.query().select(['id', 'content_hash']).toArray()) as Array<{
-    id: string;
+  const rows = (await table
+    .query()
+    .select(['filename', 'content_hash', 'source'])
+    .toArray()) as Array<{
+    filename: string;
     content_hash?: string;
+    source?: string;
   }>;
-  return new Map(rows.map((r) => [r.id, r.content_hash ?? '']));
+  const map = new Map<string, string>();
+  for (const r of rows) {
+    if (sourceFilter && (r.source ?? 'projectContext') !== sourceFilter) continue;
+    if (!map.has(r.filename)) map.set(r.filename, r.content_hash ?? '');
+  }
+  return map;
 }
 
 /** Reset memoized connections (tests / daemon restart). */

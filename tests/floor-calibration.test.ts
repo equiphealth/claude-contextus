@@ -10,6 +10,7 @@ import {
   coverage,
   buildCoverageCurve,
   recommendFloor,
+  tailExclusion,
   type ReplayResult,
 } from '../lib/calibration/floor-calibration.js';
 
@@ -44,9 +45,13 @@ test('buildCoverageCurve: monotonically non-increasing injection rate as floor r
 test('recommendFloor: places floor in the noise/signal gap (bimodal distribution)', () => {
   // a noise cloud near 0.1–0.2 and a real-match cluster near 0.6–0.7, with a
   // wide gap between them — the floor should land IN the gap, not in the noise.
+  // Signal hits carry a healthy #1↔#2 separation so the gap strategy engages.
   const noise = [0.08, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2, 0.22];
   const signal = [0.6, 0.63, 0.66, 0.69];
-  const results: ReplayResult[] = [...noise, ...signal].map((top1) => ({ top1, top2: null }));
+  const results: ReplayResult[] = [
+    ...noise.map((top1) => ({ top1, top2: top1 - 0.01 })),
+    ...signal.map((top1) => ({ top1, top2: top1 - 0.15 })), // strong separation
+  ];
   const rec = recommendFloor(results);
   assert.ok(
     rec.recommendedFloor > 0.22 && rec.recommendedFloor < 0.6,
@@ -58,14 +63,60 @@ test('recommendFloor: places floor in the noise/signal gap (bimodal distribution
   assert.ok(rec.coverageCurve.length > 0);
 });
 
-test('recommendFloor: smooth distribution → falls back to ~p75', () => {
-  // evenly spaced with sub-0.05 gaps → no clear cluster → fallback to ~p75
+test('tailExclusion: scales with sample size, clamped to [1, 5]', () => {
+  assert.equal(tailExclusion(10), 1, 'tiny replay → at least 1');
+  assert.equal(tailExclusion(50), 1, '2% of 50 = 1');
+  assert.equal(tailExclusion(100), 2, '2% of 100 = 2');
+  assert.equal(tailExclusion(300), 5, '2% of 300 = 6 → capped at 5');
+  assert.equal(tailExclusion(1), 1, 'never below 1');
+});
+
+test('recommendFloor: a 3-strong-result cluster is kept, not excluded as tail', () => {
+  // On a 200-prompt replay, 3 strong matches are part of the SIGNAL, not a thin
+  // tail (tailExclusion(200)=4 ≥ 3, but they form a continuous cluster with the
+  // rest, so the gap below them — not above — is what wins). The floor must sit
+  // BELOW the 3-strong cluster so they inject.
+  const noise = Array.from({ length: 190 }, (_, i) => ({ top1: 0.05 + (i / 190) * 0.2, top2: 0.0 }));
+  const strong = [0.66, 0.68, 0.7].map((top1) => ({ top1, top2: top1 - 0.2 }));
+  const rec = recommendFloor([...noise, ...strong]);
+  assert.ok(
+    rec.recommendedFloor < 0.66,
+    `floor ${rec.recommendedFloor} should sit below the 3-strong cluster so they inject`
+  );
+});
+
+test('recommendFloor: a lone high outlier does NOT park the floor above the bulk', () => {
+  // The real-corpus misfire: a tight good-match cluster at 0.60–0.69 plus ONE
+  // outlier at 0.77. The widest "gap" is between 0.69 and 0.77 — but anchoring
+  // there would inject for ~1 prompt (0%). The tail-exclusion must prevent that.
+  const cluster = [0.6, 0.62, 0.64, 0.66, 0.68, 0.69];
+  const lowNoise = [0.1, 0.15, 0.2, 0.25, 0.3, 0.35];
+  const results: ReplayResult[] = [
+    ...lowNoise.map((top1) => ({ top1, top2: top1 - 0.01 })),
+    ...cluster.map((top1) => ({ top1, top2: top1 - 0.12 })),
+    { top1: 0.77, top2: 0.6 }, // the lone outlier
+  ];
+  const rec = recommendFloor(results);
+  assert.ok(
+    rec.recommendedFloor <= 0.69,
+    `floor ${rec.recommendedFloor} must not sit above the good-match cluster (≤0.69)`
+  );
+  assert.ok(rec.coverageAtFloor > 0.05, 'must inject for more than the lone outlier');
+});
+
+test('recommendFloor: weak separation → coverage-target fallback, honest rationale', () => {
+  // Smooth ramp, near-zero #1↔#2 separation (the ollama-nomic reality): no clean
+  // gap → recommend a floor near the ~35% coverage target and say so plainly.
   const results: ReplayResult[] = Array.from({ length: 40 }, (_, i) => ({
-    top1: i / 40, // 0.0 … 0.975, uniform 0.025 spacing (< 0.05 gap threshold)
-    top2: null,
+    top1: i / 40, // 0.0 … 0.975, uniform spacing
+    top2: i / 40 - 0.02, // separation 0.02 < WEAK_SEPARATION
   }));
   const rec = recommendFloor(results);
-  assert.ok(Math.abs(rec.recommendedFloor - rec.top1Percentiles.p75) < 0.05);
+  assert.ok(
+    rec.coverageAtFloor >= 0.25 && rec.coverageAtFloor <= 0.45,
+    `coverage ${rec.coverageAtFloor} should land near the ~35% target`
+  );
+  assert.match(rec.rationale, /smooth ramp|coverage target|separation/i);
 });
 
 test('recommendFloor: empty corpus → permissive fallback, never throws', () => {

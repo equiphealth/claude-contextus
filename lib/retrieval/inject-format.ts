@@ -32,11 +32,14 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-/** One chunk's rendered block: title + similarity/hits line + body. */
+/** One chunk's rendered block: title + heading + similarity/hits line + body. */
 function renderChunk(r: RankedResult): string {
   const hits = r.hit_count > 0 ? `, used ${r.hit_count}×` : '';
   const title = r.filename || r.id;
-  return `**${title}** (similarity: ${r.similarity.toFixed(2)}${hits})\n${r.document.trim()}`;
+  // A chunked file may surface a specific section — name it so the reader knows
+  // this is an excerpt, not the whole file.
+  const section = r.heading ? ` › ${r.heading}` : '';
+  return `**${title}${section}** (similarity: ${r.similarity.toFixed(2)}${hits})\n${r.document.trim()}`;
 }
 
 /** Result of formatting: the block plus what was included vs. budget-trimmed. */
