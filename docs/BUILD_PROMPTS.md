@@ -16,7 +16,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > **The critical task is verifying the real `@lancedb/lancedb` API matches what DESIGN.md assumes** — this is the highest-risk unknown. If it diverges, stop and tell me before writing more.
 >
-> Exit criteria: `lib/lance-client.ts` connects, creates a table, round-trips one record. Then stop and report what you verified vs. what I should check, and any DESIGN.md divergence.
+> Exit criteria: `lib/lance-client.ts` connects, creates a table, round-trips one record. Then stop and report what you verified vs. what I should check, any DESIGN.md divergence, and input/output token counts for this phase.
 
 ---
 
@@ -28,7 +28,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Exit criteria: `npm run embed` populates LanceDB from real `.claude/context/`; rows carry `type` + `tags`; vector-inspector can open the DB.
 >
-> **Note on the corpus**: the context files you embed *become the injected corpus* — write/verify any context files from confirmed code or tests, not from memory (per `selfdoc-build-practice`). Stop and report; I'll spot-check the embedded content is true before it hardens.
+> **Note on the corpus**: the context files you embed *become the injected corpus* — write/verify any context files from confirmed code or tests, not from memory (per `selfdoc-build-practice`). Stop and report; I'll spot-check the embedded content is true before it hardens. Include input/output token counts for this phase.
 
 ---
 
@@ -38,7 +38,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Do **Phase 2 only** — the spine: `daemon/server.js` (`/health` with `modelLoaded`, `/query`, `/notify`; model loaded once), `scripts/session-start-hook.js` + an `ensureDaemonRunning()` util (poll `/health`, don't sleep), `scripts/query-hook.js` (thin HTTP client, graceful degradation if daemon down), and the re-ranker (`typeBoost` reads `metadata.type`) + injection floor + injection format block. Log every floor-dropped chunk with its score (groundwork for v2 removal).
 >
-> Exit criteria: a real prompt in a live session injects relevant context. **I will drive a live Claude Code session to verify this — you can't self-verify it**, so when you reach the exit, stop and tell me exactly how to test it (commands, what to look for in the injected block). Flag any daemon spawn/detach issues you hit.
+> Exit criteria: a real prompt in a live session injects relevant context. **I will drive a live Claude Code session to verify this — you can't self-verify it**, so when you reach the exit, stop and tell me exactly how to test it (commands, what to look for in the injected block). Flag any daemon spawn/detach issues you hit. Report input/output token counts for this phase.
 
 ---
 
@@ -51,7 +51,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 > - Phase 4: pure-logic unit tests for re-ranker, floor, chunker, staleness, formatter, dedup; wire `npm test`.
 > - Build the **`/migrate-memory` skill** (dry-run by default, idempotent, verify-before-embed): converts `.claude/memory/` slug files → `.claude/context/` prefix files with inferred `type` + seed `tags`, and repoints the `plugin.json` source path. The pipeline exists now, so this is the right time. Don't run it on real data yet — just build + test it.
 >
-> Exit criteria: editing a context file re-embeds without a full rebuild; proposals appear in footers; green test suite (<5s, no model load). Then stop and report.
+> Exit criteria: editing a context file re-embeds without a full rebuild; proposals appear in footers; green test suite (<5s, no model load). Then stop and report input/output token counts for this phase.
 
 ---
 
@@ -61,7 +61,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Do **Phase 5 only**: wire the Stop hook + eval worker (Haiku calibration — test the *parser*, mock the model call), build the floor-calibration harness (replay historical prompts, log the similarity distribution), and add a minimal `/introspect` endpoint (version, model + dimensions, loaded packs, chunk counts, floor, re-rank weights, hit-count stats, uptime) that feeds `/context-status`. Defer `generate-docs` and the 7 auto-doc files to v2.
 >
-> Exit criteria: a calibration run produces a floor recommendation **from my real historical prompts** — so when ready, stop and tell me how to run it; I need to eyeball whether the recommended floor is sane before we adopt it.
+> Exit criteria: a calibration run produces a floor recommendation **from my real historical prompts** — so when ready, stop and tell me how to run it; I need to eyeball whether the recommended floor is sane before we adopt it. Report input/output token counts for this phase.
 
 ---
 
@@ -71,7 +71,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 >
 > Do **Phase 6**: daemon crash recovery, stale-PID cleanup, integration tests for daemon + hooks, model/dimension validation fail-fast paths.
 >
-> Exit criteria: kill the daemon mid-session → the next prompt recovers gracefully. Run the migration for real (`/migrate-memory`) once everything's green, then give me a final v1 status: what works, what's deferred to v2, and anything that diverged from DESIGN.md along the way.
+> Exit criteria: kill the daemon mid-session → the next prompt recovers gracefully. Run the migration for real (`/migrate-memory`) once everything's green, then give me a final v1 status: what works, what's deferred to v2, anything that diverged from DESIGN.md along the way, and input/output token counts for this phase.
 
 ---
 
