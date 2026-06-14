@@ -17,7 +17,7 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 
 ## ▶ Prompt 1 — Phase 0: Demolition & Foundation
 
-> Starting the claude-contextus v1 build. First read `docs/IMPLEMENTATION_ESTIMATE.md` (the phased plan + "How to Run the Build" cadence) and the `design-scoping-v1-v2`, `build-execution-cadence`, and `selfdoc-build-practice` memories so you have the constraints.
+> Starting the claude-contextus v1 build. First read the standing instruction at the top of `docs/BUILD_PROMPTS.md`, then read `docs/IMPLEMENTATION_ESTIMATE.md` (the phased plan + "How to Run the Build" cadence) and the `design-scoping-v1-v2`, `build-execution-cadence`, and `selfdoc-build-practice` memories so you have the constraints.
 >
 > Then do **Phase 0 only**: replace the ChromaDB client with a LanceDB client, create `scripts/`, lock embedding config to Transformers.js + nomic (config-driven), and fix the stale `plugin.json` values (`chroma`→`lancedb`, model→nomic, note the unvalidated `similarityThreshold: 0.7`).
 >
@@ -31,7 +31,7 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 
 ## ▶ Prompt 2 — Phase 1: Embedding Pipeline
 
-> Phase 0 is done and committed. Read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 1) and the `selfdoc-build-practice` memory.
+> Phase 0 is done and committed. Read the standing instruction at the top of `docs/BUILD_PROMPTS.md`, then read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 1) and the `selfdoc-build-practice` memory.
 >
 > Do **Phase 1 only**: `lib/embedder.ts` (Transformers.js nomic, mean pooling + normalize, model warm-load) and `scripts/embed-contexts.js` (scan sources, whole-doc embed — defer chunking, store model + dimensions in metadata). Parse and persist `metadata.type` + `tags` from frontmatter per chunk; `type` will feed the re-ranker, `tags` are stored-but-unused until v2. Reject files whose prefix and `metadata.type` disagree.
 >
@@ -47,7 +47,7 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 
 ## ▶ Prompt 3 — Phase 2: The Spine (Daemon + Query Hook) ← the demo
 
-> Phase 1 is done and committed. Read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 2) and `docs/DESIGN.md` for the daemon/retrieval contracts.
+> Phase 1 is done and committed. Read the standing instruction at the top of `docs/BUILD_PROMPTS.md`, then read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 2) and `docs/DESIGN.md` for the daemon/retrieval contracts.
 >
 > Do **Phase 2 only** — the spine: `daemon/server.js` (`/health` with `modelLoaded`, `/query`, `/notify`; model loaded once), `scripts/session-start-hook.js` + an `ensureDaemonRunning()` util (poll `/health`, don't sleep), `scripts/query-hook.js` (thin HTTP client, graceful degradation if daemon down), and the re-ranker (`typeBoost` reads `metadata.type`) + injection floor + injection format block. Log every floor-dropped chunk with its score (groundwork for v2 removal).
 >
@@ -59,7 +59,7 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 
 ## ▶ Prompt 4 — Phases 3 + 4: Capture, Incremental Updates, Unit Tests + `/migrate-memory`
 
-> Phase 2 (the spine) is verified and committed. Read `docs/IMPLEMENTATION_ESTIMATE.md` (Phases 3–4 + the "Memory → Context Migration" section) and the `memory-to-context-migration` memory.
+> Phase 2 (the spine) is verified and committed. Read the standing instruction at the top of `docs/BUILD_PROMPTS.md`, then read `docs/IMPLEMENTATION_ESTIMATE.md` (Phases 3–4 + the "Memory → Context Migration" section) and the `memory-to-context-migration` memory.
 >
 > Do **Phases 3 and 4 together**:
 > - Phase 3: `scripts/awareness-hook.js` (proposal footer, novelty signal from the injected set), `scripts/watch-contexts.js` (PostToolUse → `/notify` → incremental re-embed), hit-count tracking on retrieval.
@@ -74,7 +74,7 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 
 ## ▶ Prompt 5 — Phase 5: Quality Measurement
 
-> Phases 3–4 are done and committed. Read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 5), `docs/LOGGING.md`, and the `evaluation-architecture` + `ollama-model-quality` memories.
+> Phases 3–4 are done and committed. Read the standing instruction at the top of `docs/BUILD_PROMPTS.md`, then read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 5), `docs/LOGGING.md`, and the `evaluation-architecture` + `ollama-model-quality` memories.
 >
 > Do **Phase 5 only**: wire the Stop hook + eval worker (Haiku calibration — test the *parser*, mock the model call), build the floor-calibration harness (replay historical prompts, log the similarity distribution), and add a minimal `/introspect` endpoint (version, model + dimensions, loaded packs, chunk counts, floor, re-rank weights, hit-count stats, uptime) that feeds `/context-status`. Defer `generate-docs` and the 7 auto-doc files to v2.
 >
@@ -86,7 +86,7 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 
 ## ▶ Prompt 6 — Phase 6: Hardening
 
-> Phase 5 is done and committed. Read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 6).
+> Phase 5 is done and committed. Read the standing instruction at the top of `docs/BUILD_PROMPTS.md`, then read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 6).
 >
 > Do **Phase 6**: daemon crash recovery, stale-PID cleanup, integration tests for daemon + hooks, model/dimension validation fail-fast paths.
 >
