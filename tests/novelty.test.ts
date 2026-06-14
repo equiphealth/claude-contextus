@@ -5,7 +5,7 @@
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { recordInjection, noveltyFor, resetNovelty, NOVELTY_WINDOW } from '../lib/novelty.js';
+import { recordInjection, noveltyFor, resetNovelty, NOVELTY_WINDOW } from '../lib/capture/novelty.js';
 
 beforeEach(() => resetNovelty());
 

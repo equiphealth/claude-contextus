@@ -5,8 +5,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dedupe, cosine, DEFAULT_DEDUP_THRESHOLD } from '../lib/dedup.js';
-import type { RankedResult } from '../lib/reranker.js';
+import { dedupe, cosine, DEFAULT_DEDUP_THRESHOLD } from '../lib/retrieval/dedup.js';
+import type { RankedResult } from '../lib/retrieval/reranker.js';
 
 function r(id: string, vector: number[], finalScore = 0.5): RankedResult {
   return {

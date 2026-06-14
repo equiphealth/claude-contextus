@@ -5,8 +5,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyFloor } from '../lib/floor.js';
-import type { RankedResult } from '../lib/reranker.js';
+import { applyFloor } from '../lib/retrieval/floor.js';
+import type { RankedResult } from '../lib/retrieval/reranker.js';
 
 function ranked(similarity: number, finalScore: number, id = 's'): RankedResult {
   return {

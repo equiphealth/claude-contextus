@@ -17,7 +17,7 @@
  * the re-ranker's typeBoost both fire.
  */
 
-import { KNOWN_CATEGORY_PREFIXES } from './context-loader.js';
+import { KNOWN_CATEGORY_PREFIXES } from '../embedding/context-loader.js';
 
 /** Parsed input: a memory file's filename + its frontmatter + body. */
 export interface MemoryFile {

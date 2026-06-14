@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contentHash, isStale } from '../lib/staleness.js';
+import { contentHash, isStale } from '../lib/storage/staleness.js';
 
 test('contentHash: stable + ignores surrounding whitespace', () => {
   assert.equal(contentHash('hello'), contentHash('hello'));

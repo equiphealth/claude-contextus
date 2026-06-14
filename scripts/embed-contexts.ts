@@ -27,10 +27,10 @@ import {
   findPrefixTypeMismatches,
   loadContexts,
   type LoadedContext,
-} from '../lib/context-loader.js';
-import { embedDocuments } from '../lib/embedder.js';
-import { createTable, type ContextRow } from '../lib/lance-client.js';
-import { contentHash } from '../lib/staleness.js';
+} from '../lib/embedding/context-loader.js';
+import { embedDocuments } from '../lib/embedding/embedder.js';
+import { createTable, type ContextRow } from '../lib/storage/lance-client.js';
+import { contentHash } from '../lib/storage/staleness.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

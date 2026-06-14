@@ -10,8 +10,8 @@ import {
   freshnessDecay,
   hitCountBoost,
   TYPE_BOOSTS,
-} from '../lib/reranker.js';
-import type { SearchResult } from '../lib/lance-client.js';
+} from '../lib/retrieval/reranker.js';
+import type { SearchResult } from '../lib/storage/lance-client.js';
 
 /** Build a minimal SearchResult with sane defaults. */
 function row(overrides: Partial<SearchResult>): SearchResult {

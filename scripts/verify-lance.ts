@@ -21,7 +21,7 @@ import {
   readTableMeta,
   resetConnection,
   type ContextRow,
-} from '../lib/lance-client.js';
+} from '../lib/storage/lance-client.js';
 
 // Route the DB to a throwaway temp dir for this verification run.
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-verify-'));

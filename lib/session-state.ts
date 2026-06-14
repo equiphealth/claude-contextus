@@ -14,7 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { expandHome } from './config.js';
-import type { InjectedPattern } from './eval-calibration.js';
+import type { InjectedPattern } from './calibration/eval-calibration.js';
 
 const STATE_PATH = expandHome('~/.contextus/.session-state.json');
 

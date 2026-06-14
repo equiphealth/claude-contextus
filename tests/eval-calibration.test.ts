@@ -12,7 +12,7 @@ import {
   weightedScore,
   RATING_WEIGHTS,
   type InjectedPattern,
-} from '../lib/eval-calibration.js';
+} from '../lib/calibration/eval-calibration.js';
 
 const PATTERNS: InjectedPattern[] = [
   { id: 'logger-helper.md', snippet: 'log retry attempts' },

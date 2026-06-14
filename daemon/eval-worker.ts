@@ -15,8 +15,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { drainQueue } from '../lib/eval-worker-core.js';
-import { readState } from '../lib/calibration-state.js';
+import { drainQueue } from '../lib/calibration/eval-worker-core.js';
+import { readState } from '../lib/calibration/calibration-state.js';
 import { logInfo, logError } from '../lib/logger.js';
 import { expandHome } from '../lib/config.js';
 

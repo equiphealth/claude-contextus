@@ -21,7 +21,7 @@
  * must never lift an irrelevant chunk over the floor. Keep the two separate.
  */
 
-import type { SearchResult } from './lance-client.js';
+import type { SearchResult } from '../storage/lance-client.js';
 
 /** Source priority (DESIGN.md §"Multi-Source Architecture"). Neutral until the
  *  `source` column exists; kept here so multi-source ingest only flips data. */

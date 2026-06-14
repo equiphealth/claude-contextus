@@ -26,16 +26,16 @@ import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { loadConfig, expandHome } from '../lib/config.js';
-import { warmup, embedQuery } from '../lib/embedder.js';
-import { search, tableExists, readTableMeta, incrementHits } from '../lib/lance-client.js';
-import { rerank } from '../lib/reranker.js';
-import { dedupe } from '../lib/dedup.js';
-import { applyFloor } from '../lib/floor.js';
-import { formatInjection } from '../lib/inject-format.js';
-import { recordInjection, noveltyFor } from '../lib/novelty.js';
-import { embedSingleFile } from '../lib/embed-file.js';
+import { warmup, embedQuery } from '../lib/embedding/embedder.js';
+import { search, tableExists, readTableMeta, incrementHits } from '../lib/storage/lance-client.js';
+import { rerank } from '../lib/retrieval/reranker.js';
+import { dedupe } from '../lib/retrieval/dedup.js';
+import { applyFloor } from '../lib/retrieval/floor.js';
+import { formatInjection } from '../lib/retrieval/inject-format.js';
+import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
+import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { recordLastInjection } from '../lib/session-state.js';
-import { readState as readCalibrationState } from '../lib/calibration-state.js';
+import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
 import {
   logRetrieval,

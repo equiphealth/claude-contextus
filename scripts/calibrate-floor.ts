@@ -26,10 +26,10 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { embedQuery } from '../lib/embedder.js';
-import { search, tableExists } from '../lib/lance-client.js';
+import { embedQuery } from '../lib/embedding/embedder.js';
+import { search, tableExists } from '../lib/storage/lance-client.js';
 import { loadConfig } from '../lib/config.js';
-import { recommendFloor, type ReplayResult } from '../lib/floor-calibration.js';
+import { recommendFloor, type ReplayResult } from '../lib/calibration/floor-calibration.js';
 
 interface Args {
   project: string;
