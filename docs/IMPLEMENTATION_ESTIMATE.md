@@ -183,10 +183,11 @@ Ordered to get something real working fastest, then harden. Each phase ends with
 - `/introspect` endpoint (Self-doc Layer 1, minimal): returns version, model + dimensions, loaded packs, chunk counts, floor, re-rank weights, hit-count stats, uptime. Feeds `/context-status`. **Defer** `generate-docs` and the 7 auto-doc files to v2.
 - **Exit criteria**: a calibration run produces a floor recommendation from real data; `/context-status` reads live numbers from `/introspect`.
 
-### Phase 6 — Hardening (~1 hr)
+### Phase 6 — Hardening + First-Run Onboarding (~1.5 hr)
 - Crash recovery, stale-PID cleanup, integration tests for daemon + hooks.
 - Model/dimension validation fail-fast paths.
-- **Exit criteria**: kill the daemon mid-session → next prompt recovers gracefully.
+- **First-run onboarding** (see "First-Run Onboarding" section below): background auto-reconcile of a cold/stale corpus + a `/contextus-setup` skill.
+- **Exit criteria**: kill the daemon mid-session → next prompt recovers gracefully; a fresh project with populated `.claude/context/` but no table auto-embeds in the background; `/contextus-setup` is idempotent.
 
 **Phases 0–2 are the minimum viable spine (~2–2.5 hr).** Stop there for a working demo; Phases 3–6 are hardening and quality.
 
@@ -258,6 +259,28 @@ No `memory/` strings are hardcoded in hook JS, so this is **content conversion +
 **Adjacent `plugin.json` staleness** (fix during Phase 0, not part of migration): `config.chroma` → `lancedb`; `embedding.model` is `Xenova/all-MiniLM-L6-v2` but DESIGN.md default is nomic; `similarityThreshold: 0.7` is the unvalidated floor.
 
 ---
+
+## First-Run Onboarding (Phase 6)
+
+**The gap (caught 2026-06-14):** session-start ensures the daemon is *running* but never checks whether the project's *corpus exists*. A fresh install with a populated `.claude/context/` but no LanceDB table hits `tableExists=false` in `/query` → injects nothing → silently, forever, until someone runs `pnpm run embed` by hand. For a system whose whole pitch is "context finds you," a cold project that quietly finds nothing is the trust-eroding failure mode — and it's invisible, so nobody reports it. Neither existing skill closes it: `configure` tunes paths but never embeds; `rebuild-embeddings` is a manual "something's broken" tool, not onboarding.
+
+**Two halves, deliberately split by risk:**
+
+### 1. Auto-reconcile — the silent safety net (automatic, in a hook)
+- Session-start detects a **cold or stale** corpus: context files exist on disk but the LanceDB table is missing, or its row count / content hashes lag the files.
+- Fires a **background** reconcile via the daemon — a new `/reconcile` endpoint, or just per-file `/notify` (the Phase-3 staleness skip already makes a reconcile cheap and idempotent: unchanged files cost nothing).
+- **Background, not blocking** — embedding N files + a model load can't fit the 20s session-start window; the first prompt or two may miss context while it warms, which is the existing graceful-degradation behavior.
+- Reports via `systemMessage` per `notifications.verbosity` (user-facing, never `additionalContext`).
+- **One-time nudge:** if no contextus stanza is found in the project CLAUDE.md, the systemMessage suggests running `/contextus-setup`. (Decision 2026-06-14: embed + nudge, not embed-only — discoverability.)
+- **Never touches CLAUDE.md.**
+
+### 2. `/contextus-setup` — the explicit half (a skill, user-invoked)
+- Scaffold `.claude/context/` + a starter `CONTEXT.md` index if absent.
+- Drop a small contextus stanza into the project CLAUDE.md inside a **marked, idempotent** block (`<!-- contextus:start --> … <!-- contextus:end -->`) so re-running updates-in-place instead of duplicating. The stanza tells a fresh Claude instance that context is injected here and patterns can be proposed via the footer — making the Phase-3 awareness loop legible rather than mysterious.
+- Run the initial embed; confirm the daemon; print status.
+- **This is the ONLY thing that edits CLAUDE.md.**
+
+**Firm constraint:** a hook must never auto-edit CLAUDE.md — it's an outward-facing file the user owns; silently rewriting it every session is invasive. The cheap, invisible embed reconcile may be automatic; the visible file edit is opt-in, behind a marked block. (Decision 2026-06-14: build in Phase 6, not as a standalone phase — it's out-of-box/hardening work.)
 
 ### Open questions still live
 - **CAE cost model**: Haiku-per-candidate on every injected prompt — acceptable, or batch candidates into one call? (CAE §12 lists batching as a future layer.)
