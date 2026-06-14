@@ -10,27 +10,38 @@ Post-v1 feature backlog and open design questions. Items listed roughly by depen
 
 Shaped by the CAE, Categories, Self-Documentation, and Removal design docs. None of these block a trustworthy v1.
 
-### Core Features
+**Ordered by readiness, not just dependency** (2026-06-14). The dependency graph still
+matters (it's the "Depends On" column), but for *sequencing a work session* the question
+that matters more is: **can I act on this now, or does it need real dogfooding data first?**
+Two tracks below. CAE is the keystone either way — most of Track A's later items hang off it.
+
+### Track A — buildable now (no usage data required)
+
+Roughly in build order; CAE first because it unblocks the most.
 
 | Item | Source | Depends On | Notes |
 |------|--------|------------|-------|
-| **CAE gate** — Haiku applicability sub-agent per candidate, scoring rubric (§4), hard overrides, conflict priority. Slots in as `… → floor → CAE → inject`. | CAE spec | v1 floor + rejection logging | Per-prompt LLM cost; needs calibration on whether it's worth the latency |
-| **Tag-driven gating** — tags become live constraint modifiers once CAE consumes them (`tag_alignment`, deprecated/canonical overrides). | CAE §3, Categories §8 | CAE gate | |
-| **Per-category retrieval config** — Category Rule 4: each category declares injection trigger, weight, scope, merge/compete behavior. Re-ranker reads it. | Categories §3 (Rule 4) | re-ranker | |
-| **Removal / governance** — soft (CAE demotion) / hard (deletion) / replacement (supersession), driven by accumulated rejection evidence. | CAE §7 | rejection logging (v1 has this) | |
-| **Hard-override authorship** — define *who/how* `deprecated`, `canonical`, `manually-promoted` get written (no mechanism exists yet). | CAE §4.3 | CAE gate | Also tracked as Open Question 3 |
-| **Deletion detection** — Delete-tool hook + session-start orphan cleanup. Phase 6 reconcile already handles new + modified files; the gap is *removal*. | (discovered 2026-06-14) | Phase 6 auto-reconcile infrastructure | See details below |
-| **Retrieval relevance gate (replaces absolute floor)** — top-K + relative-separation gating instead of a single similarity floor. v1's floor is a stopgap: measured #1↔#2 separation is ~0.02 (smooth ramp), so no absolute number cleanly separates signal from noise. | floor-calibration-signals; Phase 6 | CAE gate (CAE ranks similarity last, §4.4) | The honest successor to `injectionFloor` |
-| **Smarter chunking** — v1 ships fixed header-split + token-fallback chunking with collapse-to-file. v2: semantic/recursive chunking, per-source chunk sizing (docs ≠ context), chunk-level dedup, and tuning the `topK × fanout` over-fetch. | Phase 6 chunking | v1 chunker | Chunking was pulled into v1 (nomic 2048 cap); maturity is v2 |
-| **Multi-source incremental refresh** — v1's watch/reconcile path is `.claude/context/`-only; doc + user packs refresh only on a full `pnpm run embed`. v2: incrementally re-embed docs on change too (with their slower-changing, noisier nature in mind). | Phase 6 multi-source | v1 multi-source ingest | Deliberate v1 scope cut |
-| **Tag backfill via subagent** — v1 ships `/tag-context` (lightweight subagent proposes, user approves). v2: tags become *load-bearing* once CAE consumes them; revisit auto-tagging confidence + bulk apply. | Phase 6 tag-context | CAE gate / tag-driven gating | Tags are inert until CAE |
+| **CAE gate** — Haiku applicability sub-agent per candidate, scoring rubric (§4), hard overrides, conflict priority. Slots in as `… → floor → CAE → inject`. | CAE spec | v1 floor + rejection logging | The keystone — tag-gating, removal, and the relevance-gate all hang off it. (Its *cost model* is Track B.) |
+| **Deletion detection** — Delete-tool hook + session-start orphan cleanup. Phase 6 reconcile already handles new + modified files; the gap is *removal*. | (discovered 2026-06-14) | Phase 6 auto-reconcile infrastructure | Self-contained, no CAE dependency. See details below |
+| **Per-category retrieval config** — Category Rule 4: each category declares injection trigger, weight, scope, merge/compete behavior. Re-ranker reads it. | Categories §3 (Rule 4) | re-ranker | Independent re-ranker work |
+| **Multi-source incremental refresh** — v1's watch/reconcile path is `.claude/context/`-only; doc + user packs refresh only on a full `pnpm run embed`. v2: incrementally re-embed docs on change too (slower-changing, noisier). | Phase 6 multi-source | v1 multi-source ingest | The docs auto-refresh gap; deliberate v1 scope cut |
+| **Smarter chunking** — v1 ships fixed header-split + token-fallback with collapse-to-file. v2: semantic/recursive chunking, per-source chunk sizing (docs ≠ context), chunk-level dedup, tuning `topK × fanout`. | Phase 6 chunking | v1 chunker | Chunking pulled into v1 (nomic 2048 cap); maturity is v2 |
+| **Full Layer-1 auto-docs** — `generate-docs` + `docs/generated/*.md`, overwritten each run. **Requires** namespacing under `docs/generated/` so it never clobbers hand-written specs. | Self-doc §2.2 | `/introspect` (v1 has this) | Independent; slot anytime |
+| **Model self-doc (Layer 2)** — 5-field phase-boundary entries → `docs/SELF_DOCUMENTING_IMPLEMENTATION.md`. | Self-doc §3 | — | Process convention; can start anytime |
+| **Retrieval relevance gate (replaces absolute floor)** — top-K + relative-separation gating instead of a single similarity floor. v1's floor is a stopgap: measured #1↔#2 separation is ~0.02 (smooth ramp), so no absolute number cleanly separates. | floor-calibration-signals; Phase 6 | CAE gate (CAE ranks similarity last, §4.4) | Buildable once CAE lands; the honest successor to `injectionFloor` |
 
-### Documentation & Tooling
+### Track B — gated on dogfooding (needs real usage data first)
 
-| Item | Source | Depends On | Notes |
-|------|--------|------------|-------|
-| **Full Layer-1 auto-docs** — `generate-docs` + `docs/generated/*.md`, overwritten each run. **Requires** namespacing under `docs/generated/` so it never clobbers hand-written `DESIGN.md` et al. | Self-doc §2.2 | `/introspect` (v1 has this) | |
-| **Model self-doc (Layer 2)** — 5-field phase-boundary entries → `docs/SELF_DOCUMENTING_IMPLEMENTATION.md`. (Process convention, can start anytime.) | Self-doc §3 | — | |
+**Do not start these until contextus has been used enough to produce the data they need.**
+A fast build week should leave these *open on purpose*, not rush them.
+
+| Item | Source | Depends On | Why it's gated |
+|------|--------|------------|----------------|
+| **CAE cost model** — per-prompt Haiku call: acceptable latency, or batch candidates? | CAE §12 | CAE gate | Needs real latency/usage numbers to decide; can't be judged cold |
+| **Hard-override authorship/provenance** — *who/how* `deprecated`, `canonical`, `manually-promoted` get written (no mechanism yet). | CAE §4.3 | CAE gate | Needs real `deprecated`/`canonical` cases to arise before designing the authoring path |
+| **Tag-driven gating** — tags become live constraint modifiers (`tag_alignment`, deprecated/canonical overrides). | CAE §3, Categories §8 | CAE gate | Follows CAE *and* benefits from accumulated tag/rejection evidence |
+| **Removal / governance** — soft (CAE demotion) / hard (deletion) / replacement (supersession), driven by accumulated rejection evidence. | CAE §7 | rejection logging (v1 has this) | Needs accumulated rejection evidence to act on |
+| **Tag backfill maturity** — v1 ships `/tag-context` (subagent proposes, user approves). v2: auto-tagging confidence + bulk apply, once tags are load-bearing. | Phase 6 tag-context | tag-driven gating | Tags inert until CAE consumes them — no point maturing before then |
 
 ### Open Questions
 
