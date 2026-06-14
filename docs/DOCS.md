@@ -14,11 +14,19 @@ Comprehensive documentation for the contextus project. Design decisions, impleme
 
 - **[LOGGING.md](LOGGING.md)** — Dual-format logging schema (analytics + human-readable). Documents event types including calibration_eval for quality measurement.
 
+- **[CONTEXT_APPLICABILITY_EVALUATOR.md](CONTEXT_APPLICABILITY_EVALUATOR.md)** — CAE spec: the semantic gating layer between retrieval and injection. Runtime sub-agent prompt, scoring rubric, tag ontology seed set, execution flow, and the context removal/governance model (soft/hard/replacement removal).
+
+- **[CATEGORIES_AND_TAGS.md](CATEGORIES_AND_TAGS.md)** — Rules for `.claude/context/` categories vs tags: how to choose a category, when a new one is justified, the `arch-`/`decision-`/`project-` distinctions, and how tags add a second semantic dimension.
+
 ---
 
 ## Implementation Guides
 
 - **[POC_IMPLEMENTATION.md](POC_IMPLEMENTATION.md)** — Ground-up build sequence from first script to working prototype. Phases, success criteria, and validation steps.
+
+- **[SELF_DOCUMENTATION.md](SELF_DOCUMENTATION.md)** — Three-layer self-documentation architecture: system auto-docs (introspection endpoints + `generate-docs`), minimal model phase-boundary logs, and context-as-documentation (`.claude/context/` prefixes, templates, dogfooding workflow).
+
+- **[BUILD_PROMPTS.md](BUILD_PROMPTS.md)** — Copy-paste kickoff prompts for the v1 build, one per `/clear` cycle. Maps each phase to a ready-to-run prompt with its stop/verify seam.
 
 - **[IMPLEMENTATION_ESTIMATE.md](IMPLEMENTATION_ESTIMATE.md)** — Effort estimates (engineer-days + AI wall-clock/token cost), scaffolding reality check, unit testing strategy, and a recommended 7-phase build order with exit criteria.
 
