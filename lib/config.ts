@@ -14,10 +14,24 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** Where embeddings are computed. Both run nomic locally. */
+export type EmbeddingProvider = 'transformers' | 'ollama';
+
 export interface EmbeddingConfig {
+  /**
+   * Provider. Code default is 'transformers' (DESIGN.md canonical), but the
+   * deployed plugin.json may override to 'ollama' — e.g. when a corporate proxy
+   * blocks Hugging Face model downloads (see BUILD_LOG Phase 1). Whichever built
+   * the corpus is recorded in the table sidecar and must match at query time.
+   */
+  provider: EmbeddingProvider;
   /** Transformers.js model id (HF repo). Default: nomic-embed-text-v1.5 */
   model: string;
-  /** Vector dimensions the model emits. nomic-embed-text-v1.5 → 768 */
+  /** Ollama model tag (used when provider === 'ollama'). */
+  ollamaModel: string;
+  /** Ollama HTTP endpoint. */
+  ollamaEndpoint: string;
+  /** Vector dimensions the model emits. nomic → 768 (both providers) */
   dimensions: number;
   /** Embedding batch size */
   batchSize: number;
@@ -48,7 +62,10 @@ export interface ContextusConfig {
 /** Hard defaults — embedding locked to Transformers.js + nomic. */
 const DEFAULTS: ContextusConfig = {
   embedding: {
+    provider: 'transformers',
     model: 'nomic-ai/nomic-embed-text-v1.5',
+    ollamaModel: 'nomic-embed-text',
+    ollamaEndpoint: 'http://localhost:11434',
     dimensions: 768,
     batchSize: 32,
   },

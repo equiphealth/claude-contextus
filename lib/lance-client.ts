@@ -32,6 +32,8 @@ export const TABLE_NAME = 'contextus';
 
 /** Provenance persisted alongside the table (LanceDB has no collection metadata). */
 export interface TableMeta {
+  /** which provider built the corpus — must match at query time */
+  provider: string;
   embeddingModel: string;
   dimensions: number;
   createdAt: string;
@@ -117,9 +119,11 @@ export async function createTable(
   const table = await conn.createTable(TABLE_NAME, rows as unknown as Record<string, unknown>[]);
 
   const cfg = loadConfig();
+  const { provider, model, ollamaModel } = cfg.embedding;
   writeTableMeta(
     {
-      embeddingModel: cfg.embedding.model,
+      provider,
+      embeddingModel: provider === 'ollama' ? ollamaModel : model,
       dimensions: rows[0].vector.length,
       createdAt: new Date().toISOString(),
     },

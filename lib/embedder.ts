@@ -1,124 +1,154 @@
 /**
- * Embedder - Handles text embedding using local transformer models
+ * Embedder — local text embedding, provider-abstracted.
  *
- * Uses @xenova/transformers to run models locally in Node.js
- * No API keys or external services required
+ * Two providers, both running nomic-embed-text (768-dim) entirely locally:
+ *   - 'transformers' — @xenova/transformers, in-process ONNX (DESIGN.md default).
+ *   - 'ollama'       — POST to a local Ollama server (DESIGN.md "Embedding
+ *                      Providers" §Ollama). Used when Hugging Face downloads are
+ *                      unreachable (e.g. corporate proxy block — see BUILD_LOG
+ *                      Phase 1).
+ * The provider is config-driven (lib/config.ts); the model id is NEVER hardcoded
+ * here. Whichever provider builds the corpus is recorded in the table sidecar so
+ * the daemon can fail fast on a build-vs-query mismatch.
+ *
+ * Pooling/normalization: mean pooling + L2 normalize, so cosine similarity is a
+ * plain dot product and `similarity = 1 - distance` holds in lance-client. Ollama
+ * does not return normalized vectors, so we normalize its output ourselves.
+ *
+ * nomic TASK PREFIXES: nomic-embed-text was trained with instruction prefixes —
+ * `search_document:` for stored passages, `search_query:` for the query at
+ * retrieval time (asymmetric retrieval, the model author's documented usage).
+ * Applied by default via `embedDocument` / `embedQuery` so the two sides can't
+ * drift. Set `CONTEXTUS_NOMIC_PREFIXES=0` to disable (A/B, or non-nomic models).
  */
 
-import { pipeline } from '@xenova/transformers';
+import { pipeline, type FeatureExtractionPipeline } from '@xenova/transformers';
+import { loadConfig } from './config.js';
 
-let _embedder = null;
+/** nomic instruction prefixes (asymmetric retrieval). */
+export const DOCUMENT_PREFIX = 'search_document: ';
+export const QUERY_PREFIX = 'search_query: ';
 
-/**
- * Get or create the embedding pipeline
- *
- * Models are downloaded once and cached in ~/.cache/huggingface/
- * Subsequent runs are instant (no download)
- *
- * @returns {Promise<Function>} Embedding function
- */
-export async function getEmbedder() {
-  if (!_embedder) {
-    console.log('Loading embedding model (one-time download)...');
-    _embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-      quantized: true, // Use quantized model for speed
-      progress_callback: (progress) => {
-        if (progress.status === 'downloading') {
-          const pct = Math.round((progress.loaded / progress.total) * 100);
-          process.stdout.write(`\rDownloading model: ${pct}%`);
-        }
-      },
-    });
-    console.log('\nModel loaded!');
-  }
-  return _embedder;
+/** Whether to apply nomic task prefixes (default on; off via env for A/B). */
+function prefixesEnabled(): boolean {
+  return process.env.CONTEXTUS_NOMIC_PREFIXES !== '0';
 }
 
-/**
- * Embed a single text string
- *
- * @param {string} text - Text to embed
- * @returns {Promise<number[]>} Embedding vector (384 dimensions)
- */
-export async function embedText(text) {
-  const embedder = await getEmbedder();
+/** L2-normalize a vector in place and return it (no-op if zero vector). */
+function l2normalize(v: number[]): number[] {
+  let n = 0;
+  for (const x of v) n += x * x;
+  n = Math.sqrt(n);
+  if (n === 0) return v;
+  for (let i = 0; i < v.length; i++) v[i] /= n;
+  return v;
+}
 
-  // Generate embedding with mean pooling and normalization
-  const output = await embedder(text, {
-    pooling: 'mean',
-    normalize: true,
+/* ── Transformers.js provider ─────────────────────────────────────────────── */
+
+let _pipe: Promise<FeatureExtractionPipeline> | null = null;
+
+function getPipeline(): Promise<FeatureExtractionPipeline> {
+  if (!_pipe) {
+    const { model } = loadConfig().embedding;
+    _pipe = pipeline('feature-extraction', model, { quantized: true });
+  }
+  return _pipe;
+}
+
+async function embedTransformers(text: string): Promise<number[]> {
+  const pipe = await getPipeline();
+  const output = await pipe(text, { pooling: 'mean', normalize: true });
+  return Array.from(output.data as Float32Array);
+}
+
+/* ── Ollama provider ──────────────────────────────────────────────────────── */
+
+interface OllamaEmbeddingResponse {
+  embedding: number[];
+}
+
+async function embedOllama(text: string): Promise<number[]> {
+  const { ollamaModel, ollamaEndpoint } = loadConfig().embedding;
+  const res = await fetch(`${ollamaEndpoint}/api/embeddings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: ollamaModel, prompt: text }),
   });
+  if (!res.ok) {
+    throw new Error(`Ollama embeddings failed: ${res.status} ${await res.text()}`);
+  }
+  const json = (await res.json()) as OllamaEmbeddingResponse;
+  if (!Array.isArray(json.embedding)) {
+    throw new Error('Ollama response missing `embedding` array');
+  }
+  // Ollama returns un-normalized vectors — normalize so cosine == dot product.
+  return l2normalize(json.embedding);
+}
 
-  // Convert tensor to plain array
-  return Array.from(output.data);
+/* ── Public API (provider-dispatching) ────────────────────────────────────── */
+
+/** Embed text exactly as given (no prefix). Mean-pooled + L2-normalized. */
+async function embedRaw(text: string): Promise<number[]> {
+  const { provider } = loadConfig().embedding;
+  return provider === 'ollama' ? embedOllama(text) : embedTransformers(text);
 }
 
 /**
- * Embed multiple texts in batch (more efficient)
- *
- * @param {string[]} texts - Array of texts to embed
- * @param {number} batchSize - Batch size (default: 32)
- * @returns {Promise<number[][]>} Array of embedding vectors
+ * Warm-load the active provider and verify it emits the configured dimensions.
+ * Call at daemon start so the first real query isn't slow — and so a
+ * model/dimension mismatch fails fast (DESIGN.md §"dimensions must match").
  */
-export async function embedBatch(texts, batchSize = 32) {
-  const embeddings = [];
-
-  // Ensure embedder is loaded before batch processing
-  await getEmbedder();
-
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-
-    // Process batch in parallel
-    const batchEmbeddings = await Promise.all(batch.map((text) => embedText(text)));
-
-    embeddings.push(...batchEmbeddings);
-
-    // Progress indicator
-    const progress = Math.min(i + batchSize, texts.length);
-    process.stdout.write(`\rEmbedding: ${progress}/${texts.length}`);
+export async function warmup(): Promise<void> {
+  const { dimensions, provider, model, ollamaModel } = loadConfig().embedding;
+  const vec = await embedRaw('warmup');
+  if (vec.length !== dimensions) {
+    const id = provider === 'ollama' ? ollamaModel : model;
+    throw new Error(
+      `Embedding dimension mismatch: ${provider} model '${id}' emitted ${vec.length} dims, ` +
+        `config expects ${dimensions}. Fix config.embedding.dimensions or the model.`
+    );
   }
+}
 
-  console.log(); // newline after progress
-  return embeddings;
+/** Embed a single stored passage (document side — `search_document:` prefix). */
+export function embedDocument(text: string): Promise<number[]> {
+  return embedRaw(prefixesEnabled() ? DOCUMENT_PREFIX + text : text);
+}
+
+/** Embed a single query (query side — `search_query:` prefix). */
+export function embedQuery(text: string): Promise<number[]> {
+  return embedRaw(prefixesEnabled() ? QUERY_PREFIX + text : text);
 }
 
 /**
- * Compare similarity between two embedding vectors
- * Uses cosine similarity (dot product of normalized vectors)
- *
- * @param {number[]} embedding1 - First embedding
- * @param {number[]} embedding2 - Second embedding
- * @returns {number} Similarity score (0-1, higher = more similar)
+ * Embed many passages (document side). Sequential — both providers do one
+ * inference at a time, so Promise.all would only thrash. `onProgress` reports
+ * (done, total) for CLI progress.
  */
-export function cosineSimilarity(embedding1, embedding2) {
-  if (embedding1.length !== embedding2.length) {
-    throw new Error('Embeddings must have same dimension');
+export async function embedDocuments(
+  texts: string[],
+  onProgress?: (done: number, total: number) => void
+): Promise<number[][]> {
+  const out: number[][] = [];
+  for (let i = 0; i < texts.length; i++) {
+    out.push(await embedDocument(texts[i]));
+    onProgress?.(i + 1, texts.length);
   }
-
-  // Since embeddings are already normalized, dot product = cosine similarity
-  let dotProduct = 0;
-  for (let i = 0; i < embedding1.length; i++) {
-    dotProduct += embedding1[i] * embedding2[i];
-  }
-
-  return dotProduct;
+  return out;
 }
 
-/*
- * Example usage:
- *
- * import { embedText, embedBatch, cosineSimilarity } from './embedder.js';
- *
- * // Single text
- * const embedding = await embedText("How do I log errors in tests?");
- * console.log(embedding.length); // 384
- *
- * // Batch
- * const texts = ["text 1", "text 2", "text 3"];
- * const embeddings = await embedBatch(texts);
- *
- * // Compare similarity
- * const similarity = cosineSimilarity(embeddings[0], embeddings[1]);
- * console.log(similarity); // 0.85
- */
+/** Cosine similarity of two L2-normalized vectors (= dot product). */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new Error(`Embeddings must have same dimension (${a.length} vs ${b.length})`);
+  }
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+  return dot;
+}
+
+/** Reset the memoized pipeline (tests / model swap). */
+export function resetEmbedder(): void {
+  _pipe = null;
+}

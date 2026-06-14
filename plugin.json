@@ -50,7 +50,11 @@
       "path": "~/.contextus/data/{project-name}"
     },
     "embedding": {
+      "_provider_note": "DESIGN.md default is 'transformers' (in-process ONNX). Deployed as 'ollama' because the corporate Cloudflare Gateway blocks Hugging Face model downloads — Ollama runs the same nomic model locally over localhost. Both emit 768-dim. See BUILD_LOG Phase 1.",
+      "provider": "ollama",
       "model": "nomic-ai/nomic-embed-text-v1.5",
+      "ollamaModel": "nomic-embed-text",
+      "ollamaEndpoint": "http://localhost:11434",
       "dimensions": 768,
       "batchSize": 32
     },

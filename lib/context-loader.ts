@@ -1,5 +1,13 @@
 /**
- * Context Loader - Read and parse context pattern markdown files
+ * Context loader — read and parse `.claude/context/` markdown files.
+ *
+ * Frontmatter schema note: the corpus is mid-migration (see the
+ * memory-to-context-migration decision), so two shapes coexist:
+ *   1. top-level     — `type: decision`, `tags: [a, b]`
+ *   2. nested under  — `metadata: { type: decision, tags: [a, b] }`
+ * Both are accepted; nested `metadata.*` wins when present (it's the target
+ * schema per CATEGORIES_AND_TAGS.md). `tags` may be a YAML list or a
+ * comma-separated string; it is always normalized to string[].
  */
 
 import fs from 'fs';
@@ -7,173 +15,128 @@ import path from 'path';
 import { glob } from 'glob';
 import matter from 'gray-matter';
 
+/** Category prefixes with a defined retrieval intent (CATEGORIES_AND_TAGS.md §11). */
+export const KNOWN_CATEGORY_PREFIXES = [
+  'arch',
+  'decision',
+  'tradeoff',
+  'gotcha',
+  'api',
+  'phase',
+  'project',
+  'schema',
+  'security',
+  'perf',
+  // legacy memory types still present pre-migration
+  'feedback',
+  'reference',
+  'implementation',
+] as const;
+
+/** A parsed context file, ready to embed. */
+export interface LoadedContext {
+  /** stable id = path relative to the context dir */
+  id: string;
+  /** absolute path on disk */
+  absPath: string;
+  /** path relative to the context dir */
+  relPath: string;
+  /** frontmatter name, or filename stem */
+  name: string;
+  /** frontmatter description ('' if absent) */
+  description: string;
+  /** semantic role (frontmatter type), 'unknown' if absent */
+  type: string;
+  /** normalized topic tags */
+  tags: string[];
+  /** markdown body with frontmatter stripped */
+  content: string;
+  /** mtime in ms (staleness checks) */
+  mtime: number;
+}
+
+/** Normalize a frontmatter `tags` value (list | csv string | absent) to string[]. */
+function normalizeTags(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((t) => String(t).trim()).filter(Boolean);
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+/** Resolve type + tags from either top-level or nested `metadata.*` frontmatter. */
+function resolveTypeAndTags(data: Record<string, unknown>): { type: string; tags: string[] } {
+  const meta = (data.metadata ?? {}) as Record<string, unknown>;
+  const type = String(meta.type ?? data.type ?? 'unknown');
+  const tags = normalizeTags(meta.tags ?? data.tags);
+  return { type, tags };
+}
+
 /**
- * Load all context files from a context directory
- *
- * @param {string} contextDir - Context directory path (e.g., .claude/context)
- * @returns {Promise<Array>} Array of context objects
+ * Derive the category prefix from a filename, if it is a known category.
+ * `decision-foo.md` → `decision`; `eslint-rules.md` → null (no known prefix).
+ * Both `-` and `_` separators are recognized (legacy memory used `decision_`).
  */
-export async function loadContexts(contextDir: string) {
-  // Find all .md files except index files and README.md
-  const pattern = path.join(contextDir, '**', '*.md');
-  const files = await glob(pattern, {
+export function categoryPrefix(relPath: string): string | null {
+  const stem = path.basename(relPath, '.md');
+  const head = stem.split(/[-_]/)[0];
+  return (KNOWN_CATEGORY_PREFIXES as readonly string[]).includes(head) ? head : null;
+}
+
+/** Load and parse a single context file. */
+export function loadContext(absPath: string, contextDir: string): LoadedContext {
+  const raw = fs.readFileSync(absPath, 'utf8');
+  const { data, content } = matter(raw);
+  const relPath = path.relative(contextDir, absPath);
+  const { type, tags } = resolveTypeAndTags(data as Record<string, unknown>);
+  return {
+    id: relPath,
+    absPath,
+    relPath,
+    name: String(data.name ?? path.basename(absPath, '.md')),
+    description: String(data.description ?? ''),
+    type,
+    tags,
+    content: content.trim(),
+    mtime: fs.statSync(absPath).mtimeMs,
+  };
+}
+
+/**
+ * Load every context file under a directory (excluding the CONTEXT.md index and
+ * README.md). Returns [] if the directory does not exist.
+ */
+export async function loadContexts(contextDir: string): Promise<LoadedContext[]> {
+  if (!fs.existsSync(contextDir)) return [];
+  const files = await glob(path.join(contextDir, '**', '*.md'), {
     ignore: ['**/CONTEXT.md', '**/README.md'],
   });
+  return files.sort().map((f) => loadContext(f, contextDir));
+}
 
-  const contexts = [];
-
-  for (const filePath of files) {
-    try {
-      const context = await loadContext(filePath, contextDir);
-      contexts.push(context);
-    } catch (error) {
-      console.error(`Error loading ${filePath}:`, error.message);
-    }
-  }
-
-  return contexts;
+/** Result of a prefix↔type consistency check. */
+export interface PrefixTypeIssue {
+  relPath: string;
+  prefix: string;
+  type: string;
 }
 
 /**
- * Load a single context file
- *
- * @param {string} filePath - Absolute file path
- * @param {string} contextDir - Context directory path
- * @returns {Promise<Object>} Context object
+ * Reject files whose filename category prefix disagrees with frontmatter `type`
+ * (cheap corpus hygiene, IMPLEMENTATION_ESTIMATE Phase 1). Only flags files that
+ * HAVE a known prefix AND a declared type that differ — files without a category
+ * prefix (e.g. `eslint-rules.md`) or without a type are left alone.
  */
-export async function loadContext(filePath: string, contextDir: string) {
-  const fileContent = fs.readFileSync(filePath, 'utf8');
-  const { data: frontmatter, content } = matter(fileContent);
-
-  // Get relative path for ID
-  const relativePath = path.relative(contextDir, filePath);
-
-  // Extract category from path (e.g., "sdk", "testing", "framework")
-  const category = path.dirname(relativePath).split(path.sep)[0] || 'general';
-
-  // Get file stats
-  const stats = fs.statSync(filePath);
-
-  return {
-    id: relativePath,
-    path: filePath,
-    relativePath,
-    name: frontmatter.name || path.basename(filePath, '.md'),
-    description: frontmatter.description || '',
-    type: frontmatter.type || 'unknown',
-    category,
-    content,
-    frontmatter,
-    mtime: stats.mtimeMs,
-    size: stats.size,
-  };
-}
-
-/**
- * Check if context files have changed since embeddings were created
- *
- * @param {Array} embeddedContexts - Previously embedded contexts with mtimes
- * @param {string} contextDir - Context directory path
- * @returns {Promise<Object>} { needsRebuild, changed, added, removed }
- */
-export async function checkForChanges(embeddedContexts: any[], contextDir: string) {
-  const currentContexts = await loadContexts(contextDir);
-
-  const embeddedMap = new Map(embeddedContexts.map((c) => [c.id, c.mtime]));
-  const currentMap = new Map(currentContexts.map((c) => [c.id, c.mtime]));
-
-  const changed = [];
-  const added = [];
-  const removed = [];
-
-  // Check for changes and additions
-  for (const context of currentContexts) {
-    if (!embeddedMap.has(context.id)) {
-      added.push(context);
-    } else if (embeddedMap.get(context.id) !== context.mtime) {
-      changed.push(context);
+export function findPrefixTypeMismatches(contexts: LoadedContext[]): PrefixTypeIssue[] {
+  const issues: PrefixTypeIssue[] = [];
+  for (const c of contexts) {
+    const prefix = categoryPrefix(c.relPath);
+    if (prefix && c.type !== 'unknown' && c.type !== prefix) {
+      issues.push({ relPath: c.relPath, prefix, type: c.type });
     }
   }
-
-  // Check for removals
-  for (const id of embeddedMap.keys()) {
-    if (!currentMap.has(id)) {
-      removed.push(id);
-    }
-  }
-
-  const needsRebuild = added.length > 0 || changed.length > 0 || removed.length > 0;
-
-  return {
-    needsRebuild,
-    changed,
-    added,
-    removed,
-    total: currentContexts.length,
-  };
+  return issues;
 }
-
-/**
- * Validate context frontmatter
- *
- * @param {Object} context - Context object
- * @returns {Object} { valid: boolean, errors: string[] }
- */
-export function validateContext(context: any) {
-  const errors = [];
-
-  // Required fields
-  if (!context.frontmatter.name) {
-    errors.push('Missing required field: name');
-  }
-  if (!context.frontmatter.description) {
-    errors.push('Missing required field: description');
-  }
-  if (!context.frontmatter.type) {
-    errors.push('Missing required field: type');
-  }
-
-  // Valid types
-  const validTypes = ['feedback', 'reference', 'decision', 'project'];
-  if (context.frontmatter.type && !validTypes.includes(context.frontmatter.type)) {
-    errors.push(
-      `Invalid type: ${context.frontmatter.type}. Must be one of: ${validTypes.join(', ')}`
-    );
-  }
-
-  // Name format (kebab-case recommended)
-  if (context.frontmatter.name && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(context.frontmatter.name)) {
-    errors.push('Name should be kebab-case (lowercase, hyphens only)');
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
-
-/*
- * Example usage:
- *
- * import { loadContexts, loadContext, checkForChanges, validateContext } from './context-loader.js';
- *
- * // Load all contexts
- * const contexts = await loadContexts('.claude/context');
- * console.log(contexts.length); // 64
- *
- * // Load single context
- * const context = await loadContext('.claude/context/sdk/feedback_example.md', '.claude/context');
- * console.log(context.name, context.category); // "sdk-example", "sdk"
- *
- * // Check for changes
- * const changes = await checkForChanges(previousContexts, '.claude/context');
- * if (changes.needsRebuild) {
- *   console.log(`${changes.added.length} added, ${changes.changed.length} changed`);
- * }
- *
- * // Validate context
- * const validation = validateContext(context);
- * if (!validation.valid) {
- *   console.error('Invalid context:', validation.errors);
- * }
- */
