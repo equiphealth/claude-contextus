@@ -7,7 +7,7 @@ Copy-paste prompts to drive the claude-contextus v1 build, one per `/clear` cycl
 **Six prompts, four genuine decision points (1, 2, 3, 5).**
 
 **Standing instruction (every prompt), in order at the stop:**
-1. Append a phase entry to [`docs/BUILD_LOG.md`](BUILD_LOG.md) using that file's entry template (exit-criteria status, what changed, verified vs. needs-user-verification, DESIGN.md divergences, decisions applied, token/cost).
+1. Read [`docs/BUILD_LOG.md`](BUILD_LOG.md) for the entry template, then append a phase entry using that format (exit-criteria status, what changed, verified vs. needs-user-verification, DESIGN.md divergences, decisions applied, token/cost).
 2. **Commit** all phase changes (including the BUILD_LOG entry) with a descriptive message, then **push**.
 3. Give the same summary in chat.
 
