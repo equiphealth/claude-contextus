@@ -88,11 +88,13 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 
 > Phase 5 is done and committed. Read the standing instruction at the top of `docs/BUILD_PROMPTS.md`, then read `docs/IMPLEMENTATION_ESTIMATE.md` (Phase 6).
 >
-> Do **Phase 6**: daemon crash recovery, stale-PID cleanup, integration tests for daemon + hooks, model/dimension validation fail-fast paths.
+> Do **Phase 6**: daemon crash recovery, stale-PID cleanup, integration tests for daemon + hooks, model/dimension validation fail-fast paths, **plus first-run onboarding** (see `docs/IMPLEMENTATION_ESTIMATE.md` → "First-Run Onboarding" and the `first-run-onboarding` memory):
+> - **Auto-reconcile (the silent safety net):** session-start detects a cold/stale corpus (context files exist but the LanceDB table is missing or behind) and fires a **background** reconcile via the daemon (`/reconcile`, or per-file `/notify` — the Phase-3 staleness skip makes it cheap + idempotent). Background so it never blocks the session-start window. Reports via `systemMessage` per the verbosity setting. **Never touches CLAUDE.md.** Plus a **one-time nudge**: if no contextus stanza is found in the project CLAUDE.md, the systemMessage suggests running `/contextus-setup`.
+> - **`/contextus-setup` skill (the explicit half):** scaffold `.claude/context/` + a starter `CONTEXT.md` if absent; drop a small, **marked + idempotent** contextus stanza into the project CLAUDE.md (`<!-- contextus:start --> … <!-- contextus:end -->`); run the initial embed; confirm the daemon; print status. The ONLY thing that edits CLAUDE.md — a hook must never auto-edit an outward-facing file the user owns.
 >
 > Before reporting: run `pnpm lint && pnpm format`.
 >
-> Exit criteria: kill the daemon mid-session → the next prompt recovers gracefully. Run the migration for real (`/migrate-memory`) once everything's green, then append a Phase 6 entry to `docs/BUILD_LOG.md` (template there) and give me a final v1 status: what works, what's deferred to v2, anything that diverged from DESIGN.md along the way, and input/output token counts with estimated cost.
+> Exit criteria: kill the daemon mid-session → the next prompt recovers gracefully; a fresh project with populated `.claude/context/` but no table auto-embeds in the background (no manual `pnpm run embed`); `/contextus-setup` is idempotent (re-running doesn't duplicate the CLAUDE.md stanza). Run the migration for real (`/migrate-memory`) once everything's green, then append a Phase 6 entry to `docs/BUILD_LOG.md` (template there) and give me a final v1 status: what works, what's deferred to v2, anything that diverged from DESIGN.md along the way, and input/output token counts with estimated cost.
 
 ---
 

@@ -18,6 +18,7 @@ Design decisions and feedback for claude-contextus. One line per memory; load th
 ## Project
 - [package-manager](project_package_manager.md) — repo uses pnpm; always use pnpm commands
 - [embedding-download-risk](project_embedding_download_risk.md) — Transformers.js default needs HF downloads that corporate proxies block; threatens out-of-box install
+- [first-run-onboarding](project_first_run_onboarding.md) — Phase-6 cold-corpus auto-reconcile (background) + /contextus-setup skill owns CLAUDE.md edits
 
 ## Reference
 - [build-prompts-doc](reference_build_prompts_doc.md) — paste-ready kickoff prompts live in docs/BUILD_PROMPTS.md
