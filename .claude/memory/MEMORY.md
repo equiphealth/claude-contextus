@@ -20,3 +20,4 @@ Design decisions and feedback for claude-contextus. One line per memory; load th
 
 ## Reference
 - [build-prompts-doc](reference_build_prompts_doc.md) — paste-ready kickoff prompts live in docs/BUILD_PROMPTS.md
+- [lancedb-connect-parent-dir](reference_lancedb_connect_parent_dir.md) — connect() needs the DB parent dir, not the .lance table dir (else zero tables)
