@@ -220,6 +220,8 @@ Ordered to get something real working fastest, then harden. Each phase ends with
 
 ## v2 Backlog (shaped by the new designs)
 
+> **Canonical v2 list now lives in [V2_ROADMAP.md](V2_ROADMAP.md)** — it consolidates this table, the live open questions, and the Phase-6 additions (chunking maturity, multi-source incremental, deletion detection, the floor→CAE supersession, and the "no auto-floor" decision). The snapshot below is kept for historical context; update V2_ROADMAP, not this.
+
 Deferred deliberately — none of these block a trustworthy v1, but the new docs gave them concrete shape. Listed roughly by dependency order.
 
 | Item | Source design | Depends on |

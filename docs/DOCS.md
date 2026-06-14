@@ -32,6 +32,8 @@ Comprehensive documentation for the contextus project. Design decisions, impleme
 
 - **[BUILD_LOG.md](BUILD_LOG.md)** — Per-phase completion summaries appended at each build stop: what changed, what was verified vs. needs user verification, DESIGN.md divergences, decisions applied, and token/cost. The durable record of what was *actually built*.
 
+- **[V2_ROADMAP.md](V2_ROADMAP.md)** — Post-v1 feature backlog: CAE gate, tag-driven gating, removal/governance, corpus reconciliation, full auto-docs, and open design questions. Items deliberately deferred from v1.
+
 ---
 
 ## Design Philosophy
