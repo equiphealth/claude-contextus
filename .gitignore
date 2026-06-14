@@ -43,3 +43,6 @@ temp/
 
 # Example outputs (for development)
 examples/test-output/
+
+# Presentation materials (local prep, not tracked)
+docs/presentation/
