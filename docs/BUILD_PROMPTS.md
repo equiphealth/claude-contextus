@@ -99,6 +99,14 @@ The doc is the durable record; chat is the convenience copy. Commit/push at ever
 
 ---
 
+## Cleanup — lib/ reorganization (standalone, between phases)
+
+Not a numbered phase — a structural tidy the user asked for (`lib-reorg-plan` memory). **Run it in a fresh session**, on a clean tree, as its own commit.
+
+> Tidy the `lib/` directory — it grew to ~23 flat files through Phase 5. Read the `lib-reorg-plan` memory for the full plan, then group the files into subdirs (`embedding/`, `storage/`, `retrieval/`, `calibration/`, `capture/`, with cross-cutting `config`/`logger`/`types` staying at lib root — confirm the grouping with me first). Fix every import path across `daemon/`, `scripts/*.ts`, and `tests/*.ts`. **Leave `scripts/lib/daemon-control.js` and the `.js` hooks alone** — they don't import `lib/`. This is mechanical-only: no logic changes. Gate with `pnpm exec tsc --noEmit && pnpm lint && pnpm test` (all 75 tests must stay green) before committing as a standalone "refactor: group lib/ into subdirs" commit. Don't tangle any feature work into it.
+
+---
+
 ## After the build
 
 - **v2 backlog** (CAE gate, tag-driven gating, per-category retrieval config, removal/governance, full Layer-1 auto-docs) lives in `IMPLEMENTATION_ESTIMATE.md` → "v2 Backlog".
