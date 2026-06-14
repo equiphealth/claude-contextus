@@ -8,6 +8,7 @@ Design decisions and feedback for claude-contextus. One line per memory; load th
 - [ollama-model-quality](decision_ollama_model_quality.md) — small local models unreliable for semantic eval; Haiku baseline
 - [design-scoping-v1-v2](decision_design_scoping_v1_v2.md) — CAE/tags/self-doc/removal v1↔v2 placement; don't re-litigate mid-build
 - [build-execution-cadence](decision_build_execution_cadence.md) — phase-then-return build cadence; where to stop vs batch
+- [floor-calibration-signals](decision_floor_calibration_signals.md) — 0.7 floor wrong for ollama-nomic (hits 0.50–0.68); prefer relative separation over absolute threshold
 - [memory-to-context-migration](decision_memory_to_context_migration.md) — `.claude/memory/` → `.claude/context/` migration; hooks still read memory/
 
 ## Feedback
