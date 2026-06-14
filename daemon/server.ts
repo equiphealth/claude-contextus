@@ -1,0 +1,294 @@
+#!/usr/bin/env node
+/**
+ * Contextus daemon — the persistent HTTP server that makes proactive injection
+ * fast (DESIGN.md §"Phase 2: Daemon + HTTP Architecture").
+ *
+ * Why a daemon: loading the embedding model takes seconds. A fresh Node process
+ * per UserPromptSubmit hook would pay that every prompt. The daemon loads the
+ * model ONCE at boot, then all hooks are thin HTTP clients hitting localhost.
+ *
+ * Single shared daemon across all projects (one model in memory); project
+ * isolation is by the `project` request field → per-project LanceDB dir. Built
+ * on Node's stdlib `http` — no framework dependency in the hot path.
+ *
+ * Endpoints:
+ *   GET  /health          → { status, uptime, modelLoaded, lancedbConnected, embeddingModel }
+ *   POST /query  {project, prompt}        → { continue, hookSpecificOutput?: { additionalContext } }
+ *   POST /notify {project, file, cwd?}    → { ok, embedded, id? }
+ *
+ * The pipeline on /query is the spine: embedQuery → vector search → rerank →
+ * floor → format. Floor-dropped chunks are logged with scores (v2 governance
+ * groundwork). No-inject is a first-class, logged success.
+ */
+
+import http from 'http';
+import path from 'path';
+import fs from 'fs';
+import { loadConfig, expandHome } from '../lib/config.js';
+import { warmup, embedQuery } from '../lib/embedder.js';
+import { search, tableExists, readTableMeta } from '../lib/lance-client.js';
+import { rerank } from '../lib/reranker.js';
+import { applyFloor } from '../lib/floor.js';
+import { formatInjection } from '../lib/inject-format.js';
+import { embedSingleFile } from '../lib/embed-file.js';
+import {
+  logRetrieval,
+  logNoInject,
+  logError,
+  logInfo,
+  promptHash,
+  type DroppedChunkLog,
+} from '../lib/logger.js';
+
+const PORT = 37800;
+const RUNTIME_DIR = expandHome('~/.contextus/runtime');
+const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
+const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
+
+/** Set true once the embedding model has warm-loaded; /health gates on it. */
+let modelLoaded = false;
+
+/** Read a JSON request body (bounded; rejects malformed/oversized). */
+function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > 1_000_000) {
+        reject(new Error('request body too large'));
+        req.destroy();
+        return;
+      }
+      data += chunk;
+    });
+    req.on('end', () => {
+      if (!data.trim()) return resolve({});
+      try {
+        resolve(JSON.parse(data));
+      } catch {
+        reject(new Error('invalid JSON body'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(payload);
+}
+
+/** GET /health — liveness + readiness (modelLoaded is what session-start polls). */
+function handleHealth(res: http.ServerResponse): void {
+  const cfg = loadConfig();
+  sendJson(res, 200, {
+    status: 'ok',
+    uptime: process.uptime(),
+    modelLoaded,
+    lancedbConnected: true, // file-mode: connection is lazy + always available
+    embeddingModel:
+      cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
+    provider: cfg.embedding.provider,
+  });
+}
+
+/**
+ * POST /query — the retrieval spine. Embeds the prompt, searches the project's
+ * corpus, re-ranks, applies the floor, formats. Returns the UserPromptSubmit
+ * hook payload shape directly so the hook is a pure pass-through.
+ */
+async function handleQuery(body: Record<string, unknown>, res: http.ServerResponse): Promise<void> {
+  const started = Date.now();
+  const prompt = typeof body.prompt === 'string' ? body.prompt : '';
+  const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+
+  if (!prompt.trim()) {
+    return sendJson(res, 200, { continue: true });
+  }
+
+  const hash = promptHash(prompt);
+  const projectLabel = project ?? 'default';
+
+  // No corpus yet for this project → silently inject nothing (not an error).
+  if (!(await tableExists(project))) {
+    logInfo('No corpus for project — skipping', { project: projectLabel });
+    return sendJson(res, 200, { continue: true });
+  }
+
+  // Validate query-time provider matches build-time (DESIGN.md model consistency).
+  const cfg = loadConfig();
+  const meta = readTableMeta(project);
+  const activeModel =
+    cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model;
+  if (meta && meta.embeddingModel !== activeModel) {
+    logError('error', 'daemon', 'Embedding model mismatch (corpus vs daemon)', {
+      project: projectLabel,
+      corpus: meta.embeddingModel,
+      daemon: activeModel,
+    });
+    // Degrade gracefully — a mismatched space yields garbage similarities.
+    return sendJson(res, 200, { continue: true });
+  }
+
+  const vec = await embedQuery(prompt);
+  const raw = await search(vec, cfg.retrieval.topK, undefined, project);
+  const ranked = rerank(raw);
+  const { kept, dropped, bestScore, noInject } = applyFloor(ranked, cfg.retrieval.injectionFloor);
+
+  const floorDropped: DroppedChunkLog[] = dropped.map((d) => ({
+    pattern: d.filename || d.id,
+    similarity: Number(d.similarity.toFixed(4)),
+  }));
+
+  if (noInject) {
+    logNoInject({
+      project: projectLabel,
+      promptHash: hash,
+      bestScore: Number(bestScore.toFixed(4)),
+      latencyMs: Date.now() - started,
+      floorDropped,
+    });
+    return sendJson(res, 200, { continue: true });
+  }
+
+  const { block, included, tokens } = formatInjection(kept, cfg.retrieval.maxTokens);
+
+  logRetrieval({
+    project: projectLabel,
+    promptHash: hash,
+    retrieved: included.map((r) => r.filename || r.id),
+    similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
+    tokensInjected: tokens,
+    latencyMs: Date.now() - started,
+    floorDropped,
+  });
+
+  sendJson(res, 200, {
+    continue: true,
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: block,
+    },
+  });
+}
+
+/**
+ * POST /notify — incremental re-embed on file change (PostToolUse). `file` is the
+ * changed path; `cwd` (project root) locates `.claude/context`. Best-effort:
+ * non-context files are skipped, not errored.
+ */
+async function handleNotify(
+  body: Record<string, unknown>,
+  res: http.ServerResponse
+): Promise<void> {
+  const file = typeof body.file === 'string' ? body.file : '';
+  const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+  if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
+
+  const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
+  const contextDir = path.join(cwd, '.claude', 'context');
+  const result = await embedSingleFile(absFile, contextDir, project);
+  if (result.embedded) {
+    logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
+  }
+  sendJson(res, 200, { ok: true, ...result });
+}
+
+const server = http.createServer((req, res) => {
+  const url = req.url ?? '/';
+  const method = req.method ?? 'GET';
+
+  if (method === 'GET' && url === '/health') {
+    return handleHealth(res);
+  }
+
+  if (method === 'POST' && (url === '/query' || url === '/notify')) {
+    readJsonBody(req)
+      .then((body) => (url === '/query' ? handleQuery(body, res) : handleNotify(body, res)))
+      .catch((err) => {
+        logError('error', 'daemon', `${url} handler failed`, {
+          message: err instanceof Error ? err.message : String(err),
+        });
+        // Never break the prompt — degrade to continue.
+        sendJson(res, 200, { continue: true });
+      });
+    return;
+  }
+
+  sendJson(res, 404, { error: 'not found' });
+});
+
+/** Write PID + port files so ensureDaemonRunning can find/health-check us. */
+function writeRuntimeFiles(): void {
+  fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+  fs.writeFileSync(PID_PATH, String(process.pid));
+  fs.writeFileSync(PORT_PATH, String(PORT));
+}
+
+function cleanupRuntimeFiles(): void {
+  try {
+    if (fs.existsSync(PID_PATH)) fs.unlinkSync(PID_PATH);
+  } catch {
+    /* best-effort */
+  }
+}
+
+async function startDaemon(): Promise<void> {
+  // Bind first so a second daemon racing for the port fails fast (EADDRINUSE)
+  // instead of double-loading the model.
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      // Another daemon already owns the port — defer to it and exit quietly.
+      logInfo('Port in use — another daemon is running, exiting', { port: PORT });
+      process.exit(0);
+    }
+    logError('error', 'daemon', 'Server error', { message: err.message });
+    process.exit(1);
+  });
+
+  server.listen(PORT, '127.0.0.1', () => {
+    writeRuntimeFiles();
+    const cfg = loadConfig();
+    logInfo('Daemon started', {
+      pid: process.pid,
+      port: PORT,
+      provider: cfg.embedding.provider,
+    });
+    // Warm the model AFTER the socket is listening so /health is reachable and
+    // reports modelLoaded:false while loading (session-start polls for true).
+    warmup()
+      .then(() => {
+        modelLoaded = true;
+        logInfo('Model warm', {
+          model:
+            cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
+        });
+      })
+      .catch((err) => {
+        logError('error', 'embedder', 'Model warmup failed', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+        // Leave modelLoaded:false — health stays not-ready, queries degrade.
+      });
+  });
+}
+
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    logInfo('Daemon stopping', { signal: sig, uptime: `${Math.round(process.uptime())}s` });
+    cleanupRuntimeFiles();
+    server.close(() => process.exit(0));
+    // Force-exit if close hangs on a keep-alive socket.
+    setTimeout(() => process.exit(0), 1000).unref();
+  });
+}
+
+startDaemon().catch((err) => {
+  logError('error', 'daemon', 'Failed to start', {
+    message: err instanceof Error ? err.message : String(err),
+  });
+  process.exit(1);
+});

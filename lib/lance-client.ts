@@ -69,15 +69,22 @@ export interface SearchResult extends ContextRow {
   similarity: number;
 }
 
-let _conn: Connection | null = null;
+/**
+ * Connections are memoized per resolved DB dir, not globally: the daemon is a
+ * single shared process serving many projects (DESIGN.md §"Daemon Lifecycle"),
+ * so one cached connection would pin every query to the first project seen.
+ */
+const _conns = new Map<string, Connection>();
 
-/** Open (memoized) the file-based LanceDB connection for a project. */
+/** Open (memoized per-project) the file-based LanceDB connection for a project. */
 export async function getConnection(projectName?: string): Promise<Connection> {
-  if (_conn) return _conn;
   const dir = resolveDBPath(projectName);
+  const cached = _conns.get(dir);
+  if (cached) return cached;
   fs.mkdirSync(dir, { recursive: true });
-  _conn = await lancedb.connect(dir);
-  return _conn;
+  const conn = await lancedb.connect(dir);
+  _conns.set(dir, conn);
+  return conn;
 }
 
 /** Sidecar path holding TableMeta for a given project DB dir. */
@@ -186,7 +193,7 @@ export async function countRows(projectName?: string): Promise<number> {
   return table.countRows();
 }
 
-/** Reset memoized connection (tests / daemon restart). */
+/** Reset memoized connections (tests / daemon restart). */
 export function resetConnection(): void {
-  _conn = null;
+  _conns.clear();
 }

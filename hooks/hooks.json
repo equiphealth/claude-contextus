@@ -1,4 +1,16 @@
 {
+  "SessionStart": [
+    {
+      "hooks": [
+        {
+          "command": "node $PLUGIN_PATH/scripts/session-start-hook.js",
+          "type": "command",
+          "timeout": 20000
+        }
+      ],
+      "matcher": ".*"
+    }
+  ],
   "UserPromptSubmit": [
     {
       "hooks": [
