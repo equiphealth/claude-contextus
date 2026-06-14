@@ -11,6 +11,8 @@
     "rebuild": "tsx scripts/embed-contexts.ts --rebuild",
     "fetch-model": "tsx scripts/fetch-model.ts",
     "daemon": "tsx daemon/server.ts",
+    "eval-worker": "tsx daemon/eval-worker.ts",
+    "calibrate-floor": "tsx scripts/calibrate-floor.ts",
     "query": "tsx scripts/search.ts",
     "dev": "tsc --watch",
     "test": "node --import tsx --test tests/*.test.ts",

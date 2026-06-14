@@ -13,6 +13,7 @@
  *
  * Endpoints:
  *   GET  /health          → { status, uptime, modelLoaded, lancedbConnected, embeddingModel }
+ *   GET  /introspect      → live config + corpus stats (Self-doc Layer 1)
  *   POST /query  {project, prompt}        → { continue, hookSpecificOutput?: { additionalContext } }
  *   POST /notify {project, file, cwd?}    → { ok, embedded, id? }
  *
@@ -33,6 +34,9 @@ import { applyFloor } from '../lib/floor.js';
 import { formatInjection } from '../lib/inject-format.js';
 import { recordInjection, noveltyFor } from '../lib/novelty.js';
 import { embedSingleFile } from '../lib/embed-file.js';
+import { recordLastInjection } from '../lib/session-state.js';
+import { readState as readCalibrationState } from '../lib/calibration-state.js';
+import { buildIntrospection } from '../lib/introspect.js';
 import {
   logRetrieval,
   logNoInject,
@@ -44,6 +48,8 @@ import {
 
 const PORT = 37800;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+/** Daemon/protocol version reported by /introspect (keep in sync with plugin.json). */
+const DAEMON_VERSION = '0.1.0';
 const RUNTIME_DIR = expandHome('~/.contextus/runtime');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
 const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
@@ -175,6 +181,20 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   );
   recordInjection(projectLabel, injectedNames);
 
+  // While a calibration campaign is active, stash what we injected so the Stop
+  // hook can grade usage against it (evaluation-architecture). Skipped entirely
+  // when calibration is off — no disk churn on the normal hot path.
+  if (readCalibrationState().evaluateUsage) {
+    recordLastInjection(projectLabel, {
+      promptHash: hash,
+      patterns: included.map((r) => ({
+        id: r.filename || r.id,
+        snippet: r.document.replace(/\s+/g, ' ').slice(0, 160),
+      })),
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   logRetrieval({
     project: projectLabel,
     promptHash: hash,
@@ -230,6 +250,26 @@ const server = http.createServer((req, res) => {
   if (method === 'GET' && url.startsWith('/novelty')) {
     const project = new URL(url, BASE_URL).searchParams.get('project') ?? 'default';
     return sendJson(res, 200, { project, recent: noveltyFor(project) });
+  }
+
+  // GET /introspect?project=foo — live config + corpus stats (Self-doc Layer 1).
+  // Feeds /context-status so the dashboard shows real numbers, not a mock.
+  if (method === 'GET' && url.startsWith('/introspect')) {
+    const project = new URL(url, BASE_URL).searchParams.get('project') ?? undefined;
+    buildIntrospection({
+      version: DAEMON_VERSION,
+      uptimeSeconds: process.uptime(),
+      modelLoaded,
+      project,
+    })
+      .then((info) => sendJson(res, 200, info))
+      .catch((err) => {
+        logError('error', 'daemon', '/introspect failed', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+        sendJson(res, 500, { error: 'introspect failed' });
+      });
+    return;
   }
 
   if (method === 'POST' && (url === '/query' || url === '/notify')) {

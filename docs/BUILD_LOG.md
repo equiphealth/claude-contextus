@@ -221,3 +221,59 @@ Spine polish prompted by the two live test sessions — still Phase 2 (no new ph
 **Decisions applied:** event-driven watcher over `fs.watch` (your note + cross-platform reliability); novelty signal sourced from the daemon's actual injection history, not a separate index; dedup cheap-cosine in v1, LLM dedup deferred to v2; migration dry-run/idempotent/verify-before-embed (selfdoc-build-practice — never auto-embed migrated truth); chunker built-and-tested but not wired (whole-doc embed stays v1).
 
 **Token/cost:** ~210K input (CLAUDE.md + SessionStart + the Phase docs + the full lib/daemon/hook/skill reads replayed each turn; this batch touched the most files of any phase so far), ~38K output (3 hooks + 4 new libs + migration script + skill + 8 test files + this entry). At Opus 4.8 rates with Claude Code caching (most input is cache reads ~$1.50/M after turn 1), realistic **~$4–6**. Rough, not metered.
+
+---
+
+## Phase 5 — Quality Measurement (2026-06-14)
+
+**Exit criteria — status:** ✅ **Met.** A calibration run produces a floor recommendation **from real historical prompts** — `pnpm calibrate-floor` replayed **282 of the user's own typed prompts** (mined from `~/.claude/projects/<slug>/*.jsonl`) through the live query path and recommended a floor. The number now awaits the user's eyeball (the mandatory return — see below). The Stop hook + eval worker are wired (parser unit-tested, model call mocked) and the full calibration loop self-verified end-to-end with a mock grader. `/introspect` is live and feeds `/context-status`.
+
+**What changed:**
+| File | Change |
+|---|---|
+| `lib/eval-calibration.ts` | **New** — the testable heart: `buildEvalPrompt`, `parseEvalResponse` (tolerant `n:rating` parser — prose/spacing/case, out-of-range drop, last-wins on dup index), `weightedScore` (LOGGING.md formula, denominator = retrieved so unrated = unused), `RATING_WEIGHTS` |
+| `lib/eval-model.ts` | **New** — the mockable model boundary. Dependency-free raw `fetch` for both providers (no `@anthropic-ai/sdk`). Anthropic Haiku default (`claude-haiku-4-5-20251001`); Ollama opt-in. `EvalCaller` type is what tests inject |
+| `lib/eval-worker-core.ts` | **New** — testable engine: `enqueueJob`/`readQueue`/`processJob`/`drainQueue`. `processJob` takes an injected caller (tests pass a mock). `drainQueue` honors the campaign budget (stops at target, drops surplus) and truncates the queue |
+| `lib/calibration-state.ts` | **New** — the MUTABLE campaign half (live counter + enabled flip) in `~/.contextus/calibration-state.json`, kept OUT of the checked-in plugin.json. `startCalibration`/`recordSample` (auto-disables + stamps `completedAt` at target)/`readState`/`writeState` |
+| `lib/floor-calibration.ts` | **New** — pure stats: `percentile`, `coverage`, `buildCoverageCurve`, `recommendFloor`. Recommendation finds the **widest gap in the upper-half distribution** (noise→signal boundary) rather than a recall-maximizing p10 floor — see divergence #2 |
+| `lib/session-state.ts` | **New** — bridges /query (injection) → Stop hook (eval). `~/.contextus/.session-state.json` (CLAUDE.md principle 7), per-project last-write-wins. Only written while calibration is active |
+| `lib/introspect.ts` | **New** — Self-doc Layer 1: `buildIntrospection` returns version, model+dims, corpus chunk counts by type, hit-count stats (withHits/totalHits/topHits), floor, re-rank weights, packs, calibration state, uptime |
+| `lib/logger.ts` | Added `logCalibrationEval` (the honest quality signal → `usage.jsonl` `calibration_eval` event, LOGGING.md) |
+| `lib/config.ts` | Added `CalibrationConfig` (static: targetSamples + eval model) + merge; added `loadedSourceNames()` (reads plugin.json `config.sources` for /introspect packs) |
+| `daemon/server.ts` | Added `GET /introspect`; `/query` now stashes the injection to session-state **only when a campaign is active** (no hot-path churn otherwise); `DAEMON_VERSION` constant |
+| `daemon/eval-worker.ts` | **Replaced** the old `eval-worker.js` stub — TS, **polling** drain loop (NOT `fs.watch` — the Phase 3+4 note's flagged replacement), PID-file singleton guard so a duplicate spawn self-exits, idle-cheap (no-ops when no campaign) |
+| `scripts/stop-evaluation.js` | **New** Stop hook (plain JS). Zero model call: checks campaign active → reconstructs last turn's thinking+text from `transcript_path` → matches session-state injection → appends one eval job. Never blocks the response |
+| `scripts/calibrate-floor.ts` | **New** floor harness (the exit criterion). Mines real typed prompts from transcripts, replays them, prints the top-1 distribution + a **floor→injection-rate trade curve** + a gap-based recommendation. Prints, never writes config |
+| `scripts/lib/daemon-control.js` | `spawnDaemon` now also spawns the detached eval worker (`spawnDetached` refactor) |
+| `hooks/hooks.json` | Added `Stop` → `stop-evaluation.js` (5s) |
+| `plugin.json` | Added annotated `config.calibration` (targetSamples + Haiku model) |
+| `package.json` | `eval-worker` + `calibrate-floor` scripts |
+| `skills/context-status/SKILL.md` | Rewrote Implementation: reads live numbers from `/introspect` (no hard-coded config) + historical logs + fs scan |
+| `tests/eval-calibration.test.ts`, `tests/eval-worker-core.test.ts`, `tests/floor-calibration.test.ts` | **New** — 24 tests (parser, weighted score, mocked worker, percentile/coverage/gap-recommendation) |
+
+**Verified (ran, not assumed):**
+- `pnpm exec tsc --noEmit` → clean; `pnpm lint` → exit 0; `pnpm format` → clean
+- `pnpm test` → **75 pass / 0 fail** (was 51; +24 new), no model load
+- **Floor harness on real data**: `pnpm calibrate-floor` replayed **282 real typed prompts**, 0 empty results, top-1 range −0.167…0.685, p50=0.138, **recommended floor 0.49** (4% injection) — placed in the 0.052-wide gap starting at 0.481
+- **`/introspect` live**: started a fresh daemon, `curl /introspect` returned correct chunk counts (3, by type), retrieval knobs, re-rank weight tables, packs (`projectMemory/projectDocs/userMemory/userDocs`), calibration state, uptime
+- **End-to-end calibration loop** (mock grader, no network): `startCalibration(target=2)` → enqueued 3 jobs → `drainQueue(mock)` processed exactly **2** (respected target, dropped the 3rd) → auto-disabled with `completedAt` set → logged a clean `calibration_eval` event (`weighted_score=0.5`, 1 critical of 2 retrieved)
+
+**Needs user verification (the mandatory return):**
+- **Eyeball the recommended floor (0.49).** The harness ran on your real prompts against the **current 3-file corpus**, so the "noise cloud" is large (most build-chatter prompts have no real match in 3 files) and the recommendation deliberately injects for only ~4% of prompts — it is **not** recall-maximizing, by design ("not every prompt gets context"). The honest read: this number will shift substantially once the corpus grows (post-`/migrate-memory`). Decide whether to adopt 0.49 now or wait until the corpus is fuller. The **floor→injection-rate trade curve** in the output is the thing to look at — pick the injection rate you want and read off the floor. Nothing was auto-applied; `plugin.json` still says 0.35.
+- Optional: run `pnpm calibrate-floor --json` if you want the raw numbers.
+
+**DESIGN.md divergences:**
+1. **Eval model call is dependency-free raw `fetch`, not `@anthropic-ai/sdk`.** The old stub `require`'d the SDK, which was never in `package.json`/`node_modules`. Matching the embedder's existing Ollama-over-fetch pattern keeps the daemon's footprint small and the model call trivially mockable. Swap to the SDK later is one file.
+2. **Floor recommendation is gap-based, not threshold-percentile-based.** The naive "floor below p10 → maximize recall" first cut recommended **0.05 / 76% injection** — wrong: it optimizes recall on a corpus where most replayed prompts *shouldn't* match, directly violating DESIGN.md "not every prompt should receive context." Rewrote to find the widest gap in the upper-half distribution (the noise→signal boundary) — the relative-separation insight from `floor-calibration-signals` applied at the corpus level. This is the more honest v1 answer; the v2 top-K + per-prompt relative-separation gate supersedes absolute floors entirely.
+3. **Eval worker polls, doesn't `fs.watch`.** The Phase 3+4 BUILD_LOG note flagged the stub's `fs.watch` as cross-platform-unreliable and slated it for replacement here — done. Polling at ≤1 job/response is trivially cheap and never misses.
+4. **Calibration state split: static (plugin.json) vs mutable (`~/.contextus/calibration-state.json`).** A bounded campaign's live counter + enabled flip can't live in a checked-in file; the old stub wrote the live state back into a config JSON. Static knobs stay in plugin.json; the campaign state is file-based session state (CLAUDE.md principle 7).
+5. **`/introspect` endpoint** is new (Self-doc Layer 1, per the estimate). `generate-docs` + the 7 auto-doc files remain v2.
+
+**Decisions applied:** Haiku default / Ollama opt-in (ollama-model-quality, evaluation-architecture); thinking blocks carried into the eval job so the grader's task is "did Claude say it used this?" not "infer relevance"; parser tested + model mocked (Phase-5 brief); calibrate on real sentence-shaped prompts not terse fragments (floor-calibration-signals); recommendation printed for human eyeball, never auto-applied; gap-based floor over recall-maximizing floor (honest-metrics framing).
+
+**Known edges / follow-ups:**
+- The 0.49 recommendation is corpus-bound — **re-run after `/migrate-memory` populates the corpus** (Phase 6). Flagged in the harness rationale text itself.
+- **`lib/` organization**: now ~23 flat files. User flagged this mid-phase; deferred to a dedicated post-Phase-5 reorg commit (tracked) so the structure change is reviewable in isolation.
+- The Stop hook reads the last turn from `transcript_path`; the live-session shape was confirmed against real transcripts, but the hook firing *in an actual session* during a campaign is a Phase-6 integration check (the loop itself is verified with a mock).
+
+**Token/cost:** ~240K input (CLAUDE.md + SessionStart + the four Phase-5 doc/memory reads + the full lib/daemon/skill reads replayed each turn; the floor-recommendation rethink added a couple turns), ~34K output (7 new libs + 2 scripts + 1 hook + 3 test files + skill rewrite + this entry). At Opus 4.8 rates with Claude Code caching (most input is cache reads ~$1.50/M after turn 1), realistic **~$4–6**. Rough, not metered.

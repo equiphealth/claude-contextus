@@ -27,6 +27,7 @@ export const BASE_URL = `http://127.0.0.1:${PORT}`;
 const RUNTIME_DIR = path.join(os.homedir(), '.contextus', 'runtime');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
 const DAEMON_TS = path.join(REPO_ROOT, 'daemon', 'server.ts');
+const EVAL_WORKER_TS = path.join(REPO_ROOT, 'daemon', 'eval-worker.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
 
@@ -73,12 +74,12 @@ export async function getHealth(timeoutMs = 1000) {
   }
 }
 
-/** Spawn the daemon detached so it outlives this hook process. */
-function spawnDaemon() {
+/** Spawn a detached tsx process (daemon or eval worker) that outlives the hook. */
+function spawnDetached(scriptTs) {
   // Prefer the repo-local tsx binary; fall back to `npx tsx` if it's missing.
   const useBin = fs.existsSync(TSX_BIN);
   const cmd = useBin ? TSX_BIN : 'npx';
-  const args = useBin ? [DAEMON_TS] : ['tsx', DAEMON_TS];
+  const args = useBin ? [scriptTs] : ['tsx', scriptTs];
   const child = spawn(cmd, args, {
     cwd: REPO_ROOT,
     detached: true,
@@ -86,6 +87,17 @@ function spawnDaemon() {
     env: process.env,
   });
   child.unref();
+}
+
+/** Spawn the daemon + the background eval worker, both detached. */
+function spawnDaemon() {
+  spawnDetached(DAEMON_TS);
+  // The eval worker is a separate, idle-cheap process: it polls the eval queue
+  // and only does work during a calibration campaign. Spawning it here means a
+  // started campaign needs no manual worker launch. Its own EADDR-free design +
+  // queue truncation make a duplicate spawn harmless (worst case: two pollers
+  // racing a tiny file, last-write-wins on truncate).
+  spawnDetached(EVAL_WORKER_TS);
 }
 
 /**

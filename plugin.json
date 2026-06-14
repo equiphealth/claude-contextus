@@ -79,6 +79,14 @@
       "enabled": true,
       "mode": "propose"
     },
+    "calibration": {
+      "_note": "Quality evaluation (LOGGING.md calibration_eval). targetSamples=evaluations per campaign before auto-disable. model judges whether injected patterns were USED (anthropic Haiku default — proven reliable, ~10x cheaper than Sonnet; ollama is the privacy/offline opt-in). The MUTABLE campaign state (live counter, enabled flip) lives in ~/.contextus/calibration-state.json, NOT here.",
+      "targetSamples": 100,
+      "model": {
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5-20251001"
+      }
+    },
     "notifications": {
       "_verbosity_note": "SessionStart daemon-state messages (user-facing systemMessage). silent=never | normal=fresh spawn/warming/failure only | verbose=also heartbeat with uptime when an existing daemon is found. Override per-session with CONTEXTUS_VERBOSITY env.",
       "verbosity": "verbose"
