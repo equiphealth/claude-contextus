@@ -16,6 +16,7 @@ Design decisions and feedback for claude-contextus. One line per memory; load th
 - [opus-metrics-critique](feedback_opus_metrics_critique.md) — "tokens saved" is a vanity metric; measure usage not injection
 - [selfdoc-build-practice](feedback_selfdoc_build_practice.md) — verify context files before embedding; one ledger not four
 - [hook-files-esm-and-smoke-test](feedback_hook_files_esm_smoke_test.md) — hooks must be ESM (repo is type:module); smoke-test by executing the file via stdin, not just unit-testing imported functions
+- [stage-explicit-paths](feedback_stage_explicit_paths.md) — never `git add -A`; stage only the paths you changed so the user's separate working-tree edits aren't swept in
 
 ## Project
 - [package-manager](project_package_manager.md) — repo uses pnpm; always use pnpm commands
