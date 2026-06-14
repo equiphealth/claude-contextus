@@ -45,6 +45,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-evaluation.js\"",
+            "timeout": 5000
+          }
+        ]
+      }
     ]
   }
 }

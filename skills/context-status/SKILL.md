@@ -116,19 +116,56 @@ Measure quality: /context-calibrate
 
 ## Implementation
 
-Requires:
-1. **Filesystem scan**: Count files, filter by mtime for growth
-2. **Usage log**: `~/.contextus/usage.jsonl` with per-prompt entries:
-   ```json
-   {
-     "timestamp": "2026-06-12T14:23:42Z",
-     "retrieved": ["logger-helper", "test-data"],
-     "tokens_injected": 542,
-     "tokens_saved": 1205,
-     "latency_ms": 163
-   }
-   ```
-3. **Aggregate last 30 days**: Parse usage log, sum tokens_saved, calc usage rate
+Two data sources — **live daemon state** (via `/introspect`) and **historical logs**:
+
+### 1. Live state — `GET /introspect` (Phase 5)
+
+The daemon's introspection endpoint is the source of truth for everything that
+reflects the *current* configuration and corpus. Query it for the project, and if
+the daemon is unreachable, fall back to a "daemon down" line (don't fabricate
+numbers):
+
+```bash
+curl -s "http://127.0.0.1:37800/introspect?project=<name>"
+```
+
+Returns (live, not mocked):
+```json
+{
+  "version": "0.1.0",
+  "uptimeSeconds": 4231,
+  "modelLoaded": true,
+  "embedding": { "provider": "ollama", "model": "nomic-embed-text",
+                 "dimensions": 768, "corpusProvider": "ollama", "corpusModel": "nomic-embed-text" },
+  "packs": ["projectMemory", "projectDocs", "userMemory", "userDocs"],
+  "corpus": { "chunks": 3, "byType": {"decision":1,"implementation":1,"reference":1},
+              "withHits": 0, "totalHits": 0, "topHits": [] },
+  "retrieval": { "topK": 5, "injectionFloor": 0.35, "similarityThreshold": 0.7, "maxTokens": 3000 },
+  "rerankWeights": { "typeBoosts": {...}, "sourceWeights": {...} },
+  "calibration": { "evaluateUsage": false, "sampleCount": 0, "targetSamples": 100 }
+}
+```
+
+Use `corpus.chunks`/`byType` for the Knowledge Base section, `retrieval.*` for
+Configuration, `corpus.topHits` for most-retrieved patterns, `calibration.*` for
+the Quality line, and `embedding.*` for the Embedding section. **No hard-coded
+config values** — they all come from here.
+
+### 2. Historical activity — usage logs
+
+For the 30-day Activity/Efficiency trends (injection rate, latency percentiles,
+tokens), parse `~/.contextus/logs/usage.jsonl` (LOGGING.md schema) — retrieval,
+no-inject, and `calibration_eval` events:
+```json
+{ "type": "retrieval", "timestamp": "...", "retrieved": ["logger-helper"],
+  "tokens_injected": 542, "latency_ms": 163, "similarity_scores": [0.57] }
+```
+Injection rate = retrievals with `retrieved.length > 0` ÷ all retrieval events.
+Quality (if calibrated) = mean `weighted_score` across `calibration_eval` events.
+
+### 3. Filesystem scan
+
+Count `.claude/context/` files + `docs/` by mtime for the Growth line.
 
 ## Design Notes
 

@@ -107,11 +107,24 @@ export interface NotificationsConfig {
   verbosity: NotificationVerbosity;
 }
 
+/**
+ * Calibration STATIC config (plugin.json). The mutable campaign state — the live
+ * sample counter and enabled flip — lives in ~/.contextus/calibration-state.json
+ * (lib/calibration-state.ts), never in the checked-in plugin.json.
+ */
+export interface CalibrationConfig {
+  /** evaluations to collect per campaign before auto-disabling */
+  targetSamples: number;
+  /** which model judges usage (anthropic Haiku default, ollama opt-in) */
+  model: { provider: 'anthropic' | 'ollama'; model?: string; endpoint?: string };
+}
+
 export interface ContextusConfig {
   embedding: EmbeddingConfig;
   storage: StorageConfig;
   retrieval: RetrievalConfig;
   notifications: NotificationsConfig;
+  calibration: CalibrationConfig;
 }
 
 /** Hard defaults — embedding locked to Transformers.js + nomic. */
@@ -143,6 +156,10 @@ const DEFAULTS: ContextusConfig = {
   },
   notifications: {
     verbosity: 'normal', // code default; deployed plugin.json sets 'verbose'
+  },
+  calibration: {
+    targetSamples: 100, // LOGGING.md default sample budget per campaign
+    model: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
   },
 };
 
@@ -177,6 +194,7 @@ export function loadConfig(): ContextusConfig {
       if (c.lancedb?.path) merged.storage.path = c.lancedb.path;
       if (c.retrieval) Object.assign(merged.retrieval, c.retrieval);
       if (c.notifications) Object.assign(merged.notifications, c.notifications);
+      if (c.calibration) Object.assign(merged.calibration, c.calibration);
     } catch {
       /* fall back to defaults on any parse error */
     }
@@ -184,6 +202,26 @@ export function loadConfig(): ContextusConfig {
 
   _config = merged;
   return merged;
+}
+
+/**
+ * Names of enabled source "packs" from plugin.json `config.sources` (DESIGN.md
+ * multi-source). Not part of the typed ContextusConfig (it's plugin-only ingest
+ * wiring), so it's read directly here for /introspect. Returns [] if absent.
+ */
+export function loadedSourceNames(): string[] {
+  const pluginPath = findPluginJson();
+  if (!pluginPath) return [];
+  try {
+    const raw = JSON.parse(fs.readFileSync(pluginPath, 'utf-8'));
+    const sources = raw.config?.sources as Record<string, { enabled?: boolean }> | undefined;
+    if (!sources) return [];
+    return Object.entries(sources)
+      .filter(([, s]) => s?.enabled !== false)
+      .map(([name]) => name);
+  } catch {
+    return [];
+  }
 }
 
 /** Expand a leading `~` to the user's home directory. */

@@ -140,6 +140,50 @@ export function logNoInject(e: NoInjectLog): void {
   );
 }
 
+/** A single pattern's calibration rating (LOGGING.md calibration_eval event). */
+export interface EvalRatingLog {
+  pattern: string;
+  rating: string;
+}
+
+/** A completed calibration evaluation (the honest quality signal). */
+export interface CalibrationEvalLog {
+  project: string;
+  promptHash: string;
+  retrieved: string[];
+  evaluations: EvalRatingLog[];
+  weightedScore: number;
+  evaluationLatencyMs: number;
+}
+
+/**
+ * Log a calibration_eval event (LOGGING.md). This is the quality metric that
+ * matters — whether injected patterns were actually USED — as opposed to the
+ * tokens-saved efficiency number on retrieval events (opus-metrics-critique).
+ */
+export function logCalibrationEval(e: CalibrationEvalLog): void {
+  const record = {
+    type: 'calibration_eval',
+    timestamp: new Date().toISOString(),
+    project: e.project,
+    prompt_hash: e.promptHash,
+    retrieved: e.retrieved,
+    evaluations: e.evaluations,
+    weighted_score: Number(e.weightedScore.toFixed(4)),
+    evaluation_latency_ms: e.evaluationLatencyMs,
+  };
+  appendSafe(USAGE_PATH, JSON.stringify(record) + '\n');
+  appendSafe(
+    DAEMON_LOG_PATH,
+    humanLine('INFO', 'Calibration eval', {
+      score: e.weightedScore.toFixed(2),
+      rated: e.evaluations.length,
+      of: e.retrieved.length,
+      project: e.project,
+    })
+  );
+}
+
 /** Log a structured error/warning to errors.jsonl + daemon.log. */
 export function logError(
   level: 'error' | 'warn',
