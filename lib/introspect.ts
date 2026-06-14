@@ -9,10 +9,10 @@
  */
 
 import { loadConfig, loadedSourceNames } from './config.js';
-import { TABLE_NAME, openTable, tableExists, readTableMeta } from './lance-client.js';
-import { SOURCE_WEIGHTS, TYPE_BOOSTS } from './reranker.js';
-import { readState as readCalibrationState } from './calibration-state.js';
-import type { ContextRow } from './lance-client.js';
+import { TABLE_NAME, openTable, tableExists, readTableMeta } from './storage/lance-client.js';
+import { SOURCE_WEIGHTS, TYPE_BOOSTS } from './retrieval/reranker.js';
+import { readState as readCalibrationState } from './calibration/calibration-state.js';
+import type { ContextRow } from './storage/lance-client.js';
 
 export interface CorpusStats {
   /** total rows (chunks) in the table; 0 if no table yet */

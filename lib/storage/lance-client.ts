@@ -26,7 +26,7 @@ import * as lancedb from '@lancedb/lancedb';
 import type { Connection, Table } from '@lancedb/lancedb';
 import fs from 'fs';
 import path from 'path';
-import { loadConfig, resolveDBPath } from './config.js';
+import { loadConfig, resolveDBPath } from '../config.js';
 
 export const TABLE_NAME = 'contextus';
 

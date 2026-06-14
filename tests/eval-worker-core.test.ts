@@ -10,8 +10,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { processJob, type EvalJob } from '../lib/eval-worker-core.js';
-import type { EvalModelConfig } from '../lib/eval-model.js';
+import { processJob, type EvalJob } from '../lib/calibration/eval-worker-core.js';
+import type { EvalModelConfig } from '../lib/calibration/eval-model.js';
 
 const MODEL: EvalModelConfig = { provider: 'ollama', model: 'test' };
 

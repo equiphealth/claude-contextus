@@ -27,7 +27,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
 import matter from 'gray-matter';
-import { planMigration, type MemoryFile, type MigrationPlanItem } from '../lib/memory-migrate.js';
+import { planMigration, type MemoryFile, type MigrationPlanItem } from '../lib/capture/memory-migrate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');

@@ -11,7 +11,7 @@ import {
   buildCoverageCurve,
   recommendFloor,
   type ReplayResult,
-} from '../lib/floor-calibration.js';
+} from '../lib/calibration/floor-calibration.js';
 
 test('percentile: endpoints and interpolation', () => {
   const xs = [0, 1, 2, 3, 4];

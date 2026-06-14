@@ -13,8 +13,8 @@
  *   pnpm search --type decision "what did we pick for the daemon port"
  */
 
-import { embedQuery } from '../lib/embedder.js';
-import { search } from '../lib/lance-client.js';
+import { embedQuery } from '../lib/embedding/embedder.js';
+import { search } from '../lib/storage/lance-client.js';
 import { loadConfig } from '../lib/config.js';
 
 function parseArgs(argv: string[]): { query: string; k: number; type?: string } {

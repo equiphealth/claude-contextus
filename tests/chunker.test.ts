@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chunkMarkdown, estimateTokens } from '../lib/chunker.js';
+import { chunkMarkdown, estimateTokens } from '../lib/embedding/chunker.js';
 
 test('chunkMarkdown: empty/whitespace input → no chunks', () => {
   assert.deepEqual(chunkMarkdown(''), []);

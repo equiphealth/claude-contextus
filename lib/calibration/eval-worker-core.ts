@@ -15,7 +15,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { expandHome } from './config.js';
+import { expandHome } from '../config.js';
 import {
   buildEvalPrompt,
   parseEvalResponse,
@@ -23,7 +23,7 @@ import {
   type InjectedPattern,
 } from './eval-calibration.js';
 import { callEvalModel, type EvalCaller, type EvalModelConfig } from './eval-model.js';
-import { logCalibrationEval } from './logger.js';
+import { logCalibrationEval } from '../logger.js';
 import { recordSample, readState } from './calibration-state.js';
 
 export const EVAL_QUEUE_PATH = expandHome('~/.contextus/.eval-queue.jsonl');

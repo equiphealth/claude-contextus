@@ -5,8 +5,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatInjection, estimateTokens } from '../lib/inject-format.js';
-import type { RankedResult } from '../lib/reranker.js';
+import { formatInjection, estimateTokens } from '../lib/retrieval/inject-format.js';
+import type { RankedResult } from '../lib/retrieval/reranker.js';
 
 function chunk(id: string, body: string, similarity = 0.5, hit_count = 0): RankedResult {
   return {

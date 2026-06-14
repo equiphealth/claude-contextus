@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planFile, kebab, type MemoryFile } from '../lib/memory-migrate.js';
+import { planFile, kebab, type MemoryFile } from '../lib/capture/memory-migrate.js';
 
 function mem(filename: string, data: Record<string, unknown>, body = 'body text'): MemoryFile {
   return { filename, data, body };

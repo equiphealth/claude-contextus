@@ -19,7 +19,7 @@
 import fs from 'fs';
 import path from 'path';
 import { env } from '@xenova/transformers';
-import { expandHome, loadConfig, type TransformersConfig } from './config.js';
+import { expandHome, loadConfig, type TransformersConfig } from '../config.js';
 
 let _configured = false;
 

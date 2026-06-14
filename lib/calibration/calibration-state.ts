@@ -12,7 +12,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { expandHome, loadConfig } from './config.js';
+import { expandHome, loadConfig } from '../config.js';
 import type { EvalModelConfig } from './eval-model.js';
 import { DEFAULT_EVAL_MODEL } from './eval-model.js';
 

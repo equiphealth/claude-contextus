@@ -12,8 +12,8 @@ import fs from 'fs';
 import path from 'path';
 import { loadContext, categoryPrefix } from './context-loader.js';
 import { embedDocument } from './embedder.js';
-import { upsertRows, getContentHashes, type ContextRow } from './lance-client.js';
-import { contentHash, isStale } from './staleness.js';
+import { upsertRows, getContentHashes, type ContextRow } from '../storage/lance-client.js';
+import { contentHash, isStale } from '../storage/staleness.js';
 
 /** Compose the embedded text (richer than the stored body) — mirrors embed-contexts. */
 function embedText(name: string, description: string, content: string): string {

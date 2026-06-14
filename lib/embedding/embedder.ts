@@ -23,7 +23,7 @@
  */
 
 import { pipeline, type FeatureExtractionPipeline } from '@xenova/transformers';
-import { loadConfig } from './config.js';
+import { loadConfig } from '../config.js';
 import {
   configureTransformersEnv,
   modelUnavailableError,
