@@ -35,6 +35,32 @@ export interface EmbeddingConfig {
   dimensions: number;
   /** Embedding batch size */
   batchSize: number;
+  /**
+   * Transformers.js model sourcing (ignored when provider === 'ollama'). The
+   * resolver (lib/model-resolver.ts) tries, in order: a bundled/local dir →
+   * the FS cache → a configured mirror → Hugging Face. This is the answer to
+   * "HF is blocked" — point `localModelPath` at a pre-fetched bundle (see
+   * `scripts/fetch-model.ts`) and it works fully offline.
+   */
+  transformers?: TransformersConfig;
+}
+
+export interface TransformersConfig {
+  /**
+   * Directory holding a pre-downloaded model in transformers.js layout
+   * (`<dir>/<modelId>/<files>`). Tried before any network. Use to ship/seed a
+   * model on networks that block Hugging Face. '' (default) = none.
+   */
+  localModelPath: string;
+  /** FS cache dir for downloaded models. '' = transformers.js default (~/.cache). */
+  cacheDir: string;
+  /**
+   * Host to download from when not found locally. Defaults to Hugging Face;
+   * point at an internal Artifactory/Nexus mirror on gated networks.
+   */
+  remoteHost: string;
+  /** Allow network downloads at all. Set false for strict offline/air-gapped. */
+  allowRemoteModels: boolean;
 }
 
 export interface StorageConfig {
@@ -68,6 +94,12 @@ const DEFAULTS: ContextusConfig = {
     ollamaEndpoint: 'http://localhost:11434',
     dimensions: 768,
     batchSize: 32,
+    transformers: {
+      localModelPath: '',
+      cacheDir: '',
+      remoteHost: 'https://huggingface.co/',
+      allowRemoteModels: true,
+    },
   },
   storage: {
     mode: 'file',
@@ -102,7 +134,13 @@ export function loadConfig(): ContextusConfig {
     try {
       const raw = JSON.parse(fs.readFileSync(pluginPath, 'utf-8'));
       const c = raw.config ?? {};
-      if (c.embedding) Object.assign(merged.embedding, c.embedding);
+      if (c.embedding) {
+        // Deep-merge the nested `transformers` object so a partial override
+        // (e.g. just localModelPath) doesn't wipe the other defaults.
+        const { transformers: tOverride, ...eRest } = c.embedding;
+        Object.assign(merged.embedding, eRest);
+        if (tOverride) Object.assign(merged.embedding.transformers!, tOverride);
+      }
       if (c.lancedb?.path) merged.storage.path = c.lancedb.path;
       if (c.retrieval) Object.assign(merged.retrieval, c.retrieval);
     } catch {
@@ -114,6 +152,12 @@ export function loadConfig(): ContextusConfig {
   return merged;
 }
 
+/** Expand a leading `~` to the user's home directory. */
+export function expandHome(p: string): string {
+  if (!p.startsWith('~')) return p;
+  return path.join(process.env.HOME ?? process.env.USERPROFILE ?? '', p.slice(1));
+}
+
 /**
  * Resolve the on-disk DB directory for a project, expanding `~` and
  * `{project-name}`.
@@ -121,9 +165,6 @@ export function loadConfig(): ContextusConfig {
 export function resolveDBPath(projectName?: string): string {
   const { storage } = loadConfig();
   const name = projectName ?? path.basename(process.cwd());
-  let p = storage.path.replace('{project-name}', name);
-  if (p.startsWith('~')) {
-    p = path.join(process.env.HOME ?? process.env.USERPROFILE ?? '', p.slice(1));
-  }
+  const p = expandHome(storage.path.replace('{project-name}', name));
   return path.resolve(p);
 }

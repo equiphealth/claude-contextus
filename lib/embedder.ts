@@ -24,6 +24,11 @@
 
 import { pipeline, type FeatureExtractionPipeline } from '@xenova/transformers';
 import { loadConfig } from './config.js';
+import {
+  configureTransformersEnv,
+  modelUnavailableError,
+  preflightTransformers,
+} from './model-resolver.js';
 
 /** nomic instruction prefixes (asymmetric retrieval). */
 export const DOCUMENT_PREFIX = 'search_document: ';
@@ -51,7 +56,19 @@ let _pipe: Promise<FeatureExtractionPipeline> | null = null;
 function getPipeline(): Promise<FeatureExtractionPipeline> {
   if (!_pipe) {
     const { model } = loadConfig().embedding;
-    _pipe = pipeline('feature-extraction', model, { quantized: true });
+    // Apply localModelPath / cacheDir / remoteHost before the first load so a
+    // bundled or mirrored model is sourced correctly (see lib/model-resolver).
+    configureTransformersEnv();
+    _pipe = pipeline('feature-extraction', model, { quantized: true }).catch((err: unknown) => {
+      _pipe = null; // allow retry after the user fixes config
+      // Network/HF failures surface as opaque fetch/parse errors — replace with
+      // the actionable escape-hatch message.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/fetch|JSON|Unexpected token|ENOTFOUND|ECONNREFUSED|certificate/i.test(msg)) {
+        throw modelUnavailableError(model);
+      }
+      throw err;
+    });
   }
   return _pipe;
 }
@@ -101,6 +118,9 @@ async function embedRaw(text: string): Promise<number[]> {
  */
 export async function warmup(): Promise<void> {
   const { dimensions, provider, model, ollamaModel } = loadConfig().embedding;
+  // Transformers.js: fail fast with an actionable message if the model is
+  // neither bundled nor reachable, instead of a slow opaque pipeline() error.
+  if (provider === 'transformers') await preflightTransformers(model);
   const vec = await embedRaw('warmup');
   if (vec.length !== dimensions) {
     const id = provider === 'ollama' ? ollamaModel : model;

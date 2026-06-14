@@ -56,7 +56,14 @@
       "ollamaModel": "nomic-embed-text",
       "ollamaEndpoint": "http://localhost:11434",
       "dimensions": 768,
-      "batchSize": 32
+      "batchSize": 32,
+      "_transformers_note": "Used when provider='transformers'. To run on an HF-blocked network: `pnpm fetch-model --out ./models` on an unblocked machine, then set localModelPath to that dir. Or set remoteHost to an internal HF mirror. allowRemoteModels:false forces strict offline.",
+      "transformers": {
+        "localModelPath": "",
+        "cacheDir": "",
+        "remoteHost": "https://huggingface.co/",
+        "allowRemoteModels": true
+      }
     },
     "retrieval": {
       "topK": 5,

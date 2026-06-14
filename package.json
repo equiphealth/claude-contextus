@@ -9,6 +9,7 @@
     "watch": "tsc --watch",
     "embed": "tsx scripts/embed-contexts.ts",
     "rebuild": "tsx scripts/embed-contexts.ts --rebuild",
+    "fetch-model": "tsx scripts/fetch-model.ts",
     "dev": "tsc --watch",
     "test": "tsc --noEmit && node --test dist/tests/**/*.test.js",
     "lint": "eslint lib scripts --ext .ts",
