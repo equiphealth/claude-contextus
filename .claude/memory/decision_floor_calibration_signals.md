@@ -25,6 +25,10 @@ metadata:
 - Use any absolute floor only as a **weak quality filter** after ranking, not as the gate.
 - Calibrate against **real historical prompts** (sentence-shaped), not terse test fragments, or the floor will be biased low.
 
+**Phase-2 live confirmation (2026-06-14, much stronger signal)**: an OFF-TOPIC prompt ("chocolate chip cookie recipe") scored the *same* `proactive-ux-positioning.md` doc at **-0.075** (terse curl phrasing) vs **+0.39** (live-session phrasing) — a **0.47 swing for identical topic/doc, from phrasing alone**. The 0.39 cleared the permissive 0.35 demo floor and injected (frontier model correctly ignored it — over-injection is the cheap failure mode per DESIGN.md "Optimize for Recall"). But the swing is far larger than Phase-1's 0.45↔0.49 wobble. **Implication: an absolute floor cannot cleanly separate signal from noise when off-topic scores range -0.08 to +0.39.** This is decisive evidence for top-K + relative-separation gating over any single absolute threshold. The #1↔#2 gap stayed diagnostic throughout; the absolute number did not.
+
+**Multi-injector caveat (verification hazard, not a scoring bug)**: live sessions stack 4 context injectors — contextus, claude-mem (`~/.claude-mem`), lean-ctx (`hook observe`), and the memory-reminder echo hook. An instance reading the pile cannot attribute a block to contextus unless it's labeled. A Phase-2 verification confused another instance into reading a non-contextus similarity number as contextus's. Contextus's injection block carries a distinctive `[Retrieved from your project's context patterns …]` header (lib/inject-format.ts) for exactly this — to verify contextus in isolation, match that header or run a session with only contextus's hooks.
+
 **Caveat**: these numbers are provider-specific (ollama nomic). If the corpus is rebuilt with Transformers.js nomic or a mirror, re-measure — the distribution may shift (same model family, but quantization/runtime differ).
 
 **Related**: [[embedding-download-risk]], [[ollama-model-quality]], [[design-scoping-v1-v2]]
