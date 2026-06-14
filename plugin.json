@@ -13,12 +13,12 @@
     "enabled": true,
     "sources": {
       "projectMemory": {
-        "type": "memory",
+        "type": "context",
         "scope": "project",
-        "path": ".claude/memory",
+        "path": ".claude/context",
         "enabled": true,
-        "indexFile": "MEMORY.md",
-        "exclude": ["**/MEMORY.md", "**/README.md"]
+        "indexFile": "CONTEXT.md",
+        "exclude": ["**/CONTEXT.md", "**/README.md"]
       },
       "projectDocs": {
         "type": "doc",
@@ -69,8 +69,8 @@
       "topK": 5,
       "_similarityThreshold_note": "UNVALIDATED ranking filter (applied after re-rank, not the gate) — calibrate in Phase 5.",
       "similarityThreshold": 0.7,
-      "_injectionFloor_note": "UNVALIDATED gate on raw similarity — 'inject anything at all?'. SEPARATE from similarityThreshold. Default 0.35 is permissive because Phase-1 measured ollama-nomic correct hits at 0.45–0.68 / noise ~0.0–0.09 (floor-calibration-signals memory); 0.7 would inject nothing. Phase 5 sets the real value from real prompts.",
-      "injectionFloor": 0.35,
+      "_injectionFloor_note": "Gate on raw similarity — 'inject anything at all?'. SEPARATE from similarityThreshold. Calibrated to 0.45 in Phase 6 via `/context-calibrate --floor --apply` against the chunked 54-file / 721-chunk corpus (replay of ~300 real prompts → ~31% injection, the ~35% coverage target). #1↔#2 separation is weak (0.020), so no absolute floor cleanly separates signal from noise — this is a cold-start value; refine with a usage-eval campaign (`/context-calibrate --start`). The v2 top-K/relative-separation gate supersedes absolute floors.",
+      "injectionFloor": 0.45,
       "maxTokens": 3000,
       "mergeStrategy": "interleaved"
     },
@@ -106,6 +106,8 @@
     "skills/context-calibrate",
     "skills/audit-context",
     "skills/audit-stale",
-    "skills/migrate-memory"
+    "skills/migrate-memory",
+    "skills/contextus-setup",
+    "skills/tag-context"
   ]
 }

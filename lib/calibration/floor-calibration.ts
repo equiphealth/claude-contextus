@@ -81,26 +81,87 @@ export function coverage(values: number[], floor: number): number {
   return values.filter((v) => v >= floor).length / values.length;
 }
 
+/** Fixed grid of candidate floors for the trade curve + coverage-target search. */
+const FLOOR_GRID = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7];
+
 /**
  * Build a floor→injection-rate trade curve over a fixed grid of floors.
  */
 export function buildCoverageCurve(top1s: number[]): CoveragePoint[] {
-  const grid = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7];
-  return grid.map((floor) => ({ floor, injectionRate: coverage(top1s, floor) }));
+  return FLOOR_GRID.map((floor) => ({ floor, injectionRate: coverage(top1s, floor) }));
 }
+
+/**
+ * Pick the grid floor whose injection rate is closest to a coverage target — the
+ * weak-separation fallback. Prefers the lowest floor that doesn't exceed the
+ * target (slightly under-injecting beats over-injecting against "not every prompt
+ * gets context"); if every floor over-injects, takes the highest (most selective).
+ */
+export function floorForCoverage(top1s: number[], target: number): number {
+  let best = FLOOR_GRID[FLOOR_GRID.length - 1];
+  let bestDelta = Infinity;
+  for (const floor of FLOOR_GRID) {
+    const rate = coverage(top1s, floor);
+    // distance to target, with a small penalty for over-injecting past it
+    const delta = Math.abs(rate - target) + (rate > target ? 0.0001 : 0);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = floor;
+    }
+  }
+  return best;
+}
+
+/**
+ * A thin cluster of unusually-strong matches at the extreme top is a tail, NOT a
+ * noise→signal boundary — anchoring the floor above it would inject for ~0% of
+ * prompts, strictly worse than any reasonable floor (caught on the real corpus: a
+ * lone 0.772 match drove the recommendation to 0.71 / 0% injection). So the gap
+ * search excludes the top slice of the distribution.
+ *
+ * The exclusion is a FRACTION, not a fixed count, so it scales with sample size:
+ * a fixed `2` is 0.7% of a 300-prompt replay but 4% of a 50-prompt one, and would
+ * wrongly swallow a legitimate 3-pattern signal cluster on a small replay. We
+ * exclude the top TAIL_FRACTION, with a floor of TAIL_MIN (you need at least one
+ * sample held out for "above the gap" to mean anything) and a cap so we never eat
+ * a real cluster on a large replay.
+ */
+const TAIL_FRACTION = 0.02;
+const TAIL_MIN = 1;
+const TAIL_MAX = 5;
+
+/** How many top samples to hold out of the gap search for a given sample count. */
+export function tailExclusion(n: number): number {
+  return Math.min(TAIL_MAX, Math.max(TAIL_MIN, Math.round(n * TAIL_FRACTION)));
+}
+
+/**
+ * Below this median #1↔#2 separation the distribution has no real bimodal
+ * noise/signal split (it's a smooth ramp). floor-calibration-signals documents
+ * exactly this for ollama-nomic; the honest answer is a coverage TARGET, not a
+ * discovered gap, until the v2 top-K + relative-separation gate replaces absolute
+ * floors entirely.
+ */
+const WEAK_SEPARATION = 0.05;
+
+/** When falling back to a coverage target, inject for roughly this share. */
+const COVERAGE_TARGET = 0.35;
 
 /**
  * Recommend a floor from replayed results.
  *
- * The naive "floor below p10 → high recall" strategy is WRONG when most replayed
- * prompts have no real match in the corpus (the common case for a small/young
- * corpus): it drives the floor into the noise band and injects on everything,
- * violating DESIGN.md's "not every prompt should receive context." So instead we
- * find the NATURAL GAP — the widest jump between adjacent sorted top-1 scores in
- * the upper half of the distribution. That gap is the boundary between the noise
- * cloud (most prompts, low scores) and the genuine-match cluster (the tail), and
- * the floor belongs in it. This is the relative-separation insight from
- * floor-calibration-signals applied at the CORPUS level rather than per-prompt.
+ * Two strategies, picked by the distribution's shape:
+ *
+ *  1. NATURAL GAP — when the upper half has a clear jump between the noise cloud
+ *     (most prompts, low scores) and a genuine-match cluster, the floor belongs in
+ *     that gap. This is the relative-separation insight from floor-calibration-
+ *     signals applied at the corpus level. The search excludes a thin top slice
+ *     (tailExclusion) so a lone strong outlier can't park the floor above all the
+ *     good matches (the 0.772 → 0.71/0% misfire).
+ *  2. COVERAGE TARGET — when separation is weak (a smooth ramp, no clean gap), no
+ *     single absolute number cleanly separates signal from noise, so we instead
+ *     recommend the floor that injects for ~COVERAGE_TARGET of prompts and say so
+ *     plainly. This is honest about the limitation rather than inventing a gap.
  *
  * Output is always paired with a coverage curve so the human can override — the
  * exit criterion is "is this floor sane?", which only the user can answer against
@@ -141,12 +202,15 @@ export function recommendFloor(results: ReplayResult[]): FloorRecommendation {
     .sort((a, b) => a - b);
   const medianSeparation = separations.length ? percentile(separations, 50) : 0;
 
-  // Find the widest gap between adjacent sorted scores in the UPPER half (≥p50):
-  // that's the noise→signal boundary. The floor sits at the bottom of the gap.
+  // Find the widest gap between adjacent sorted scores in the UPPER half (≥p50),
+  // EXCLUDING a thin top slice (tailExclusion, scaled to sample size) so an
+  // extreme-tail of unusually strong matches can't anchor the floor above the bulk
+  // of good matches. The floor would sit at the bottom of that gap.
   const upperStart = Math.max(1, Math.floor(sorted.length * 0.5));
+  const gapSearchEnd = sorted.length - tailExclusion(sorted.length); // don't let the tail win
   let gapLo = pct.p75;
   let gapSize = 0;
-  for (let i = upperStart; i < sorted.length; i++) {
+  for (let i = upperStart; i < gapSearchEnd; i++) {
     const gap = sorted[i] - sorted[i - 1];
     if (gap > gapSize) {
       gapSize = gap;
@@ -154,26 +218,36 @@ export function recommendFloor(results: ReplayResult[]): FloorRecommendation {
     }
   }
 
-  // Floor at the bottom of the gap, nudged up a touch into it, rounded to 2dp,
-  // clamped. If the gap is trivial (a smooth distribution, no clear cluster),
-  // fall back to p75 — inject for roughly the top quartile.
-  const basis = gapSize >= 0.05 ? gapLo + gapSize * 0.25 : pct.p75;
-  const recommendedFloor = Math.min(0.95, Math.max(0.05, Math.round(basis * 100) / 100));
+  // Strategy pick: a real gap (≥0.05) on a distribution with non-trivial #1↔#2
+  // separation → place the floor in the gap. Otherwise (weak separation / smooth
+  // ramp) → recommend the floor that hits the coverage target, and be honest that
+  // there's no discoverable boundary here.
+  const hasGap = gapSize >= 0.05 && medianSeparation >= WEAK_SEPARATION;
+
+  let recommendedFloor: number;
+  if (hasGap) {
+    const basis = gapLo + gapSize * 0.25; // nudge up into the gap
+    recommendedFloor = Math.min(0.95, Math.max(0.05, Math.round(basis * 100) / 100));
+  } else {
+    recommendedFloor = floorForCoverage(top1s, COVERAGE_TARGET);
+  }
+
   const coverageAtFloor = coverage(top1s, recommendedFloor);
   const coverageCurve = buildCoverageCurve(top1s);
 
-  const rationale =
-    gapSize >= 0.05
-      ? `Placed in the widest gap (${gapSize.toFixed(3)} wide, starting at ${gapLo.toFixed(
-          3
-        )}) in the upper half of the top-1 distribution — the natural boundary between the noise cloud (most prompts, which have no real match in this corpus) and the genuine-match cluster. Injects for ~${Math.round(
-          coverageAtFloor * 100
-        )}% of prompts. NOT a recall-maximizing floor: most replayed prompts SHOULDN'T match a 3-file corpus, and a floor that injects on all of them would violate "not every prompt gets context."`
-      : `No clear noise/signal gap in the distribution (smooth) — fell back to the 75th percentile, injecting for ~${Math.round(
-          coverageAtFloor * 100
-        )}% of prompts. Median #1↔#2 separation is ${medianSeparation.toFixed(
-          3
-        )}; if low, a v2 top-K + relative-separation gate will discriminate better than any absolute floor.`;
+  const rationale = hasGap
+    ? `Placed in the widest gap (${gapSize.toFixed(3)} wide, starting at ${gapLo.toFixed(
+        3
+      )}) in the upper half of the top-1 distribution — the natural boundary between the noise cloud (most prompts, which have no real match in this corpus) and the genuine-match cluster. Injects for ~${Math.round(
+        coverageAtFloor * 100
+      )}% of prompts. NOT a recall-maximizing floor: a floor that injects on every prompt would violate "not every prompt gets context."`
+    : `No clean noise/signal gap — the top-1 distribution is a smooth ramp (median #1↔#2 separation ${medianSeparation.toFixed(
+        3
+      )}, below ${WEAK_SEPARATION}), so no single absolute floor cleanly separates signal from noise. Recommended the floor that injects for ~${Math.round(
+        coverageAtFloor * 100
+      )}% of prompts (coverage target ${Math.round(
+        COVERAGE_TARGET * 100
+      )}%); eyeball the trade curve and pick your own rate. A v2 top-K + relative-separation gate will discriminate better than any absolute floor here (floor-calibration-signals).`;
 
   return {
     sampled: top1s.length,

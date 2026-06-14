@@ -224,6 +224,22 @@ export function loadedSourceNames(): string[] {
   }
 }
 
+/**
+ * Return the raw plugin.json `config` object (untyped) for callers that need
+ * config beyond the typed ContextusConfig — e.g. the multi-source `sources` map
+ * the embed pipeline reads. Returns {} if plugin.json is missing/unparseable.
+ */
+export function findPluginConfig(): Record<string, unknown> {
+  const pluginPath = findPluginJson();
+  if (!pluginPath) return {};
+  try {
+    const raw = JSON.parse(fs.readFileSync(pluginPath, 'utf-8'));
+    return (raw.config ?? {}) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 /** Expand a leading `~` to the user's home directory. */
 export function expandHome(p: string): string {
   if (!p.startsWith('~')) return p;

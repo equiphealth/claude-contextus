@@ -1,15 +1,47 @@
 # Context Calibrate
 
-Usage-driven optimization through quality evaluation — runs a calibration sample to measure real retrieval quality, then recommends config changes.
+The single front door for **both** floor-calibration signals
+(calibration-two-signals), with one shared apply path:
+
+1. **Cold-start floor-replay** (`--floor`) — replays your real historical prompts
+   through the retrieval path and recommends an injection floor from the
+   similarity distribution. **Works with zero usage history** (it only needs a
+   corpus + your transcripts). Same engine as the `pnpm calibrate-floor` dev CLI.
+2. **Usage-eval refinement** (`--start`/`--status`/`--report`/`--stop`) — runs a
+   Haiku grading campaign over real injections, then recommends knobs from whether
+   patterns were actually **used**. Needs accumulated usage.
+
+The clean lifecycle: **floor-replay sets the cold-start floor → usage-eval refines
+it once real usage accumulates.** Both write through the same `--diff`/`--apply`
+plumbing into `plugin.json` `config.retrieval.*`.
+
+## Floor calibration (cold-start, the first thing to run)
+
+```bash
+/context-calibrate --floor              # replay real prompts → recommend a floor (print only)
+/context-calibrate --floor --diff       # show the plugin.json diff it would make
+/context-calibrate --floor --apply      # write config.retrieval.injectionFloor
+```
+
+`--floor` prints the top-1 similarity distribution + a **floor → injection-rate
+trade curve** + a gap-based recommendation. **Eyeball the trade curve and pick the
+injection rate you want before `--apply`** — the recommendation is a starting
+point, not a verdict (the exit criterion is "is this floor sane?", which only you
+can answer against your own corpus). Nothing is written without `--apply`.
+
+> The recommended floor is **corpus-bound**: a small/young corpus pushes it around
+> (most replayed prompts have no real match yet). Re-run after the corpus grows
+> (e.g. post-`/migrate-memory`).
 
 ## When to Use
 
-- **First time**: After 1-2 weeks of use (start calibration mode)
-- When retrieval feels too noisy or too sparse
-- Every 3-6 months to detect corpus drift
-- When switching embedding models
+- **First time, immediately**: `--floor` to set a sane cold-start floor.
+- **After 1-2 weeks of use**: `--start` a usage-eval campaign to refine.
+- When retrieval feels too noisy or too sparse.
+- Every 3-6 months to detect corpus drift.
+- After switching embedding models or a big corpus change → re-run `--floor`.
 
-## Two Modes
+## Two Modes (usage-eval)
 
 ### 1. Start Calibration (interactive evaluation)
 
@@ -192,13 +224,24 @@ Analyzes similarity score distribution:
 ## Flags
 
 ```bash
-/context-calibrate              # Show current status (or start if not running)
-/context-calibrate --start      # Begin quality evaluation (100 samples)
-/context-calibrate --status     # Progress and preliminary insights
-/context-calibrate --report     # Final analysis after completion
-/context-calibrate --apply      # Auto-apply recommended config changes
-/context-calibrate --diff       # Show config diff without applying
-/context-calibrate --stop       # Cancel calibration early
+# Floor calibration (cold-start signal)
+/context-calibrate --floor          # Replay real prompts → recommend an injection floor
+/context-calibrate --floor --diff   # Show the plugin.json diff it would make
+/context-calibrate --floor --apply  # Write config.retrieval.injectionFloor
+
+# Usage-eval campaign (refinement signal)
+/context-calibrate                  # Show current campaign status
+/context-calibrate --start          # Begin quality evaluation (targetSamples)
+/context-calibrate --start --samples 50   # …with a custom target
+/context-calibrate --status         # Campaign progress
+/context-calibrate --report         # Aggregate per-pattern quality from logged evals
+/context-calibrate --stop           # Cancel the campaign early
+```
+
+Engine / dev entry point (prints, never applies):
+
+```bash
+pnpm calibrate-floor [--project X] [--limit N] [--json]
 ```
 
 ## Implementation

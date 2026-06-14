@@ -37,6 +37,36 @@ export interface DedupResult {
 }
 
 /**
+ * Collapse chunks to one representative per FILE (chunking aftermath, Phase 6).
+ *
+ * Since ingest now emits one row per chunk, a search can return several chunks of
+ * the SAME file (section 3 and section 7 of DESIGN.md). For ranking, floor, and
+ * the #1↔#2 separation diagnostic we want one score per file — the file's BEST
+ * chunk — not N near-siblings crowding the top-K and corrupting the separation
+ * signal (two chunks of one doc aren't "two competing matches"). Keeps the
+ * highest-finalScore chunk per filename; input order (best-first) is preserved.
+ *
+ * Run this BEFORE the floor + formatter so "top-K files" means files, not chunks.
+ * The kept chunk still carries its own `heading`, so the formatter can show which
+ * section matched.
+ */
+export function collapseByFile(ranked: RankedResult[]): RankedResult[] {
+  const bestByFile = new Map<string, RankedResult>();
+  const order: string[] = [];
+  for (const r of ranked) {
+    const key = r.filename || r.id;
+    const prev = bestByFile.get(key);
+    if (!prev) {
+      bestByFile.set(key, r);
+      order.push(key);
+    } else if (r.finalScore > prev.finalScore) {
+      bestByFile.set(key, r);
+    }
+  }
+  return order.map((k) => bestByFile.get(k)!);
+}
+
+/**
  * Greedily remove near-duplicates from a re-ranked list. Vectors come straight
  * off the search rows. A row without a usable vector can never match (cosine
  * returns 0), so it's always kept — dedup never silently drops on missing data.

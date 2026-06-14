@@ -12,13 +12,9 @@ import fs from 'fs';
 import path from 'path';
 import { loadContext, categoryPrefix } from './context-loader.js';
 import { embedDocument } from './embedder.js';
-import { upsertRows, getContentHashes, type ContextRow } from '../storage/lance-client.js';
-import { contentHash, isStale } from '../storage/staleness.js';
-
-/** Compose the embedded text (richer than the stored body) — mirrors embed-contexts. */
-function embedText(name: string, description: string, content: string): string {
-  return [name, description, content].filter(Boolean).join('\n\n');
-}
+import { upsertRows, deleteByFilename, getContentHashes } from '../storage/lance-client.js';
+import { isStale } from '../storage/staleness.js';
+import { planChunks, buildRows } from './file-to-rows.js';
 
 /** Outcome of an incremental embed attempt. */
 export interface EmbedFileResult {
@@ -62,26 +58,23 @@ export async function embedSingleFile(
   }
 
   // Staleness gate: a save that didn't change the body shouldn't pay for a
-  // re-embed. Compare the new content hash against the stored one.
-  const hash = contentHash(ctx.content);
-  const stored = (await getContentHashes(projectName)).get(ctx.id);
+  // re-embed. Compare the new content hash against the stored (file-level) one.
+  const stored = (await getContentHashes(projectName)).get(ctx.relPath);
   if (!isStale(stored, ctx.content)) {
     return { embedded: false, id: ctx.id, reason: 'unchanged' };
   }
 
-  const vector = await embedDocument(embedText(ctx.name, ctx.description, ctx.content));
-  const row: ContextRow = {
-    id: ctx.id,
-    vector,
-    document: ctx.content,
-    filename: ctx.relPath,
-    type: ctx.type,
-    tags: ctx.tags.join(','),
-    hit_count: 0,
-    last_hit: '',
-    updated_at: new Date().toISOString(),
-    content_hash: hash,
-  };
-  await upsertRows([row], projectName);
+  // Chunk → embed each chunk → replace the file's prior chunks. We delete by
+  // filename first so a file that now produces FEWER chunks doesn't leave stale
+  // high-index rows behind (upsert-by-id alone wouldn't remove them).
+  const pending = planChunks(ctx);
+  if (pending.length === 0) return { embedded: false, id: ctx.id, reason: 'empty' };
+  const vectors = [];
+  for (const p of pending) vectors.push(await embedDocument(p.embedText));
+  // The incremental path only ever handles `.claude/context/` files (the
+  // PostToolUse watcher gates on that dir), so they're always projectContext.
+  const rows = buildRows(ctx, pending, vectors, 'projectContext', new Date().toISOString());
+  await deleteByFilename(ctx.relPath, projectName);
+  await upsertRows(rows, projectName);
   return { embedded: true, id: ctx.id };
 }

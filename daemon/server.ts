@@ -16,6 +16,7 @@
  *   GET  /introspect      → live config + corpus stats (Self-doc Layer 1)
  *   POST /query  {project, prompt}        → { continue, hookSpecificOutput?: { additionalContext } }
  *   POST /notify {project, file, cwd?}    → { ok, embedded, id? }
+ *   POST /reconcile {project, cwd, check?}→ { state, started? } | { state, embedded, removed }
  *
  * The pipeline on /query is the spine: embedQuery → vector search → rerank →
  * floor → format. Floor-dropped chunks are logged with scores (v2 governance
@@ -29,11 +30,15 @@ import { loadConfig, expandHome } from '../lib/config.js';
 import { warmup, embedQuery } from '../lib/embedding/embedder.js';
 import { search, tableExists, readTableMeta, incrementHits } from '../lib/storage/lance-client.js';
 import { rerank } from '../lib/retrieval/reranker.js';
-import { dedupe } from '../lib/retrieval/dedup.js';
+import { dedupe, collapseByFile } from '../lib/retrieval/dedup.js';
 import { applyFloor } from '../lib/retrieval/floor.js';
 import { formatInjection } from '../lib/retrieval/inject-format.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
+import { runReconcile } from '../lib/embedding/reconcile-run.js';
+import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
+import { loadContexts } from '../lib/embedding/context-loader.js';
+import { getContentHashes } from '../lib/storage/lance-client.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
@@ -120,13 +125,24 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const hash = promptHash(prompt);
   const projectLabel = project ?? 'default';
 
+  // Model not warm yet (still loading, or warmup failed) → degrade. Embedding
+  // now would throw deep in the provider; the cold first prompt or two missing
+  // context is the documented graceful-degradation behavior.
+  if (!modelLoaded) {
+    logInfo('Query before model warm — skipping', { project: projectLabel });
+    return sendJson(res, 200, { continue: true });
+  }
+
   // No corpus yet for this project → silently inject nothing (not an error).
   if (!(await tableExists(project))) {
     logInfo('No corpus for project — skipping', { project: projectLabel });
     return sendJson(res, 200, { continue: true });
   }
 
-  // Validate query-time provider matches build-time (DESIGN.md model consistency).
+  // Validate query-time embedding space matches build-time (DESIGN.md model
+  // consistency). Both the model id AND the dimensions must agree — a mismatch on
+  // either means the query vector and the stored vectors live in different spaces,
+  // so similarities are meaningless. Fail fast + degrade rather than inject noise.
   const cfg = loadConfig();
   const meta = readTableMeta(project);
   const activeModel =
@@ -136,17 +152,33 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       project: projectLabel,
       corpus: meta.embeddingModel,
       daemon: activeModel,
+      fix: 're-embed the corpus with the active model (pnpm run embed) or restore the build-time model',
     });
     // Degrade gracefully — a mismatched space yields garbage similarities.
     return sendJson(res, 200, { continue: true });
   }
+  if (meta && meta.dimensions !== cfg.embedding.dimensions) {
+    logError('error', 'daemon', 'Embedding dimension mismatch (corpus vs daemon)', {
+      project: projectLabel,
+      corpus: meta.dimensions,
+      daemon: cfg.embedding.dimensions,
+      fix: 're-embed the corpus (pnpm run embed) so stored vectors match config.embedding.dimensions',
+    });
+    return sendJson(res, 200, { continue: true });
+  }
 
   const vec = await embedQuery(prompt);
-  const raw = await search(vec, cfg.retrieval.topK, undefined, project);
+  // Over-fetch: files are now chunked, so a topK of chunks may all belong to a few
+  // files. Pull a wider net (topK × CHUNK_FANOUT) so enough DISTINCT files survive
+  // the collapse-by-file step below to fill topK.
+  const CHUNK_FANOUT = 4;
+  const raw = await search(vec, cfg.retrieval.topK * CHUNK_FANOUT, undefined, project);
   const ranked = rerank(raw);
-  // Fold near-duplicate chunks before the floor so we don't spend budget saying
-  // the same thing twice (deduped chunks are logged separately from floor drops).
-  const { kept: deduped } = dedupe(ranked);
+  // Collapse chunks to one best representative per file FIRST (a file's sections
+  // aren't competing matches), then trim to topK files, then fold near-duplicate
+  // files before the floor. Order: rerank → collapse → topK → dedupe → floor.
+  const byFile = collapseByFile(ranked).slice(0, cfg.retrieval.topK);
+  const { kept: deduped } = dedupe(byFile);
   const { kept, dropped, bestScore, noInject } = applyFloor(deduped, cfg.retrieval.injectionFloor);
 
   const floorDropped: DroppedChunkLog[] = dropped.map((d) => ({
@@ -237,6 +269,87 @@ async function handleNotify(
   sendJson(res, 200, { ok: true, ...result });
 }
 
+/**
+ * Projects with an in-flight background reconcile. Prevents a re-fire (e.g. two
+ * session-starts in quick succession) from stacking a second embed pass over the
+ * same corpus. The reconcile itself is idempotent, so this is an efficiency
+ * guard, not a correctness one.
+ */
+const reconcilingProjects = new Set<string>();
+
+/**
+ * POST /reconcile — bring a project's corpus in line with its `.claude/context/`.
+ *
+ * Two modes:
+ *   - `check: true` → cheap dry-run. Computes the plan and returns the corpus
+ *     `state` (missing/stale/fresh/empty) WITHOUT embedding. session-start uses
+ *     this to decide whether a cold/stale corpus needs reconciling.
+ *   - default       → fires the reconcile in the BACKGROUND and responds
+ *     immediately with `{ state: 'started' }` (or 'busy'/'noop'). Background so
+ *     embedding N files + a model load never blocks the session-start window
+ *     (first-run-onboarding); the first prompt or two may miss context while it
+ *     warms, which is the existing graceful-degradation behavior.
+ */
+async function handleReconcile(
+  body: Record<string, unknown>,
+  res: http.ServerResponse
+): Promise<void> {
+  const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+  const projectLabel = project ?? 'default';
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+  const check = body.check === true;
+  const contextDir = path.join(cwd, '.claude', 'context');
+
+  // Dry-run: report the corpus state without touching anything.
+  if (check) {
+    const contexts = await loadContexts(contextDir);
+    const exists = await tableExists(project);
+    const hashes = await getContentHashes(project);
+    const diskFiles: DiskFile[] = contexts.map((c) => ({
+      id: c.id,
+      absPath: c.absPath,
+      content: c.content,
+    }));
+    const plan = planReconcile(diskFiles, hashes, exists);
+    return sendJson(res, 200, {
+      state: plan.state,
+      newCount: plan.toEmbedNew.length,
+      changedCount: plan.toEmbedChanged.length,
+      removeCount: plan.toRemove.length,
+    });
+  }
+
+  if (reconcilingProjects.has(projectLabel)) {
+    return sendJson(res, 200, { state: 'busy' });
+  }
+  if (!modelLoaded) {
+    // Can't embed without the model; the caller can retry once /health is warm.
+    return sendJson(res, 200, { state: 'cold', reason: 'model_not_loaded' });
+  }
+
+  reconcilingProjects.add(projectLabel);
+  // Respond immediately; the embed runs detached from the request lifecycle.
+  sendJson(res, 200, { state: 'started' });
+  runReconcile(contextDir, project)
+    .then((r) => {
+      if (r.embedded > 0 || r.removed > 0) {
+        logInfo('Reconcile complete', {
+          project: projectLabel,
+          state: r.state,
+          embedded: r.embedded,
+          removed: r.removed,
+        });
+      }
+    })
+    .catch((err) =>
+      logError('error', 'daemon', 'Reconcile failed', {
+        project: projectLabel,
+        message: err instanceof Error ? err.message : String(err),
+      })
+    )
+    .finally(() => reconcilingProjects.delete(projectLabel));
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url ?? '/';
   const method = req.method ?? 'GET';
@@ -272,9 +385,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (method === 'POST' && (url === '/query' || url === '/notify')) {
+  if (method === 'POST' && (url === '/query' || url === '/notify' || url === '/reconcile')) {
     readJsonBody(req)
-      .then((body) => (url === '/query' ? handleQuery(body, res) : handleNotify(body, res)))
+      .then((body) => {
+        if (url === '/query') return handleQuery(body, res);
+        if (url === '/notify') return handleNotify(body, res);
+        return handleReconcile(body, res);
+      })
       .catch((err) => {
         logError('error', 'daemon', `${url} handler failed`, {
           message: err instanceof Error ? err.message : String(err),
