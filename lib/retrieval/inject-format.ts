@@ -43,6 +43,30 @@ function renderChunk(r: RankedResult): string {
   return `**${title}${section}** (similarity: ${r.similarity.toFixed(2)}${hits})\n${r.document.trim()}`;
 }
 
+/**
+ * Truthful provenance-footer instruction, scoped to EXACTLY the injected files.
+ *
+ * Why this lives here (with the real data) and not in the awareness hook: the
+ * awareness hook doesn't know what was injected, so instructing Claude there to
+ * write "Context: used: <file>" induced HALLUCINATION — Claude invented a
+ * plausible filename + score to satisfy the instruction when nothing had injected
+ * (observed in a real session, 2026-06-15). The fix: the instruction can only
+ * exist when injection did, and it WHITELISTS the exact name(s)+score(s), so Claude
+ * reports ground truth rather than reciting from memory.
+ */
+export function renderFooterInstruction(included: RankedResult[]): string {
+  if (included.length === 0) return '';
+  const items = included
+    .map((r) => `${r.filename || r.id} (${r.similarity.toFixed(2)})`)
+    .join(', ');
+  return (
+    `\n\n[contextus footer] If you used any of the above, end your response with exactly: ` +
+    `"Context: used: <file> (<score>)" using ONLY these — ${items}. ` +
+    `List only the ones you actually relied on; if you used none, omit the footer. ` +
+    `Never write a filename or score not in this list.`
+  );
+}
+
 /** Result of formatting: the block plus what was included vs. budget-trimmed. */
 export interface FormatResult {
   /** the full injection block, or '' if nothing fit */

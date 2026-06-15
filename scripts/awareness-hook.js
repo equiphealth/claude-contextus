@@ -75,13 +75,15 @@ async function recentPatterns(project) {
 
 /** Build the footer instruction, folding in the novelty signal if we have one. */
 function buildFooter(recent) {
+  // NOTE: this hook handles ONLY the `propose:` (capture) footer. The `used:`
+  // (provenance) footer is emitted by the daemon's injection block
+  // (renderFooterInstruction), which is the only place that KNOWS what was injected
+  // — instructing Claude to recite `used:` from here induced hallucinated filenames
+  // + scores (observed 2026-06-15). Keep these separate: propose here, used there.
   const base =
     'Context awareness: if this exchange surfaced a NEW, reusable pattern/decision/gotcha, ' +
     'end your response with a footer line: "Context: propose: <topic-name>" (and invoke ' +
-    '/create-context to capture it). If you used injected context, instead end with ' +
-    '"Context: used: <filename> (<similarity>)" — include the similarity score shown ' +
-    'next to each pattern you used, so the reader can gauge match strength / tune the ' +
-    'floor. Omit the footer for brief/trivial replies.';
+    '/create-context to capture it). Omit the footer for brief/trivial replies.';
   if (recent.length === 0) return base;
   const list = recent.slice(-8).join(', ');
   return (

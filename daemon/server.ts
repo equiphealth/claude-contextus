@@ -32,7 +32,7 @@ import { search, tableExists, readTableMeta, incrementHits } from '../lib/storag
 import { rerank } from '../lib/retrieval/reranker.js';
 import { dedupe, collapseByFile } from '../lib/retrieval/dedup.js';
 import { applyFloor } from '../lib/retrieval/floor.js';
-import { formatInjection } from '../lib/retrieval/inject-format.js';
+import { formatInjection, renderFooterInstruction } from '../lib/retrieval/inject-format.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
@@ -247,11 +247,16 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     floorDropped,
   });
 
+  // Append a TRUTHFUL provenance-footer instruction scoped to exactly these files
+  // (renderFooterInstruction). Co-located with the real injected set so Claude
+  // reports ground truth instead of fabricating a footer (the awareness hook can't
+  // do this — it doesn't know what was injected; instructing it to induced
+  // hallucination, observed 2026-06-15).
   sendJson(res, 200, {
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: block,
+      additionalContext: block + renderFooterInstruction(included),
     },
   });
 }
