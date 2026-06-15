@@ -38,8 +38,11 @@ async function main(): Promise<void> {
 
   const cfg = loadConfig();
   const provider = cfg.embedding.provider;
-  const floor = cfg.retrieval.similarityThreshold;
-  console.log(`query:  "${query}"  (provider=${provider}, k=${k}${type ? `, type=${type}` : ''})`);
+  // The GATE that decides "inject anything at all?" is injectionFloor (applied by
+  // the daemon's /query → applyFloor), NOT similarityThreshold (a post-rank filter).
+  // Reporting similarityThreshold here made injectable hits look dead. Show the floor.
+  const floor = cfg.retrieval.injectionFloor;
+  console.log(`query:  "${query}"  (provider=${provider}, k=${k}, injectionFloor=${floor}${type ? `, type=${type}` : ''})`);
 
   const vec = await embedQuery(query);
   const results = await search(vec, k, type ? `type = '${type}'` : undefined);
@@ -51,14 +54,18 @@ async function main(): Promise<void> {
 
   console.log('');
   for (const [i, r] of results.entries()) {
-    const floorFlag = r.similarity < floor ? '  ⚠ below 0.7 floor' : '';
+    const floorFlag = r.similarity < floor ? `  ⚠ below ${floor} floor (won't inject)` : '  ✓ injects';
     const snippet = r.document.replace(/\s+/g, ' ').slice(0, 100);
     console.log(`${i + 1}. ${r.similarity.toFixed(4)}  [${r.type}]  ${r.id}${floorFlag}`);
     console.log(`     ${snippet}…`);
   }
-  // Distribution hint for Phase 5 floor calibration.
+  // Distribution hint for floor calibration.
   const top = results[0].similarity;
-  console.log(`\ntop similarity: ${top.toFixed(4)} (unvalidated floor is ${floor})`);
+  const wouldInject = top >= floor;
+  console.log(
+    `\ntop similarity: ${top.toFixed(4)} — ${wouldInject ? 'INJECTS' : 'no injection'} at injectionFloor=${floor}` +
+      (wouldInject ? '' : ` (calibrate with /context-calibrate --floor for this corpus)`)
+  );
 }
 
 main().catch((err) => {
