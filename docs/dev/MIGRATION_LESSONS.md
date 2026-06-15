@@ -8,6 +8,39 @@ Legend: ❌ Blocker · ⚠️ Friction · ✅ Smooth · 💡 Discovery
 
 ---
 
+## Phase 7 — Full A–D battery via self-driven `claude -p` harness (2026-06-15 PM, floor 0.40)
+
+Ran the A–D tests end-to-end through `scripts/test-retrieval.sh` (real `claude -p` +
+daemon log), after applying automation's per-project floor 0.40. Both halves observed:
+retrieval scores AND Claude's live response/footer. 8 runs:
+
+| Test | Top | Injected | Footer |
+|------|-----|----------|--------|
+| A1 "selectors" | 0.52 | 5 | `selectors.md (0.52)` ✓ |
+| A2 "selector patterns" | 0.56 | 5 | `(0.46)` ✓ |
+| A3 natural-language Q | **0.66** | 4 | 2 files ✓ |
+| B1 false-pos (CI/GitHub) | 0.24 | none | silent ✓ |
+| C1 "avoid in spec files" | 0.37 | none | silent ✓ |
+| C2 "spec best practices" | 0.45 | 3 | 2 files ✓ |
+| D1 "getLogger" | 0.41 | 1 | `(0.41)` ✓ |
+| D2 "how to write log output" | 0.30 | none | silent ✓ |
+
+**Findings:**
+- ✅ **Deterministic footer is bulletproof live** — every inject → truthful whitelisted
+  footer; every no-inject → clean omission (NOT a fabricated `Context: used:`).
+  Confirmed D2 specifically *omitted* the footer line; D1 *emitted* the real one. Zero
+  hallucinations across 8 real runs. The earlier hallucination bug is dead by design.
+- ✅ **0.40 is right for automation** — all relevant queries inject, all junk stays out.
+  Per-project config validated end-to-end (automation 0.40, contextus 0.45, one daemon).
+- ✅ **Dilution confirmed live**: A3 natural (0.66) > A2 (0.56) > A1 (0.52). Ask naturally.
+- 🟡 **C/D confirm the v2 hybrid-search need**: negation (C1 "avoid" 0.37 drops vs C2
+  0.45 injects, same intent) and exact-term (`getLogger` scrapes in at 0.41; paraphrase
+  D2 misses at 0.30). Keyword fusion fixes both.
+- 💡 **claude-mem contributes ZERO retrieval** in these runs — the only claude-mem-flavored
+  output is the `[mem-value:]` experiment footer from the user-level settings hook (fires
+  in `claude -p` too), NOT actual claude-mem injection. Data point for the claude-mem-value
+  experiment (expires 2026-06-17): it's not pulling weight.
+
 ## Phase 6 — Calibration session + the "re-embedding 1" phantom (2026-06-15 PM)
 
 ✅ **Floor calibration ran + confirmed the floor is too high.** `/context-calibrate
