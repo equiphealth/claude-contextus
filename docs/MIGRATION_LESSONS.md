@@ -217,14 +217,23 @@ try to auto-apply settings.json edits — it should drive the dialogue: detect, 
 diff, ask, back up, then write. The deterministic script is the skill's tool, not its
 replacement.
 
-🔭 **Follow-up — build claude-mem footer detection into `/contextus-migrate` (user
-request, 2026-06-15).** The highest-value, most error-prone step (splitting a
-claude-mem-style footer hook) is also the most *recurring*: anyone running claude-mem +
-contextus hits it. The skill could pattern-match a `UserPromptSubmit` hook carrying a
+🔭 **Follow-up A — claude-mem hook *hygiene* detection in `/contextus-migrate`.** The
+surgical footer-split done by hand here recurs for anyone running claude-mem +
+contextus. The skill could pattern-match a `UserPromptSubmit` hook carrying a
 `Memory: used/propose/update`-style footer, distinguish it from co-located search
-guidance and experiments, and *offer* exactly the surgical trim done by hand here —
-backup, diff, confirm. Detection + proposal, never silent auto-edit. Filed as a skill
-feature when `/contextus-migrate` is extracted.
+guidance + experiments, and *offer* the trim — backup, diff, confirm, never silent
+auto-edit. (This is the migration-time concern; Follow-up B below is the runtime one.)
+
+🔭 **Follow-up B — claude-mem as a content *source*, not just a hook to clean up (user
+clarification, 2026-06-15).** The deeper idea: detect claude-mem and **piggyback off its
+worthwhile search results, storing them as context.** claude-mem is reactive
+(observational history, searched on demand); contextus is proactive (curated patterns,
+auto-injected). Bridge them with a usage-gated ratchet — when a claude-mem observation
+is surfaced *and actually used*, graduate it into `.claude/context/` so it injects
+proactively next time. Same "was it *used*?" signal as the opus-metrics-critique. Filed
+as a v2 Track-B item (gated on usage data — "worthwhile" is undefinable cold). Reuses
+`novelty.ts` (dedup), `SOURCE_WEIGHTS` (provenance), and the reclassify heuristic
+(observations have no category). See V2_ROADMAP Track B.
 
 💡 **Migration stays deterministic; Haiku judgment goes in the skill, not the script.**
 Considered making the whole conversion (recategorize + generate + write) a Haiku
