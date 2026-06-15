@@ -24,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = path.resolve(__dirname, '..', 'scripts');
 
 /** Run a hook file with a stdin payload; return {status, stdout, parsed}. */
-function runHook(file: string, payload: unknown) {
+function runHook(file: string, payload: unknown, extraEnv?: Record<string, string>) {
   const res = spawnSync('node', [path.join(SCRIPTS, file)], {
     input: typeof payload === 'string' ? payload : JSON.stringify(payload),
     encoding: 'utf8',
@@ -38,6 +38,7 @@ function runHook(file: string, payload: unknown) {
       CONTEXTUS_VERBOSITY: 'silent',
       CONTEXTUS_WARM_ATTEMPTS: '1',
       CONTEXTUS_WARM_INTERVAL_MS: '50',
+      ...extraEnv,
     },
   });
   let parsed: Record<string, unknown> | null = null;
@@ -92,10 +93,10 @@ test('stop-evaluation.js: no active campaign → loads, exits 0 (the ESM-regress
 });
 
 test('session-start-hook.js: silent verbosity → loads, exits 0, continues', () => {
-  const r = runHook('session-start-hook.js', { cwd: process.cwd() });
+  const r = runHook('session-start-hook.js', { cwd: process.cwd() }, { CONTEXTUS_TEST_MODE: '1', CONTEXTUS_VERBOSITY: 'silent' });
   assert.equal(r.status, 0, `stderr: ${r.stderr}`);
   assert.ok(r.parsed, `no JSON on stdout: ${r.stdout}`);
   assert.equal(r.parsed!.continue, true);
-  // silent verbosity must suppress the systemMessage even on a spawn.
-  assert.equal(r.parsed!.systemMessage, undefined, 'silent must not emit a systemMessage');
+  // Test mode + silent verbosity → no systemMessage
+  assert.equal(r.parsed!.systemMessage, undefined, 'test mode must not emit a systemMessage');
 });
