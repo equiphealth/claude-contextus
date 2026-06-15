@@ -174,12 +174,25 @@ export interface ContextusConfig {
   };
   /** Auto-rebuild embeddings on file changes */
   autoRebuild: boolean;
-  /** Context capture mode (for claude-mem compatibility) */
+  /** Context capture mode. Governs ONLY the `propose:` (new-pattern) footer —
+   *  orthogonal to retrieval.provenanceFooter (the `used:` display toggle). */
   contextCapture: {
     /** Enable context capture prompts */
     enabled: boolean;
-    /** Capture mode: 'propose' = suggest with footer, 'auto' = write automatically */
-    mode: 'propose' | 'auto';
+    /**
+     * Capture mode:
+     *  - 'propose' (default): surface a `Context: propose:` footer; the user
+     *    invokes /create-context to actually write the file.
+     *  - 'silent': suppress the propose footer entirely.
+     *  - 'auto': write the context file without asking. **Deferred to v2, and
+     *    the recommended default is NOT to use it** — auto-capturing un-vetted
+     *    patterns is worse than manual capture of good ones; gate on the CAE
+     *    first. When auto IS on, the `propose:` footer is moot (nothing to ask)
+     *    and should suppress itself or downgrade to a terse "created:" receipt.
+     *    Orthogonal in code to retrieval.provenanceFooter (the `used:` toggle),
+     *    but coupled in sensible defaults: auto ⇒ no propose footer.
+     */
+    mode: 'propose' | 'silent' | 'auto';
   };
 }
 

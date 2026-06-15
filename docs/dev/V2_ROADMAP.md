@@ -65,6 +65,18 @@ These need design decisions before implementation:
 
 ### Settled (recorded so they aren't re-litigated)
 
+- **Three orthogonal footer/capture axes — don't conflate them** (clarified 2026-06-15).
+  (a) `retrieval.provenanceFooter` (built, per-project): show/hide the `Context: used:`
+  line — pure display, default on. (b) `contextCapture.mode = propose|silent`: whether
+  the `Context: propose:` *capture* footer appears — this is LOAD-BEARING (it's how new
+  patterns get saved; without it the plugin has no capture path), so it stays always-on
+  by default. (c) `contextCapture.mode = auto` (v2, **recommended OFF**): write context
+  files without asking — auto-capturing un-vetted patterns is worse than manual capture
+  of good ones, so gate on the CAE first. **Coupling:** the axes are independent in code,
+  but when `auto` is on the `propose:` footer is moot (nothing to ask) → it should
+  suppress itself or downgrade to a terse "created:" receipt. So: propose-footer display
+  follows from capture mode; the `used:` footer is fully independent.
+
 - **No closed-loop auto-adjusting floor.** A background loop that watches usage and continuously nudges `injectionFloor` without a human is **deliberately not planned** (decision 2026-06-14). The two-signal model covers the need: floor-replay sets the cold-start value, usage-eval *recommends* refinements that a human applies. The longer-term bet is to *replace* the absolute floor with the CAE/relative-separation gate, not auto-tune it — so an auto-floor only makes sense (if ever) as a v3 idea *after* CAE exists, by which point the absolute floor is just a cheap pre-filter.
 
 ---
