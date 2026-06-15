@@ -578,6 +578,6 @@ Once migrated and stable:
 
 ## Related Docs
 
-- [V2_ROADMAP.md](V2_ROADMAP.md) — What's coming after v1
-- [DESIGN.md](DESIGN.md) — How contextus works under the hood
-- [BUILD_LOG.md](BUILD_LOG.md) — What was actually built in v1
+- [dev/V2_ROADMAP.md](dev/V2_ROADMAP.md) — What's coming after v1
+- [dev/DESIGN.md](dev/DESIGN.md) — How contextus works under the hood
+- [dev/BUILD_LOG.md](dev/BUILD_LOG.md) — What was actually built in v1

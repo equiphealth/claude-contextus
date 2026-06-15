@@ -4,7 +4,7 @@ Get from zero to your first auto-injected context in about five minutes.
 
 > **Document-driven note (remove at v1.1 GA):** this guide is written for the
 > **finished GitHub-install experience** and serves as the *acceptance spec* for the
-> v1.1 packaging work (see [PACKAGING.md](PACKAGING.md)). Lines marked **[v1.1]** are
+> v1.1 packaging work (see [dev/PACKAGING.md](dev/PACKAGING.md)). Lines marked **[v1.1]** are
 > not true yet — until then, use the **[v1 today]** fallback right beside them. When
 > v1.1 ships and the marketplace install works, delete the fallbacks and this note.
 

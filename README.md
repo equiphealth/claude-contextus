@@ -283,4 +283,4 @@ Issues and PRs welcome! This is a vacation project but I'm happy to collaborate.
 
 ---
 
-**Status**: 🚧 Design Complete, Implementation Starting (see [IMPLEMENTATION_ESTIMATE.md](docs/IMPLEMENTATION_ESTIMATE.md))
+**Status**: 🚧 Design Complete, Implementation Starting (see [IMPLEMENTATION_ESTIMATE.md](docs/dev/IMPLEMENTATION_ESTIMATE.md))
