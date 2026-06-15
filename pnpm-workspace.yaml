@@ -1,4 +1,4 @@
 allowBuilds:
-  esbuild: true
-  protobufjs: true
-  sharp: true
+  esbuild: set this to true or false
+  protobufjs: set this to true or false
+  sharp: set this to true or false

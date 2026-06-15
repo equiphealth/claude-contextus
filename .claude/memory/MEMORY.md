@@ -11,6 +11,7 @@ Design decisions and feedback for claude-contextus. One line per memory; load th
 - [floor-calibration-signals](decision_floor_calibration_signals.md) — 0.7 floor wrong for ollama-nomic (hits 0.50–0.68); prefer relative separation over absolute threshold
 - [memory-to-context-migration](decision_memory_to_context_migration.md) — `.claude/memory/` → `.claude/context/` migration; hooks still read memory/
 - [calibration-two-signals](decision_calibration_two_signals.md) — floor-replay (cold-start) vs Haiku usage-eval (refine); wire both into /context-calibrate in Phase 6 after migrate populates corpus
+- [ci-embedding-test-removal](decision_ci_embedding_test_removal.md) — removed Ollama smoke test from CI (slow, local dev validates); can add back as scheduled job if needed
 
 ## Feedback
 - [opus-metrics-critique](feedback_opus_metrics_critique.md) — "tokens saved" is a vanity metric; measure usage not injection
