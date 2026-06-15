@@ -36,6 +36,7 @@ import { glob } from 'glob';
 import matter from 'gray-matter';
 import {
   planMigration,
+  renderContextIndex,
   type MemoryFile,
   type MigrationPlanItem,
 } from '../lib/capture/memory-migrate.js';
@@ -139,6 +140,15 @@ async function main(): Promise<void> {
   console.log(
     `\n${APPLY ? `Wrote ${written}, skipped ${skipped} existing.` : `${plan.length} files planned (dry-run, nothing written).`}`
   );
+
+  if (APPLY) {
+    // Regenerate CONTEXT.md so the index never drifts from the files on disk
+    // (MEMORY.md convention). Generated artifact — edit sources, not this.
+    const indexPath = path.join(CONTEXT_DIR, 'CONTEXT.md');
+    fs.mkdirSync(CONTEXT_DIR, { recursive: true });
+    fs.writeFileSync(indexPath, renderContextIndex(plan));
+    console.log(`  wrote index: ${indexPath} (${plan.length} entries)`);
+  }
 
   if (APPLY && REPOINT) {
     const changed = repointPluginJson();
