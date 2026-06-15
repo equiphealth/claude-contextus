@@ -112,10 +112,17 @@ export function loadContext(absPath: string, contextDir: string): LoadedContext 
  */
 export async function loadContexts(contextDir: string): Promise<LoadedContext[]> {
   if (!fs.existsSync(contextDir)) return [];
-  const files = await glob(path.join(contextDir, '**', '*.md'), {
-    ignore: ['**/CONTEXT.md', '**/README.md'],
+  // Glob relative to `contextDir` (cwd), NOT an absolute pattern: with an absolute
+  // pattern, glob matches `ignore` against absolute result paths and `**/CONTEXT.md`
+  // FAILS to exclude `<dir>/CONTEXT.md` at the root — leaving the generated index
+  // in the set, which reconcile then counts as a perpetual phantom "new" file
+  // ("re-embedding 1" every session, embedding nothing). Anchored basenames +
+  // cwd-relative glob exclude it reliably at any depth.
+  const rel = await glob('**/*.md', {
+    cwd: contextDir,
+    ignore: ['CONTEXT.md', '**/CONTEXT.md', 'README.md', '**/README.md'],
   });
-  return files.sort().map((f) => loadContext(f, contextDir));
+  return rel.sort().map((f) => loadContext(path.join(contextDir, f), contextDir));
 }
 
 /** Result of a prefix↔type consistency check. */
