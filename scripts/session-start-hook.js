@@ -35,11 +35,11 @@ import {
   waitForModel,
   getHealth,
   getVerbosity,
-  formatUptime,
   checkCorpus,
   fireReconcile,
   hasContextusStanza,
 } from './lib/daemon-control.js';
+import { resolveDaemonStatus } from './lib/daemon-status.js';
 
 /** Read the SessionStart payload from stdin (for cwd). Never hangs on a TTY. */
 function readStdin() {
@@ -82,22 +82,13 @@ async function main() {
 
   try {
     const wasRunning = await ensureDaemonRunning();
-    if (wasRunning) {
-      warmOk = true;
-      if (verbosity === 'verbose') {
-        const health = await getHealth(1000);
-        const up = health ? ` (uptime ${formatUptime(health.uptime)})` : '';
-        lines.push(`contextus: using the running daemon${up}.`);
-      }
-    } else {
-      // We just spawned one — wait (bounded) for the model to warm.
-      warmOk = await waitForModel({ attempts: 30, intervalMs: 500 });
-      lines.push(
-        warmOk
-          ? 'contextus: started a new daemon (model warm, ready to inject).'
-          : 'contextus: started a new daemon — model still warming; the first prompt or two may not get context yet.'
-      );
-    }
+    // If we spawned one, wait (bounded) for warm. Either way fetch /health so the
+    // decision logic can see modelLoaded + warmupError (the silent-failure signal).
+    const warmModel = wasRunning ? false : await waitForModel({ attempts: 30, intervalMs: 500 });
+    const health = await getHealth(1000);
+    const status = resolveDaemonStatus({ wasRunning, warmModel, health, verbosity });
+    warmOk = status.warmOk;
+    if (status.message) lines.push(status.message);
   } catch {
     // The helpers swallow their own errors, so reaching here is unexpected — but
     // still must not block the session. A failure is always worth surfacing
@@ -113,13 +104,23 @@ async function main() {
   if (warmOk) {
     const project = projectName(cwd);
     const plan = await checkCorpus(project, cwd);
-    if (plan && (plan.state === 'missing' || plan.state === 'stale')) {
+    const pending = plan ? (plan.newCount ?? 0) + (plan.changedCount ?? 0) : 0;
+    if (plan && plan.state === 'missing') {
       await fireReconcile(project, cwd);
       lines.push(
-        plan.state === 'missing'
-          ? 'contextus: corpus not built yet — embedding your .claude/context/ in the background; context will start flowing shortly.'
-          : `contextus: corpus is behind your context files — re-embedding ${plan.newCount + plan.changedCount} in the background.`
+        'contextus: corpus not built yet — embedding your .claude/context/ in the background; context will start flowing shortly.'
       );
+    } else if (plan && plan.state === 'stale' && pending > 0) {
+      // Only announce when there's actual embed work. A 'stale' plan with no
+      // new/changed files (e.g. only orphan rows to drop) is silently reconciled —
+      // never surface a nonsensical "re-embedding 0".
+      await fireReconcile(project, cwd);
+      lines.push(
+        `contextus: corpus is behind your context files — re-embedding ${pending} in the background.`
+      );
+    } else if (plan && plan.state === 'stale') {
+      // Orphan-only drift: reconcile quietly, no user-facing noise.
+      await fireReconcile(project, cwd);
     }
 
     // One-time nudge: if the project hasn't been set up (no marked stanza in

@@ -34,6 +34,8 @@ Comprehensive documentation for the contextus project. Design decisions, impleme
 
 - **[V2_ROADMAP.md](V2_ROADMAP.md)** — Post-v1 feature backlog: CAE gate, tag-driven gating, removal/governance, corpus reconciliation, full auto-docs, and open design questions. Items deliberately deferred from v1.
 
+- **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** — Migrating an existing custom-hooks + `.claude/memory/` setup to contextus: audit, migrate-memory, hook hygiene (settings.json), live-session testing, coexistence period, rollback. Includes the `/contextus-migrate` skill sketch.
+
 ---
 
 ## Design Philosophy

@@ -70,3 +70,22 @@ test('stale: an orphan row (file deleted) → toRemove, state stale', () => {
   assert.deepEqual(plan.toRemove, ['deleted.md']);
   assert.equal(plan.embedPaths.length, 0); // nothing to embed, just remove
 });
+
+test('orphan-only stale: nothing to embed (the "re-embedding 0" guard)', () => {
+  // Regression: the daemon /reconcile check once passed UNFILTERED hashes (all
+  // sources), so doc/user-pack rows looked like orphans of the context dir →
+  // state 'stale' with newCount+changedCount=0 and a nonsense "re-embedding 0"
+  // session-start line. The planner must report this as embed-work-free so the
+  // hook can reconcile quietly. (The real fix is scoping hashes to projectContext;
+  // this locks in that an orphan-only plan has zero embed work.)
+  const disk = [file('a.md', 'alpha'), file('b.md', 'beta')];
+  const hashes = new Map([
+    ['a.md', contentHash('alpha')],
+    ['b.md', contentHash('beta')],
+    ['orphan-doc.md', contentHash('x')], // a row with no disk file (wrong-scope leak)
+  ]);
+  const plan = planReconcile(disk, hashes, true);
+  assert.equal(plan.state, 'stale');
+  assert.equal(plan.toEmbedNew.length + plan.toEmbedChanged.length, 0, 'no embed work');
+  assert.deepEqual(plan.toRemove, ['orphan-doc.md']);
+});

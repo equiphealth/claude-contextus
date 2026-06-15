@@ -16,6 +16,8 @@
     "query": "tsx scripts/search.ts",
     "dev": "tsc --watch",
     "test": "node --import tsx --test tests/*.test.ts",
+    "test:integration": "node --import tsx --test tests/integration/*.test.ts",
+    "test:all": "node --import tsx --test tests/*.test.ts tests/integration/*.test.ts",
     "test:types": "tsc --noEmit",
     "migrate-memory": "tsx scripts/migrate-memory.ts",
     "contextus-setup": "tsx scripts/contextus-setup.ts",

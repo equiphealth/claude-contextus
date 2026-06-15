@@ -61,6 +61,13 @@ const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
 
 /** Set true once the embedding model has warm-loaded; /health gates on it. */
 let modelLoaded = false;
+/**
+ * Set when warmup() REJECTS (provider unreachable, model missing, dim mismatch).
+ * Distinguishes a hard failure from "still loading" so session-start can tell the
+ * user the truth (provider down → no injection this session) instead of the
+ * misleading "still warming" (which implies transient). Null = no failure yet.
+ */
+let warmupError: string | null = null;
 
 /** Read a JSON request body (bounded; rejects malformed/oversized). */
 function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -101,6 +108,9 @@ function handleHealth(res: http.ServerResponse): void {
     status: 'ok',
     uptime: process.uptime(),
     modelLoaded,
+    // null while loading or once warm; a string once warmup has hard-failed.
+    // session-start uses this to alert "provider down" vs "still warming".
+    warmupError,
     lancedbConnected: true, // file-mode: connection is lazy + always available
     embeddingModel:
       cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
@@ -304,7 +314,11 @@ async function handleReconcile(
   if (check) {
     const contexts = await loadContexts(contextDir);
     const exists = await tableExists(project);
-    const hashes = await getContentHashes(project);
+    // Scope to projectContext — MUST match runReconcile (which only manages the
+    // context source). Unfiltered, doc/user-pack rows (which refresh on a full
+    // embed, not via reconcile) look like orphans of the context dir → bogus
+    // "stale, removeCount=N" and a nonsense "re-embedding 0" session-start line.
+    const hashes = await getContentHashes(project, 'projectContext');
     const diskFiles: DiskFile[] = contexts.map((c) => ({
       id: c.id,
       absPath: c.absPath,
@@ -446,14 +460,17 @@ async function startDaemon(): Promise<void> {
     warmup()
       .then(() => {
         modelLoaded = true;
+        warmupError = null;
         logInfo('Model warm', {
           model:
             cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
         });
       })
       .catch((err) => {
+        // Record WHY so /health can tell session-start "down" vs "still loading".
+        warmupError = err instanceof Error ? err.message : String(err);
         logError('error', 'embedder', 'Model warmup failed', {
-          message: err instanceof Error ? err.message : String(err),
+          message: warmupError,
         });
         // Leave modelLoaded:false — health stays not-ready, queries degrade.
       });
