@@ -90,6 +90,15 @@ export interface RetrievalConfig {
   injectionFloor: number;
   maxTokens: number;
   mergeStrategy: 'interleaved' | 'prioritize-context' | 'prioritize-docs';
+  /**
+   * Append the `Context: used: <file> (<score>)` provenance footer when context
+   * injects? Default true. Some users only want the answer, not the retrieval
+   * receipt — set false to suppress it. This gates ONLY the `used:` footer; the
+   * `propose:` capture footer is load-bearing (it's how new patterns get saved)
+   * and stays on, governed separately by `contextCapture.mode`. Per-project via
+   * the config tiers, so one project can stay quiet without affecting others.
+   */
+  provenanceFooter: boolean;
 }
 
 /** SessionStart daemon-state message verbosity (user-facing systemMessage). */
@@ -153,6 +162,7 @@ const DEFAULTS: ContextusConfig = {
     injectionFloor: 0.35, // UNVALIDATED permissive gate — calibrate in Phase 5
     maxTokens: 3000,
     mergeStrategy: 'interleaved',
+    provenanceFooter: true, // show "Context: used:" by default; opt-out per project
   },
   notifications: {
     verbosity: 'normal', // code default; deployed plugin.json sets 'verbose'
