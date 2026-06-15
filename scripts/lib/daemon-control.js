@@ -198,6 +198,31 @@ export function hasContextusStanza(cwd) {
   }
 }
 
+/**
+ * Is `.claude/context/` already populated with real context files? Used to tell a
+ * MIGRATED project (corpus exists, stanza missing) apart from a FRESH one (nothing
+ * yet) so the session-start nudge can say the right thing — "scaffold" is wrong
+ * when the dir is already full. Counts any `.md` except the CONTEXT.md/README index
+ * files, recursively (context nests by type). Plain JS, no config import.
+ */
+export function hasPopulatedContextDir(cwd) {
+  const dir = path.join(cwd || process.cwd(), '.claude', 'context');
+  const SKIP = new Set(['CONTEXT.md', 'README.md']);
+  let stack = [dir];
+  try {
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
+        if (ent.isDirectory()) stack.push(path.join(cur, ent.name));
+        else if (ent.name.endsWith('.md') && !SKIP.has(ent.name)) return true;
+      }
+    }
+  } catch {
+    return false; // no .claude/context/ dir → not populated
+  }
+  return false;
+}
+
 /** POST /reconcile with `check:true` — returns the corpus state plan, or null. */
 export async function checkCorpus(project, cwd, timeoutMs = 1500) {
   try {
