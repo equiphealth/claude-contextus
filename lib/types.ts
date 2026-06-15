@@ -8,7 +8,7 @@
 export interface ContextFrontmatter {
   name: string;
   description: string;
-  type: 'feedback' | 'reference' | 'decision' | 'project';
+  type: 'reference' | 'decision' | 'project' | 'gotcha' | 'tradeoff' | 'arch' | 'api' | 'phase' | 'schema' | 'security' | 'perf' | 'implementation';
   category?: string;
   tags?: string[];
   [key: string]: unknown;

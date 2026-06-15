@@ -17,9 +17,16 @@
  *     command for you to run once you've eyeballed the converted files.
  *
  * Usage:
- *   pnpm migrate-memory                 # dry-run, show the plan
- *   pnpm migrate-memory --apply         # write files (still no embed)
- *   pnpm migrate-memory --apply --repoint   # also flip plugin.json source path
+ *   pnpm migrate-memory                       # dry-run, contextus's own memory
+ *   pnpm migrate-memory --project <path>      # dry-run, target another project
+ *   pnpm migrate-memory --apply               # write files (still no embed)
+ *   pnpm migrate-memory --apply --repoint     # also flip plugin.json source path
+ *
+ * --project <path>: resolve the project's `.claude/memory` and `.claude/context`
+ * from <path> instead of the contextus repo itself, so this migrates ARBITRARY
+ * projects (the repo-scoped `__dirname` default only ever saw contextus's own
+ * memory). plugin.json still lives in — and is repointed in — the contextus repo,
+ * since `config.sources` is global and resolved against cwd at embed time.
  */
 
 import fs from 'fs';
@@ -35,18 +42,33 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
-const MEMORY_DIR = path.join(REPO_ROOT, '.claude', 'memory');
-const CONTEXT_DIR = path.join(REPO_ROOT, '.claude', 'context');
-const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
 
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
 const REPOINT = args.includes('--repoint');
 
+/** Resolve the project root: --project <path>, else the contextus repo itself. */
+function resolveProjectRoot(argv: string[]): string {
+  const i = argv.indexOf('--project');
+  if (i !== -1 && argv[i + 1]) return path.resolve(argv[i + 1]);
+  return REPO_ROOT;
+}
+
+const PROJECT_ROOT = resolveProjectRoot(args);
+const MEMORY_DIR = path.join(PROJECT_ROOT, '.claude', 'memory');
+const CONTEXT_DIR = path.join(PROJECT_ROOT, '.claude', 'context');
+// plugin.json's source config is global (resolved against cwd at embed time), so
+// the repoint always targets the contextus repo's plugin.json, not the project's.
+const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
+
 /** Load every memory file (excluding the MEMORY.md index) as MemoryFile inputs. */
 async function loadMemoryFiles(): Promise<MemoryFile[]> {
   if (!fs.existsSync(MEMORY_DIR)) return [];
-  const files = await glob(path.join(MEMORY_DIR, '*.md'), { ignore: ['**/MEMORY.md'] });
+  // Recursive: legacy memory dirs are often organized into topic subfolders
+  // (framework/, testing/, …). A flat `*.md` glob silently skips all nested
+  // files — and since embed globs `**/*.md`, that ships a hollow corpus with a
+  // green checkmark. Walk the whole tree.
+  const files = await glob(path.join(MEMORY_DIR, '**', '*.md'), { ignore: ['**/MEMORY.md'] });
   return files.sort().map((abs) => {
     const raw = fs.readFileSync(abs, 'utf8');
     const { data, content } = matter(raw);
@@ -90,8 +112,9 @@ async function main(): Promise<void> {
 
   const plan = planMigration(memFiles);
   console.log(`migrate-memory ${APPLY ? '(APPLY)' : '(dry-run — pass --apply to write)'}`);
-  console.log(`  source: ${MEMORY_DIR}`);
-  console.log(`  target: ${CONTEXT_DIR}\n`);
+  console.log(`  project: ${PROJECT_ROOT}${PROJECT_ROOT === REPO_ROOT ? ' (contextus itself — pass --project to target another)' : ''}`);
+  console.log(`  source:  ${MEMORY_DIR} (${memFiles.length} files)`);
+  console.log(`  target:  ${CONTEXT_DIR}\n`);
 
   let written = 0;
   let skipped = 0;

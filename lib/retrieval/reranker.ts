@@ -40,8 +40,8 @@ export const SOURCE_WEIGHTS: Record<string, number> = {
 /** Type priority (DESIGN.md §"Re-ranking" typeBoosts). Actionable patterns rank
  *  highest. Covers both the legacy memory vocabulary and the new category set. */
 export const TYPE_BOOSTS: Record<string, number> = {
-  // legacy memory types (DESIGN.md table)
-  feedback: 1.2,
+  // legacy memory types (DESIGN.md table). `feedback` is banned (reclassified on
+  // migration) — no boost entry; an actionable convention lands as decision/gotcha.
   reference: 1.0,
   decision: 0.9,
   project: 0.8,

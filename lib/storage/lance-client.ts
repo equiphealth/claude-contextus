@@ -53,7 +53,7 @@ export interface ContextRow {
   chunk_index: number;
   /** the nearest enclosing markdown heading for this chunk ('' if none) */
   heading: string;
-  /** frontmatter type (feedback|reference|decision|project|...) */
+  /** frontmatter type (decision|gotcha|reference|project|...) */
   type: string;
   /** source pack the row came from (re-ranker SOURCE_WEIGHTS key) */
   source: string;
