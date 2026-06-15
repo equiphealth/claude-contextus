@@ -42,7 +42,7 @@ The workflows are ready to run — just push to GitHub. No manual setup required
    ```json
    "repository": {
      "type": "git",
-     "url": "https://github.com/your-username/claude-contextus.git"
+     "url": "https://github.com/anthonypdawson/claude-contextus.git"
    }
    ```
 
@@ -55,11 +55,9 @@ The workflows are ready to run — just push to GitHub. No manual setup required
 Add these to the top of `README.md`:
 
 ```markdown
-[![CI](https://github.com/your-username/claude-contextus/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/claude-contextus/actions/workflows/ci.yml)
-[![Release](https://github.com/your-username/claude-contextus/actions/workflows/release.yml/badge.svg)](https://github.com/your-username/claude-contextus/actions/workflows/release.yml)
+[![CI](https://github.com/anthonypdawson/claude-contextus/actions/workflows/ci.yml/badge.svg)](https://github.com/anthonypdawson/claude-contextus/actions/workflows/ci.yml)
+[![Release](https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml/badge.svg)](https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml)
 ```
-
-Replace `your-username` with actual GitHub username.
 
 ---
 

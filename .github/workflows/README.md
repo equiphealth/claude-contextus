@@ -97,8 +97,8 @@ No setup needed — Ollama installs automatically in CI.
 Add to main README.md:
 
 ```markdown
-[![CI](https://github.com/yourusername/claude-contextus/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/claude-contextus/actions/workflows/ci.yml)
-[![Release](https://github.com/yourusername/claude-contextus/actions/workflows/release.yml/badge.svg)](https://github.com/yourusername/claude-contextus/actions/workflows/release.yml)
+[![CI](https://github.com/anthonypdawson/claude-contextus/actions/workflows/ci.yml/badge.svg)](https://github.com/anthonypdawson/claude-contextus/actions/workflows/ci.yml)
+[![Release](https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml/badge.svg)](https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml)
 ```
 
 ---
