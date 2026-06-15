@@ -36,7 +36,24 @@ bug.** User asked "Screen patterns"; contextus injected only `writing-specs.md (
   suppress breadth, not just the top score.
 **Action: this is the unapplied floor (0.45→0.40), demonstrated. No code change.**
 
-⚠️ **But the calibration skill FLAILED for ~3 min on stale knowledge.** The transcript
+❌→✅ **The `/context-calibrate` skill DEAD-ENDS when invoked via the Skill tool —
+"loaded skill" then silence (FIXED the skill text).** New session: `/context-calibrate
+--floor` → "Successfully loaded skill" → no output, not blocking, Claude unsure if it's
+"still running." Root cause: the skill is a **documentation** skill with **no runner**.
+It shows `/context-calibrate --floor` (its own name — circular) and `pnpm
+calibrate-floor` (fails on the user's Node version) as the things to "run," but never
+tells Claude to *execute the engine via Bash*. So loading the skill = reading docs that
+point at a non-working command → nothing runs. (Last session "worked" only because
+Claude eventually abandoned the skill and ran `tsx scripts/calibrate-floor.ts` by hand
+after ~3 min of flailing.) **The engine itself is HEALTHY** — verified
+`calibrate-floor.ts` via tsx-by-path: recommends 0.40 (32% coverage), consistent across
+runs. **Fix:** added an explicit "HOW TO ACTUALLY RUN THIS" block to the skill (cd to
+target project, run repo-local `tsx` by path, NOT `pnpm`), and purged the `pnpm`
+references. **This is the THIRD stale-`pnpm`-knowledge hit** (after the migration-guide
+fix and the ~3-min calibration flail) — strong signal for a **systematic skill audit in
+v1.1**: every skill that shells out likely says `pnpm` and should say tsx-by-path.
+
+⚠️ **(Earlier) the calibration skill FLAILED for ~3 min on stale knowledge.** The transcript
 shows it hit Node22/pnpm, `embed --project` not working, and plugin.json-location
 confusion — rediscovering, live, the exact gotchas we fixed in MIGRATION_GUIDE. The
 **skill carries the old knowledge**; it should call `tsx` by path and know the corpus

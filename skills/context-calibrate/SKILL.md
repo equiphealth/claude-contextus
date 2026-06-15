@@ -6,7 +6,8 @@ The single front door for **both** floor-calibration signals
 1. **Cold-start floor-replay** (`--floor`) — replays your real historical prompts
    through the retrieval path and recommends an injection floor from the
    similarity distribution. **Works with zero usage history** (it only needs a
-   corpus + your transcripts). Same engine as the `pnpm calibrate-floor` dev CLI.
+   corpus + your transcripts). Same engine as the `calibrate-floor.ts` dev CLI (run
+   via `tsx` by path — see "HOW TO ACTUALLY RUN THIS" below; never `pnpm`).
 2. **Usage-eval refinement** (`--start`/`--status`/`--report`/`--stop`) — runs a
    Haiku grading campaign over real injections, then recommends knobs from whether
    patterns were actually **used**. Needs accumulated usage.
@@ -16,6 +17,26 @@ it once real usage accumulates.** Both write through the same `--diff`/`--apply`
 plumbing into `plugin.json` `config.retrieval.*`.
 
 ## Floor calibration (cold-start, the first thing to run)
+
+> **HOW TO ACTUALLY RUN THIS (read first — the `/context-calibrate` lines below are
+> the user-facing names, NOT a command that self-executes).** This skill has no
+> runner of its own; you (Claude) must execute the engine script via a Bash tool
+> call. **Do NOT use `pnpm`** — the contextus repo needs Node 22 and the user's
+> shell may be on a different Node, so `pnpm` errors out (observed). Invoke the
+> repo-local `tsx` **by path**, from the TARGET PROJECT's directory so it calibrates
+> the right corpus:
+> ```bash
+> cd <target-project>   # the project you're calibrating (cwd = its corpus)
+> ~/src/claude-contextus/node_modules/.bin/tsx \
+>   ~/src/claude-contextus/scripts/calibrate-floor.ts [--limit N] [--json]
+> ```
+> This prints the distribution + trade curve + recommendation (never applies). To
+> apply, edit `config.retrieval.injectionFloor` in the contextus repo's
+> `plugin.json` (or run the engine's apply path if present). If the corpus doesn't
+> exist yet, embed first (see MIGRATION_GUIDE — same `tsx`-by-path rule, NOT
+> `pnpm --prefix`).
+
+The user-facing modes (names, not self-executing commands):
 
 ```bash
 /context-calibrate --floor              # replay real prompts → recommend a floor (print only)
@@ -238,10 +259,15 @@ Analyzes similarity score distribution:
 /context-calibrate --stop           # Cancel the campaign early
 ```
 
-Engine / dev entry point (prints, never applies):
+Engine / dev entry point (prints, never applies). Run via the repo-local `tsx` by
+path — NOT `pnpm` (Node-version mismatch errors out):
 
 ```bash
-pnpm calibrate-floor [--project X] [--limit N] [--json]
+cd <target-project>
+~/src/claude-contextus/node_modules/.bin/tsx \
+  ~/src/claude-contextus/scripts/calibrate-floor.ts [--limit N] [--json]
+# (--project X also works, but cd-into-the-project is the reliable form —
+#  the script resolves the corpus from cwd, like embed/query.)
 ```
 
 ## Implementation
