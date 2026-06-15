@@ -57,6 +57,7 @@ These need design decisions before implementation:
 2. **Floor-vs-CAE authority** — If floor says inject but CAE says reject, who wins? (Likely: CAE is final gate; CAE §4.4 ranks similarity *last*.) Confirm the cheap floor still short-circuits *before* any CAE call so we don't pay for an LLM verdict on a chunk the floor already killed.
 3. **Hard-override provenance** — Define *who/how* `deprecated`, `canonical`, `manually-promoted` get written. (Open question in CAE spec — no mechanism yet.)
 4. **Auto-doc namespace** — Decided `docs/generated/` above, but not formalized in Self-doc spec yet.
+5. **LanceDB layout — table name + per-project isolation** (raised 2026-06-15 during automation migration). Two separable knobs: (a) the table inside every project DB is hardcoded `contextus` — rename? (cosmetic unless it collides with a shared-DB design); (b) today each project gets its own DB under `~/.contextus/data/<project>/`, fully isolated — should projects *share* one LanceDB (one table + a `project` column filter) instead? Sharing buys cross-project recall and a single warm connection but trades away the deliberate per-project isolation (see MIGRATION_GUIDE FAQ "global ~/.claude/memory" — a first-class global layer is already a v2 idea). These two questions are entangled: a shared DB forces the table-name + filtering decision. Refinement, not blocking — v1 per-project isolation works.
 
 ### Settled (recorded so they aren't re-litigated)
 
