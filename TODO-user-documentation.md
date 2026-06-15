@@ -56,7 +56,15 @@ Current state:
 
 ## What to Create
 
-### 1. Quick-Start Guide (`docs/quick-start.md`)
+### 1. Quick-Start Guide (`docs/quick-start.md`) — ✅ DRAFTED (2026-06-15, document-driven)
+
+Written as the **acceptance spec for v1.1 install** (DDD): describes the finished
+GitHub-marketplace experience, with **[v1.1]** lines (the install commands, now
+back-filled into PACKAGING.md as the pass/fail checklist) sitting beside **[v1 today]**
+`--plugin-dir` fallbacks. Targets the real `/plugin marketplace add` → `/plugin install
+contextus@claude-contextus` UX (confirmed against current Claude Code docs) and the
+post-rename plugin name. Remove the fallbacks + the DDD banner at v1.1 GA. Still
+needs: a real injection example with actual automation-corpus output once available.
 
 **Goal:** Get from zero to first injection in <5 minutes.
 

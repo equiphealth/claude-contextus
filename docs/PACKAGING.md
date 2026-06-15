@@ -73,7 +73,18 @@ The documented way for a dep-heavy plugin:
 - [ ] Toolchain caveat in README: target needs Node + a build toolchain for the native
       `@lancedb` bindings; on HF-blocked networks the transformers path still needs the
       model-fetch workaround (see embedding-download-risk).
-- [ ] A `marketplace.json` / publish flow.
+- [ ] A `marketplace.json` / publish flow. **Acceptance spec (from `docs/quick-start.md`,
+      written document-driven):** these exact commands must work for an end user:
+      ```text
+      /plugin marketplace add anthonypdawson/claude-contextus
+      /plugin install contextus@claude-contextus
+      ```
+      Requires `.claude-plugin/marketplace.json` at the repo root with `name:
+      "claude-contextus"` (the marketplace id after `@`) and a plugin entry `name:
+      "contextus"` (the now-renamed plugin) pointing at `source: "."`. After install,
+      hooks must fire automatically (no enable step), the daemon must spawn via the
+      SessionStart dep-install path (NOT repo-local tsx), and `/contextus-setup` must
+      work first-try. quick-start.md's **[v1.1]** lines are the pass/fail checklist.
 
 ## Decision
 
