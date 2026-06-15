@@ -38,6 +38,8 @@ Comprehensive documentation for the contextus project. Design decisions, impleme
 
 - **[MIGRATION_KICKOFF.md](MIGRATION_KICKOFF.md)** — Paste-ready kickoff prompt for the automation-project migration: the two-location split (drive from contextus repo, validate live from the automation repo), the blocker/friction/smooth/discovery capture protocol, and feedback-into-docs loop.
 
+- **[PACKAGING.md](PACKAGING.md)** — Distribution (v1.1): why `--plugin-dir` is the supported personal pattern today, why GitHub-marketplace install needs work (no auto npm install, ephemeral plugin root, native deps), and the documented `SessionStart`→`${CLAUDE_PLUGIN_DATA}` install pattern + drop-tsx plan to get there.
+
 ---
 
 ## Design Philosophy
