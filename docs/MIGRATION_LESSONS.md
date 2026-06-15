@@ -8,6 +8,39 @@ Legend: ❌ Blocker · ⚠️ Friction · ✅ Smooth · 💡 Discovery
 
 ---
 
+## Phase 6 — Calibration session + the "re-embedding 1" phantom (2026-06-15 PM)
+
+✅ **Floor calibration ran + confirmed the floor is too high.** `/context-calibrate
+--floor` replayed 387 real automation prompts: top-1 range 0.037–0.696, p50 0.336, p90
+0.488; **recommends 0.40** (29% coverage) vs the inherited 0.45 (17%). Confirms Phase-5
+finding #3. Smooth ramp (median #1↔#2 sep 0.020) → no clean signal/noise gap, as
+expected. User hasn't applied yet (`--floor --apply` pending their call).
+
+⚠️ **But the calibration skill FLAILED for ~3 min on stale knowledge.** The transcript
+shows it hit Node22/pnpm, `embed --project` not working, and plugin.json-location
+confusion — rediscovering, live, the exact gotchas we fixed in MIGRATION_GUIDE. The
+**skill carries the old knowledge**; it should call `tsx` by path and know the corpus
+lives at `~/.contextus/data/<project>/`. Feeds the `/contextus-doctor` + skill-refresh
+work for v1.1.
+
+❌→✅ **FIXED: "re-embedding 1 in the background" every single session (phantom).** Root
+cause: a `glob` exclude bug. `loadContexts` (and `sources.ts`) globbed with an
+**absolute** pattern (`/abs/path/​**/*.md`) + `ignore: ['**/CONTEXT.md']` — but glob
+matches `ignore` against the absolute result paths, and the globstar pattern fails to
+exclude a **root-level** `CONTEXT.md`. So reconcile's disk scan returned 57 files
+(including the generated index), the table had 56 (index correctly never embedded),
+CONTEXT.md had no stored hash → counted "new" forever → `state: stale, new=1` every
+session → "re-embedding 1", which embeds nothing (the index is excluded downstream) and
+recurs next session. **The bug rode in with the CONTEXT.md-generation feature I added
+this session** — generating an index the reconcile scan didn't reliably exclude. Fix:
+glob **cwd-relative** (`{ cwd: contextDir }`) with anchored basename + globstar excludes
+(`['CONTEXT.md', '**/CONTEXT.md', …]`). Now reconcile reports `fresh` (56, new=0).
+Bonus: contextus's own embed went 40→42 projectContext files — the same absolute-glob
+bug had been silently *dropping* 2 real root-level files. Regression test:
+`tests/context-loader-glob.test.ts` (root + nested index exclusion). 132/0.
+
+---
+
 ## Phase 5 — Real-use bugs (separate test session, 2026-06-15 PM)
 
 User tested in a live automation session ("Do we have any good selector patterns?") and

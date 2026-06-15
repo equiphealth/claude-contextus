@@ -78,8 +78,13 @@ export function resolveSources(pluginConfig: Record<string, unknown>): ResolvedS
 
 /** Load every markdown file in a source dir, tagged with the source name. */
 export async function loadSource(src: ResolvedSource): Promise<SourcedContext[]> {
-  const files = await glob(path.join(src.dir, '**', '*.md'), { ignore: src.exclude });
-  return files.sort().map((f) => ({ context: loadContext(f, src.dir), source: src.name }));
+  // cwd-relative glob, not an absolute pattern: an absolute pattern matches the
+  // `ignore` globs against absolute paths, so `**/CONTEXT.md` fails to exclude a
+  // root-level index file (same bug that gave reconcile a phantom "new" file).
+  // Anchor each exclude with a bare-basename variant so root-level indexes drop.
+  const ignore = src.exclude.flatMap((g) => (g.startsWith('**/') ? [g, g.slice(3)] : [g]));
+  const rel = await glob('**/*.md', { cwd: src.dir, ignore });
+  return rel.sort().map((f) => ({ context: loadContext(path.join(src.dir, f), src.dir), source: src.name }));
 }
 
 /**
