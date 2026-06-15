@@ -71,6 +71,12 @@ async function main() {
     /* no payload / not JSON — fall back to process.cwd() */
   }
 
+  // Test mode: skip daemon interaction (for smoke tests in CI without Ollama)
+  if (process.env.CONTEXTUS_TEST_MODE === '1') {
+    process.stdout.write(JSON.stringify({ continue: true }));
+    return;
+  }
+
   const lines = [];
   let warmOk = false;
 
