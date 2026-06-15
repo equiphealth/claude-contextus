@@ -57,18 +57,31 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Corpus hygiene: reject prefix↔type disagreements before embedding anything.
-  // Only context-style files carry category prefixes; docs are exempt (free-form).
-  const contextFiles = sourced
-    .filter((s) => s.source === 'projectContext' || s.source === 'userContext')
-    .map((s) => s.context);
-  const mismatches = findPrefixTypeMismatches(contextFiles);
+  // Corpus hygiene: prefix↔type disagreements can't embed (the gate would store a
+  // row whose type contradicts its filename). QUARANTINE them — skip the bad files,
+  // embed the rest, and report loudly — rather than aborting the WHOLE embed over one
+  // malformed file (a single bad file used to embed nothing; observed 2026-06-15 with
+  // a stray `type: pattern`). Only context-style files carry prefixes; docs are exempt.
+  const mismatches = findPrefixTypeMismatches(
+    sourced
+      .filter((s) => s.source === 'projectContext' || s.source === 'userContext')
+      .map((s) => s.context)
+  );
   if (mismatches.length > 0) {
-    console.error(`\n✗ Prefix/type mismatches (fix the filename prefix or metadata.type):`);
+    const badPaths = new Set(mismatches.map((m) => m.relPath));
+    console.error(`\n⚠ Skipping ${mismatches.length} file(s) with prefix/type mismatch (fix the filename prefix or metadata.type):`);
     for (const m of mismatches) {
       console.error(`    ${m.relPath}: prefix '${m.prefix}-' but type '${m.type}'`);
     }
-    process.exit(1);
+    console.error(`  → embedding the rest; these won't inject until fixed.\n`);
+    // Drop the bad files from the embed set (match on the context's relPath).
+    for (let i = sourced.length - 1; i >= 0; i--) {
+      if (badPaths.has(sourced[i].context.relPath)) sourced.splice(i, 1);
+    }
+    if (sourced.length === 0) {
+      console.error('✗ No embeddable files remain after quarantine.');
+      process.exit(1);
+    }
   }
 
   // Plan chunks per file. `.claude/context/` keeps its bare id so it matches the

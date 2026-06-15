@@ -124,6 +124,17 @@ async function main() {
       await fireReconcile(project, cwd);
     }
 
+    // Surface quarantined files (bad prefix/type — can't embed). Honest + actionable:
+    // these used to either abort the whole embed or loop as a phantom "new" forever.
+    const quarantined = (plan && Array.isArray(plan.quarantined)) ? plan.quarantined : [];
+    if (quarantined.length > 0) {
+      const shown = quarantined.slice(0, 3).join(', ');
+      const more = quarantined.length > 3 ? ` (+${quarantined.length - 3} more)` : '';
+      lines.push(
+        `contextus: ${quarantined.length} context file(s) can't embed — filename prefix disagrees with metadata.type: ${shown}${more}. Fix the prefix or type; they won't inject until then.`
+      );
+    }
+
     // One-time nudge: only when the project lacks the CLAUDE.md stanza. Content-aware
     // so a MIGRATED project (corpus already populated) doesn't get told to "scaffold"
     // a dir that's already full — that wording reads as "nothing is set up" when in
