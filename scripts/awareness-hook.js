@@ -79,7 +79,9 @@ function buildFooter(recent) {
     'Context awareness: if this exchange surfaced a NEW, reusable pattern/decision/gotcha, ' +
     'end your response with a footer line: "Context: propose: <topic-name>" (and invoke ' +
     '/create-context to capture it). If you used injected context, instead end with ' +
-    '"Context: used: <filename(s)>". Omit the footer for brief/trivial replies.';
+    '"Context: used: <filename> (<similarity>)" — include the similarity score shown ' +
+    'next to each pattern you used, so the reader can gauge match strength / tune the ' +
+    'floor. Omit the footer for brief/trivial replies.';
   if (recent.length === 0) return base;
   const list = recent.slice(-8).join(', ');
   return (
