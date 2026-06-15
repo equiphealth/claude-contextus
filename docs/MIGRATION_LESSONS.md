@@ -161,11 +161,28 @@ zero project feedback). Same fix applies to `query` (`scripts/search.ts`).
 #1 hit `decisions/decision-use-logger-helper.md` @ 0.529 (the migrated feedback→decision
 file). The migration + reclassification is end-to-end live.
 
-⚠️ **Default floor is the un-calibrated 0.7 — everything reads "below floor."** `query`
-gates on 0.7 (DESIGN default), but the automation corpus tops out at 0.529 for a
-known-good match. This is precisely why automation needs its OWN floor (plan step 5;
-≠ contextus's 0.45). At 0.45 the logger hit injects; at 0.7 nothing does. Calibration
-isn't optional polish here — without it the corpus retrieves but never *injects*.
+❌→✅ **The `query`/`search.ts` CLI reported the WRONG floor — injectable hits looked
+dead.** Initial read: "top hit 0.529, everything below the 0.7 floor → nothing injects,
+needs calibration." **Wrong on two counts.** (1) `search.ts` reported
+`cfg.retrieval.similarityThreshold` (0.7) — but that's a post-rank *ranking* filter, NOT
+the injection gate. (2) The real gate is `cfg.retrieval.injectionFloor` (**0.45**),
+applied by the daemon's `/query` → `applyFloor` (`daemon/server.ts:192`) — which is what
+`query-hook.js` actually calls. Worse, the CLI **hardcoded the string "0.7"** in its
+flag label, so it'd lie even if the config changed.
+
+**Impact:** at the true 0.45 floor, the migrated `decision-use-logger-helper` (0.529)
+**injects**, and so does the docs hit at 0.474. The migration works *as-is*. Had I
+handed off a live-verification session trusting the CLI, you'd have queried, seen
+"⚠ below 0.7 floor" on every row, and concluded the migration failed. **Fixed
+`search.ts`** to report `injectionFloor`, flag each row `✓ injects` / `won't inject`,
+and stop hardcoding the number. Lesson: a spot-check tool that reports a *different*
+threshold than the production path is worse than no tool — it manufactures false
+negatives. Verify the CLI reads the same knob the hook does.
+
+📝 **Floor calibration is still worth running, but it's tuning, not rescue.** The
+corpus injects at the inherited 0.45. Automation's distribution differs from
+contextus's, so `/context-calibrate --floor` will refine it (plan step 5) — but the
+system is live and injecting *now*, not blocked on calibration.
 
 💡 **Migration stays deterministic; Haiku judgment goes in the skill, not the script.**
 Considered making the whole conversion (recategorize + generate + write) a Haiku
