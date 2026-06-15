@@ -255,12 +255,15 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // (renderFooterInstruction). Co-located with the real injected set so Claude
   // reports ground truth instead of fabricating a footer (the awareness hook can't
   // do this — it doesn't know what was injected; instructing it to induced
-  // hallucination, observed 2026-06-15).
+  // hallucination, observed 2026-06-15). Gated by retrieval.provenanceFooter
+  // (per-project): some users want only the answer, not the retrieval receipt. The
+  // `propose:` capture footer is separate + always-on (it's how patterns get saved).
+  const footer = cfg.retrieval.provenanceFooter ? renderFooterInstruction(included) : '';
   sendJson(res, 200, {
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: block + renderFooterInstruction(included),
+      additionalContext: block + footer,
     },
   });
 }
