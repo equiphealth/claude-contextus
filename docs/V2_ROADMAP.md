@@ -4,6 +4,10 @@ Post-v1 feature backlog and open design questions. Items listed roughly by depen
 
 **Status:** v1 build in progress (Phase 6). This doc captures what's deliberately deferred.
 
+> **Distribution / packaging is tracked separately** in [PACKAGING.md](PACKAGING.md)
+> (a v1.1 milestone, not a v2 feature): making contextus GitHub-marketplace
+> installable rather than `--plugin-dir`-only. Different axis from the feature work below.
+
 ---
 
 ## V2 Backlog
