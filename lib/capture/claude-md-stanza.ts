@@ -26,7 +26,7 @@ export const STANZA_END = '<!-- contextus:end -->';
 /** The canonical stanza body (between the markers). Versioned for future edits. */
 export const STANZA_BODY = `## Context (claude-contextus)
 
-This project uses [claude-contextus](https://github.com/yourusername/claude-contextus):
+This project uses [claude-contextus](https://github.com/anthonypdawson/claude-contextus):
 relevant patterns from \`.claude/context/\` are **retrieved and injected automatically**
 on each prompt — you don't need to search for them. Injected blocks are tagged
 \`[contextus — …]\`.
