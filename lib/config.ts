@@ -164,6 +164,8 @@ const DEFAULTS: ContextusConfig = {
 };
 
 let _config: ContextusConfig | null = null;
+/** Per-project merged configs, keyed by project name. */
+const _projectConfig = new Map<string, ContextusConfig>();
 
 /** Locate plugin.json (repo root is one level up from lib/). */
 function findPluginJson(): string | null {
@@ -171,37 +173,93 @@ function findPluginJson(): string | null {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
+/** Apply a raw `config` object (plugin.json or an override file) onto `merged`. */
+function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void {
+  if (c.embedding) {
+    // Deep-merge the nested `transformers` object so a partial override
+    // (e.g. just localModelPath) doesn't wipe the other defaults.
+    const { transformers: tOverride, ...eRest } = c.embedding;
+    Object.assign(merged.embedding, eRest);
+    if (tOverride) Object.assign(merged.embedding.transformers!, tOverride);
+  }
+  if (c.lancedb?.path) merged.storage.path = c.lancedb.path;
+  if (c.retrieval) Object.assign(merged.retrieval, c.retrieval);
+  if (c.notifications) Object.assign(merged.notifications, c.notifications);
+  if (c.calibration) Object.assign(merged.calibration, c.calibration);
+}
+
+/** Read a JSON file's `config` object (or the whole file if no `config` key). [] on miss. */
+function readConfigFile(filePath: string): Record<string, any> | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    // plugin.json nests under `config`; override files may be flat OR nested.
+    return (raw.config ?? raw) as Record<string, any>;
+  } catch {
+    return null; // unparseable override is ignored, never fatal
+  }
+}
+
 /**
- * Load merged config (plugin.json overrides defaults). Cached after first call.
+ * Load merged GLOBAL config (plugin.json over defaults). Cached after first call.
+ * Project-agnostic — use loadProjectConfig() when a project's overrides matter
+ * (the daemon hot path). The 19 call sites that just need embedding/storage
+ * defaults keep using this unchanged.
  */
 export function loadConfig(): ContextusConfig {
   if (_config) return _config;
-
   const merged: ContextusConfig = structuredClone(DEFAULTS);
   const pluginPath = findPluginJson();
-
   if (pluginPath) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(pluginPath, 'utf-8'));
-      const c = raw.config ?? {};
-      if (c.embedding) {
-        // Deep-merge the nested `transformers` object so a partial override
-        // (e.g. just localModelPath) doesn't wipe the other defaults.
-        const { transformers: tOverride, ...eRest } = c.embedding;
-        Object.assign(merged.embedding, eRest);
-        if (tOverride) Object.assign(merged.embedding.transformers!, tOverride);
-      }
-      if (c.lancedb?.path) merged.storage.path = c.lancedb.path;
-      if (c.retrieval) Object.assign(merged.retrieval, c.retrieval);
-      if (c.notifications) Object.assign(merged.notifications, c.notifications);
-      if (c.calibration) Object.assign(merged.calibration, c.calibration);
-    } catch {
-      /* fall back to defaults on any parse error */
-    }
+    const c = readConfigFile(pluginPath);
+    if (c) mergeConfigInto(merged, c);
   }
-
   _config = merged;
   return merged;
+}
+
+/**
+ * Path to a project's machine-local override (tier 2) — next to its corpus DB.
+ * `calibrate --apply` writes here; not version-controlled.
+ */
+export function projectLocalConfigPath(project: string): string {
+  const base = expandHome('~/.contextus/data');
+  return path.join(base, project, 'config.json');
+}
+
+/**
+ * Load a PROJECT's merged config via the 3-tier precedence (later wins):
+ *   1. global plugin.json (over DEFAULTS)        — ships with contextus
+ *   2. ~/.contextus/data/<project>/config.json   — machine-local (calibrate --apply)
+ *   3. <cwd>/.claude/contextus.json              — git-committed, team-shared (WINS)
+ *
+ * Cached per project. `cwd` (the project repo root) is needed for tier 3; omit it
+ * and tier 3 is simply skipped. Falls back to global config when project is empty.
+ */
+export function loadProjectConfig(project?: string, cwd?: string): ContextusConfig {
+  if (!project) return loadConfig();
+  const cached = _projectConfig.get(project);
+  if (cached) return cached;
+
+  // Tier 1: start from the global merged config (defaults + plugin.json).
+  const merged: ContextusConfig = structuredClone(loadConfig());
+  // Tier 2: machine-local override beside the corpus.
+  const local = readConfigFile(projectLocalConfigPath(project));
+  if (local) mergeConfigInto(merged, local);
+  // Tier 3: git-committed repo override wins.
+  if (cwd) {
+    const repo = readConfigFile(path.join(cwd, '.claude', 'contextus.json'));
+    if (repo) mergeConfigInto(merged, repo);
+  }
+
+  _projectConfig.set(project, merged);
+  return merged;
+}
+
+/** Clear caches (tests + after a config write so the next read re-merges). */
+export function resetConfigCache(): void {
+  _config = null;
+  _projectConfig.clear();
 }
 
 /**

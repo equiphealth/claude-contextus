@@ -26,7 +26,7 @@
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
-import { loadConfig, expandHome } from '../lib/config.js';
+import { loadConfig, loadProjectConfig, expandHome } from '../lib/config.js';
 import { warmup, embedQuery } from '../lib/embedding/embedder.js';
 import { search, tableExists, readTableMeta, incrementHits } from '../lib/storage/lance-client.js';
 import { rerank } from '../lib/retrieval/reranker.js';
@@ -127,6 +127,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const started = Date.now();
   const prompt = typeof body.prompt === 'string' ? body.prompt : '';
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+  // cwd = the project repo root, needed for the git-committed tier-3 config override.
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
 
   if (!prompt.trim()) {
     return sendJson(res, 200, { continue: true });
@@ -153,7 +155,9 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // consistency). Both the model id AND the dimensions must agree — a mismatch on
   // either means the query vector and the stored vectors live in different spaces,
   // so similarities are meaningless. Fail fast + degrade rather than inject noise.
-  const cfg = loadConfig();
+  // Project-aware: floor/topK/etc. resolve through the 3-tier merge (global →
+  // machine-local → git-committed), so each project calibrates independently.
+  const cfg = loadProjectConfig(project, cwd);
   const meta = readTableMeta(project);
   const activeModel =
     cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model;
