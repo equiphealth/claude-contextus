@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
-  "repository": "github:yourusername/claude-contextus",
+  "repository": "github:anthonypdawson/claude-contextus",
   "license": "MIT",
   "engines": {
     "claude": ">=1.0.0",
