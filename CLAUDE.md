@@ -12,9 +12,9 @@ Stop searching for context — let it find you. Automatic semantic retrieval of 
 ## Key Design Decisions
 
 All major architectural decisions are documented in:
-- `docs/DESIGN.md` — Complete system architecture (16 settled decisions)
-- `docs/DESIGN_QUESTIONS.md` — Implementation decisions with recommendations
-- `docs/LOGGING.md` — Dual-format logging schema (analytics + human-readable)
+- `docs/dev/DESIGN.md` — Complete system architecture (16 settled decisions)
+- `docs/dev/DESIGN_QUESTIONS.md` — Implementation decisions with recommendations
+- `docs/dev/LOGGING.md` — Dual-format logging schema (analytics + human-readable)
 - `.claude/memory/` — Critical design decisions and feedback
 
 **Core principles** (do not re-litigate):
@@ -64,9 +64,9 @@ All major architectural decisions are documented in:
 ## Quick Reference
 
 **Key Files**:
-- `docs/DESIGN.md` — Architecture
-- `docs/DESIGN_QUESTIONS.md` — Open questions with recommendations
-- `docs/opus_feedback.txt` — External design review (critical metrics critique)
+- `docs/dev/DESIGN.md` — Architecture
+- `docs/dev/DESIGN_QUESTIONS.md` — Open questions with recommendations
+- `docs/dev/opus_feedback.txt` — External design review (critical metrics critique)
 - `hooks/stop-evaluation.js` — Calibration evaluation hook
 - `daemon/eval-worker.js` — Background quality measurement
 - `skills/context-calibrate/` — Quality measurement and optimization
@@ -87,8 +87,8 @@ All major architectural decisions are documented in:
 
 **Documentation hierarchy**:
 1. **CLAUDE.md** (this file) — Project overview and quick reference
-2. **docs/DESIGN.md** — Authoritative architecture spec
-3. **docs/DESIGN_QUESTIONS.md** — Implementation decisions
+2. **docs/dev/DESIGN.md** — Authoritative architecture spec
+3. **docs/dev/DESIGN_QUESTIONS.md** — Implementation decisions
 4. **`.claude/memory/`** — Design decisions and feedback (searchable)
 5. **Commit messages** — Design decision records
 
@@ -106,7 +106,7 @@ All major architectural decisions are documented in:
 
 ## Critical Context
 
-**Opus's Design Review** (docs/opus_feedback.txt):
+**Opus's Design Review** (docs/dev/opus_feedback.txt):
 
 The most important feedback: "Tokens saved" is a vanity metric. It measures against wrong baseline (full-file injection vs inject-nothing). Real quality = did Claude **use** the retrieved patterns?
 
@@ -159,7 +159,7 @@ Project-specific skills:
 
 ## Known Issues / Open Questions
 
-See `docs/DESIGN_QUESTIONS.md` for complete list.
+See `docs/dev/DESIGN_QUESTIONS.md` for complete list.
 
 **High priority validations during POC**:
 1. Does thinking explicitly reference injected context? (validates injection format)
