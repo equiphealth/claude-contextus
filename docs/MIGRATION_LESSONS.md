@@ -224,6 +224,46 @@ contextus. The skill could pattern-match a `UserPromptSubmit` hook carrying a
 guidance + experiments, and *offer* the trim — backup, diff, confirm, never silent
 auto-edit. (This is the migration-time concern; Follow-up B below is the runtime one.)
 
+### Phase 4 — Live session (in progress, user-driven)
+
+✅ **Daemon reuse + background auto-reconcile both fired (session-start, 2026-06-15).**
+Live messages: *"using the running daemon (uptime 1h)"* (reuse ✓) and *"corpus is behind
+your context files — re-embedding 1 in the background"* (Phase-6 auto-reconcile ✓ —
+automation meta `createdAt` updated to session-start time). Validates the
+`automation-migration-plan` claim that session-start picks up context even if you skip
+the manual embed.
+
+✅✅ **KEYSTONE VALIDATED — injection appears in the thinking block, by name + full
+structure (2026-06-15).** Asked "how should I log messages in automation code?" in the
+live automation session. Verbatim thinking: *"From the system-reminder, I can see: 1.
+There's a contextus pattern about using the Logger Helper
+(decisions/decision-use-logger-helper.md). 2. The rule is: Never use console.log… 3. The
+why:… 4. How to apply:…"* — i.e. it named the pattern **by file path**, pulled the rule
+/why/how-to-apply intact, and grounded the answer in it. This is CLAUDE.md's #1 "Design
+Validation Needed" (*does user-message prepend make thinking reference context
+clearly?*) — answered YES. Validates the **entire chain end-to-end**: migrate →
+reclassify (feedback→decision; the injected pattern shows as `[decision]`) → embed (right
+corpus via the tsx-by-path fix) → retrieve (0.529) → gate (0.45 floor) → inject → thinking
+*uses* it. Also: **no double-footer**, confirming the injector trim. Footer-on-exit
+(`Context: used:`) still to be confirmed.
+
+❌→⚠️ **The `/contextus-setup` nudge MISFIRES on a migrated project (finding).**
+Third session-start message: *"run /contextus-setup to scaffold `.claude/context/` and
+register contextus in this project (one-time)."* — but automation **already has** 56
+context files and a live, injecting corpus. Root cause: `session-start-hook.js:126`
+nudges purely on *"is there a contextus stanza in the project CLAUDE.md?"*. Automation
+has a 22KB CLAUDE.md but **no stanza** — because `migrate-memory` builds the corpus but
+never *registers* the project, while only `contextus-setup` writes the stanza. **The two
+paths don't converge:** a fully-migrated project falls in the crack — works perfectly,
+but nags forever, and the wording ("scaffold `.claude/context/`") is actively wrong when
+that dir is already populated. Does NOT block injection (query-hook retrieves by project
+basename, stanza-independent). **Fixes to consider:** (a) `migrate-memory --apply` should
+write the CLAUDE.md stanza too (converge the paths), or (b) the nudge should distinguish
+"no stanza BUT `.claude/context/` populated" (→ *"contextus is active here; add the
+CLAUDE.md stanza with /contextus-setup to silence this"*) from "nothing exists" (→
+current scaffold message). (a) is cleaner — migration should leave a project as
+"registered" as setup does.
+
 🔭 **Follow-up B — claude-mem as a content *source*, not just a hook to clean up (user
 clarification, 2026-06-15).** The deeper idea: detect claude-mem and **piggyback off its
 worthwhile search results, storing them as context.** claude-mem is reactive
