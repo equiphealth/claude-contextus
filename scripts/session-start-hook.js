@@ -38,6 +38,7 @@ import {
   checkCorpus,
   fireReconcile,
   hasContextusStanza,
+  hasPopulatedContextDir,
 } from './lib/daemon-control.js';
 import { resolveDaemonStatus } from './lib/daemon-status.js';
 
@@ -123,11 +124,15 @@ async function main() {
       await fireReconcile(project, cwd);
     }
 
-    // One-time nudge: if the project hasn't been set up (no marked stanza in
-    // CLAUDE.md), point at /contextus-setup. Never edits the file — only suggests.
+    // One-time nudge: only when the project lacks the CLAUDE.md stanza. Content-aware
+    // so a MIGRATED project (corpus already populated) doesn't get told to "scaffold"
+    // a dir that's already full — that wording reads as "nothing is set up" when in
+    // fact contextus is live. Never edits the file — only suggests.
     if (!hasContextusStanza(cwd)) {
       lines.push(
-        'contextus: run /contextus-setup to scaffold .claude/context/ and register contextus in this project (one-time).'
+        hasPopulatedContextDir(cwd)
+          ? 'contextus: active in this project (.claude/context/ is populated and injecting). To register it in CLAUDE.md and silence this notice, run /contextus-setup.'
+          : 'contextus: run /contextus-setup to scaffold .claude/context/ and register contextus in this project (one-time).'
       );
     }
   }
