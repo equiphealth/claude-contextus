@@ -28,9 +28,19 @@ export interface ConfigChange {
   proposed: unknown;
 }
 
-/** Read the current value at a dotted path under plugin.json `config`. */
+/** Read a config file's root object, or {} if it's missing/unparseable. */
+function readRaw(pluginPath: string): Record<string, any> {
+  try {
+    if (!fs.existsSync(pluginPath)) return {};
+    return JSON.parse(fs.readFileSync(pluginPath, 'utf8')) as Record<string, any>;
+  } catch {
+    return {};
+  }
+}
+
+/** Read the current value at a dotted path under a config file's `config`. */
 export function readConfigValue(dotted: string, pluginPath = PLUGIN_JSON): unknown {
-  const raw = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
+  const raw = readRaw(pluginPath);
   let node: unknown = raw.config ?? {};
   for (const seg of dotted.split('.')) {
     if (node && typeof node === 'object' && seg in (node as Record<string, unknown>)) {
@@ -77,7 +87,7 @@ export function hasRealChanges(changes: ConfigChange[]): boolean {
  * Returns the number of values actually changed.
  */
 export function applyChanges(changes: ConfigChange[], pluginPath = PLUGIN_JSON): number {
-  const raw = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
+  const raw = readRaw(pluginPath); // {} if the target doesn't exist yet (project-local)
   raw.config = raw.config ?? {};
   let written = 0;
   for (const c of changes) {
@@ -92,6 +102,9 @@ export function applyChanges(changes: ConfigChange[], pluginPath = PLUGIN_JSON):
     node[segs[segs.length - 1]] = c.proposed;
     written++;
   }
-  if (written > 0) fs.writeFileSync(pluginPath, JSON.stringify(raw, null, 2) + '\n');
+  if (written > 0) {
+    fs.mkdirSync(path.dirname(pluginPath), { recursive: true }); // project-local dir may not exist
+    fs.writeFileSync(pluginPath, JSON.stringify(raw, null, 2) + '\n');
+  }
   return written;
 }

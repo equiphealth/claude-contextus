@@ -26,7 +26,8 @@
  */
 
 import fs from 'fs';
-import { loadConfig, expandHome } from '../lib/config.js';
+import path from 'path';
+import { loadProjectConfig, projectLocalConfigPath, expandHome } from '../lib/config.js';
 import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js';
 import { printFloorReport } from '../lib/calibration/floor-report.js';
 import {
@@ -80,10 +81,17 @@ function parseArgs(argv: string[]): Args {
 /* ── Floor-replay path ─────────────────────────────────────────────────────── */
 
 async function runFloorMode(args: Args): Promise<void> {
-  const cfg = loadConfig();
+  // Resolve the project name the same way the replay does (cwd basename unless
+  // --project given), so the floor we write is scoped to THIS project's corpus.
+  const project = args.project ?? path.basename(process.cwd());
+  // PER-PROJECT write target: the machine-local override beside this project's
+  // corpus, NOT the global plugin.json — so calibrating one project never changes
+  // another's floor (the multi-project unblocker). Diff is read from the same file.
+  const target = projectLocalConfigPath(project);
+  const cfg = loadProjectConfig(project, process.cwd());
   let outcome;
   try {
-    outcome = await runFloorReplay({ project: args.project, limit: args.limit }, (msg) =>
+    outcome = await runFloorReplay({ project, limit: args.limit }, (msg) =>
       console.error(msg)
     );
   } catch (err) {
@@ -97,18 +105,19 @@ async function runFloorMode(args: Args): Promise<void> {
   printFloorReport(outcome, cfg.retrieval.injectionFloor);
 
   const recommended = outcome.recommendation.recommendedFloor;
-  const changes = buildChanges({ 'retrieval.injectionFloor': recommended });
+  const changes = buildChanges({ 'retrieval.injectionFloor': recommended }, target);
 
   // --apply writes; --diff (or plain --floor) shows what WOULD change.
   if (args.apply) {
     if (!hasRealChanges(changes)) {
-      console.log(`  Floor already ${recommended} — nothing to write.\n`);
+      console.log(`  Floor already ${recommended} for '${project}' — nothing to write.\n`);
       return;
     }
-    const n = applyChanges(changes);
+    const n = applyChanges(changes, target);
     console.log(
-      `  ✓ Applied: config.retrieval.injectionFloor → ${recommended} (${n} key written).`
+      `  ✓ Applied to '${project}': config.retrieval.injectionFloor → ${recommended} (${n} key).`
     );
+    console.log(`  Written to ${target} (this project only).`);
     console.log('  Restart the daemon (or it picks up on next cold start) to use the new floor.\n');
     return;
   }
