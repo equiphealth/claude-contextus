@@ -36,6 +36,8 @@ Comprehensive documentation for the contextus project. Design decisions, impleme
 
 - **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** — Migrating an existing custom-hooks + `.claude/memory/` setup to contextus: audit, migrate-memory, hook hygiene (settings.json), live-session testing, coexistence period, rollback. Includes the `/contextus-migrate` skill sketch.
 
+- **[MIGRATION_KICKOFF.md](MIGRATION_KICKOFF.md)** — Paste-ready kickoff prompt for the automation-project migration: the two-location split (drive from contextus repo, validate live from the automation repo), the blocker/friction/smooth/discovery capture protocol, and feedback-into-docs loop.
+
 ---
 
 ## Design Philosophy
