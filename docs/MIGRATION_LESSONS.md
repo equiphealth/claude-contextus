@@ -87,14 +87,95 @@ fall to the default weight). The migration reclassifier is what actually scrubs 
 the gate alone won't. Worth knowing if anyone expects the ban to "clean" a corpus on
 its own — it doesn't.
 
-⚠️ **CONTEXT.md is hand-maintained and drifts — nothing keeps it in sync.** When I
-recategorized the 4 own-corpus files, the index didn't follow (no link rot, because it
-only listed 3 of 20 files to begin with — it was stale long before this). Two gaps:
-(1) `migrate-memory` writes context files but never regenerates the index; (2) there's
-no `embed`-time check that CONTEXT.md matches the files on disk. So the index silently
-diverges from the corpus. For *retrieval* this is harmless — CONTEXT.md is in the embed
-exclude globs (`**/CONTEXT.md`), so it's never embedded and drift can't pollute
-injection. But it's the human-facing map, and a stale map misleads. **Follow-up worth
-considering:** have `migrate-memory --apply` (and `contextus-setup`) emit/refresh
-CONTEXT.md from frontmatter, the same way MEMORY.md is generated. Filed as friction,
-not a blocker — fixed by hand here.
+---
+
+## Phase 2 — Migrate (dry-run)
+
+✅ **Patched `migrate-memory --project` works end-to-end on real data.** Dry-run
+against automation found all **56 files** (recursive glob confirmed — the old flat glob
+would have found 2), resolved paths correctly under the automation root, and printed
+the project root in the header so a misfire would be obvious. No copy-in, no manual
+flattening.
+
+✅ **Reclassifier behaves on real corpus.** 24 `feedback_*` files re-homed cleanly:
+15→decision (conventions: use-logger-helper, locators-only, prefer-qa-environment…),
+6→gotcha (pitfalls: ios-isdisplayed-quirk, browserstack-swipe-instability,
+chainable-promise-types…), and the AI-process ones (proactive-*, check-claude-mem)
+correctly →reference. Final plan: **15 decision / 6 gotcha / 3 project / 32 reference**,
+zero `feedback`.
+
+💡 **`tags=0` on every file is correct, not data loss.** Initially read as a bug — the
+migrate report showed `tags=0` for all 56. Checked the source: **none of automation's
+memories carry a `tags:` field at all.** The migration faithfully reports empty (and
+notes "seed manually if useful"). It never fabricates tags — exactly the documented
+contract. Lesson for the guide: a wall of `tags=0` is expected when the source corpus
+predates tagging; it's a `/tag-context` backfill cue, not a migration failure.
+
+💡 **Source frontmatter is inconsistent; the migration normalizes it.** Automation
+memories mix schemas freely — `name: Use Logger Helper` (title-case) + top-level
+`type:` in one file, `name: ios-isdisplayed-quirk` (kebab) + nested `metadata.type:` in
+another. `planFile` handles both: kebabs the name into the slug, reads type from either
+location. No manual cleanup needed pre-migration. Good robustness, worth stating in the
+guide so people don't try to hand-normalize first.
+
+⚠️→✅ **CONTEXT.md was hand-maintained and drifted — now `migrate-memory` regenerates
+it.** When I recategorized the 4 own-corpus files, the index didn't follow (it listed 3
+of 20 files — stale long before this). Root cause: `migrate-memory` wrote context files
+but never touched the index, and nothing at embed-time reconciles them. CONTEXT.md is in
+the embed exclude globs (`**/CONTEXT.md`) so drift never pollutes *retrieval* — but it's
+the human-facing map. **Fixed:** added `renderContextIndex()` (pure, grouped-by-type,
+unit-tested) and `migrate-memory --apply` now writes CONTEXT.md from the plan, MEMORY.md
+style. Unknown types fall under "Other" so nothing is silently dropped.
+
+---
+
+## Phase 2 — Embed (the big one)
+
+❌ **BLOCKER + DOC CORRECTION: `pnpm --prefix … run embed` embeds the WRONG project.**
+Every memory and MIGRATION_GUIDE.md §2.4 "confirmed" this gotcha: *"embed/query resolve
+sources from cwd — run from the project dir via `--prefix`."* **It is categorically
+wrong.** Running `pnpm --prefix ~/src/claude-contextus run embed` from the automation
+dir embedded **contextus's own corpus** (sources resolved to `claude-contextus/.claude/
+context`, DB target `~/.contextus/data/claude-contextus`) — the 56 migrated automation
+files were never embedded, and it printed a green `✓ Embedded`.
+
+**Root cause (proven):** `pnpm --prefix <dir> run` sets `process.cwd()` to `<dir>`, not
+the directory you invoked from. embed-contexts resolves sources relative to
+`process.cwd()` (`sources.ts:71` `path.resolve`) and names the DB from
+`path.basename(process.cwd())` (`config.ts:255`). So `--prefix` *moves* cwd to contextus
+— defeating the exact cwd-relative resolution the advice depends on. Verified directly:
+`pnpm --prefix ~/src/claude-contextus exec node -e "process.cwd()"` from automation
+prints `…/claude-contextus`.
+
+✅ **Correct invocation — keep the project as cwd, call contextus's tsx by path:**
+```bash
+cd ~/your-project
+~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/embed-contexts.ts
+```
+This embedded the right thing: sources → `automation/.claude/context` + `automation/
+docs`, DB → `~/.contextus/data/automation`, **105 files / 937 chunks**
+(decision=78, gotcha=24, project=30, reference=345 — reclassification confirmed live,
+zero project feedback). Same fix applies to `query` (`scripts/search.ts`).
+
+✅ **Retrieval verified.** Query "how should I log messages in automation code" →
+#1 hit `decisions/decision-use-logger-helper.md` @ 0.529 (the migrated feedback→decision
+file). The migration + reclassification is end-to-end live.
+
+⚠️ **Default floor is the un-calibrated 0.7 — everything reads "below floor."** `query`
+gates on 0.7 (DESIGN default), but the automation corpus tops out at 0.529 for a
+known-good match. This is precisely why automation needs its OWN floor (plan step 5;
+≠ contextus's 0.45). At 0.45 the logger hit injects; at 0.7 nothing does. Calibration
+isn't optional polish here — without it the corpus retrieves but never *injects*.
+
+💡 **Migration stays deterministic; Haiku judgment goes in the skill, not the script.**
+Considered making the whole conversion (recategorize + generate + write) a Haiku
+subagent. Decided: keep the **mechanical** path deterministic — I/O, slug/frontmatter
+normalization, and index generation are pure, unit-tested, offline/CI-safe, and uphold
+verify-before-embed (you can't trust a corpus an LLM silently rewrote). The one place
+Haiku genuinely beats code is **recategorization** — `reclassifyFeedback` is a regex
+keyword heuristic (got 24/24 here, but brittle: a file with no pitfall keyword falls to
+the `decision` default regardless of meaning). That semantic "what question does this
+answer?" call is Haiku's lane (CLAUDE.md §5; the `/tag-context` lightweight-subagent
+pattern). Plan: the extracted `/contextus-migrate` skill drives a Haiku classifier for
+categorization + spot-checks and calls the script for the rote I/O. Best of both — the
+script never grows an API dependency, the skill adds the judgment.

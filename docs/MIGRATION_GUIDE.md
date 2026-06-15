@@ -111,43 +111,49 @@ claude plugin validate
 
 ### 2.2 Migrate Memories to Context
 
-Run the migration script from the contextus repo, pointed at your project. **Dry-run
-is the default** — there is no `--dry-run` flag; a bare run writes nothing, and
-`--apply` is what touches disk:
+Run the migration script from the contextus repo, **pointed at your project with
+`--project`**. **Dry-run is the default** — there is no `--dry-run` flag; a bare run
+writes nothing, and `--apply` is what touches disk:
 
 ```bash
 cd ~/src/claude-contextus
 
 # Dry run (DEFAULT — shows the plan, writes nothing)
-pnpm migrate-memory
+pnpm migrate-memory --project ~/your-project
 
-# Review the output, then apply
-pnpm migrate-memory --apply
+# Review the output, then apply (writes .claude/context/ + a generated CONTEXT.md)
+pnpm migrate-memory --project ~/your-project --apply
 
-# Apply + repoint plugin.json sources (stop reading from memory/, read context/)
-pnpm migrate-memory --apply --repoint
+# --repoint flips plugin.json's projectMemory source from memory/ → context/.
+# Usually a no-op now (the default already points at .claude/context).
+pnpm migrate-memory --project ~/your-project --apply --repoint
 ```
 
-> ⚠ **Current limitation:** `migrate-memory.ts` resolves `.claude/memory/` and
-> `.claude/context/` relative to the **contextus repo itself** (`__dirname`), not
-> your project's cwd. As written it migrates *contextus's own* memory, not an
-> arbitrary project's. To migrate **another** project today, either (a) copy that
-> project's `.claude/memory/` into the contextus repo, run the migration, and copy
-> `.claude/context/` back, or (b) use the personal `/contextus-migrate` skill (see
-> "Automating the migration" below), which handles cross-project paths. A
-> `--project <path>` flag for the script is a sensible follow-up.
+> Without `--project`, the script targets **contextus's own** `.claude/memory`
+> (the path defaults to the repo root). The `--project <path>` flag resolves the
+> project's `.claude/memory`/`.claude/context` from that path instead — this is the
+> only correct way to migrate another project. (Note: `--repoint` always edits the
+> *contextus* repo's plugin.json, since `config.sources` is global and resolved
+> against cwd at embed time.)
 
 **What it does:**
-- Converts `.claude/memory/slug_file.md` → `.claude/context/type/type-slug.md`
+- Converts `.claude/memory/**/slug_file.md` → `.claude/context/type/type-slug.md`
+  (recursive — legacy memory nests by topic; the converter walks the whole tree)
 - Infers `type` from filename prefix or frontmatter
-- Preserves tags
-- Normalizes frontmatter to nested `metadata` schema
+- **Reclassifies the banned `feedback` category** → decision / gotcha / reference by
+  what question the file answers (`feedback` is invalid per CATEGORIES_AND_TAGS.md §1)
+- Preserves tags (never fabricates — files with no `tags:` migrate with none)
+- Normalizes frontmatter to nested `metadata` schema (handles mixed top-level/nested
+  source schemas automatically — no need to hand-normalize first)
 - Forces filename head to match type (so prefix↔type gate passes)
+- **Generates `.claude/context/CONTEXT.md`** (grouped by category) on `--apply`
 
 **What to review:**
-- Check `.claude/context/` structure (decisions/, feedback/, reference/, etc.)
-- Spot-check a few files to ensure content is correct
-- Note any files the migration skipped (it logs these)
+- Check `.claude/context/` structure (decisions/, gotchas/, reference/, etc.)
+- Spot-check a few files to ensure the body content carried over verbatim
+- Eyeball the reclassified `feedback` files — the regex heuristic is good but not
+  perfect; a convention with no pitfall keyword defaults to `decision`
+- Note any files the migration skipped (idempotent: existing targets are skipped)
 
 ### 2.3 Scaffold Context Directory (if starting fresh)
 
@@ -167,17 +173,23 @@ This creates:
 
 ### 2.4 Embed the Corpus
 
-`embed` resolves sources from `plugin.json` **relative to the current directory**, so
-run it from the project root (or it'll embed contextus's own sources):
+`embed` resolves sources from `plugin.json` **relative to `process.cwd()`** and names
+the per-project corpus from the cwd's basename, so your project must be the cwd. Invoke
+contextus's `tsx` **by path** — do NOT use `pnpm --prefix`:
 
 ```bash
 cd ~/your-project
-pnpm --prefix ~/src/claude-contextus run embed
+~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/embed-contexts.ts
 ```
 
-> `--prefix` runs the contextus `package.json` script while keeping *your project*
-> as cwd, so `embed-contexts` scans your project's `.claude/context/` + `docs/`. (If
-> that's awkward, the `/contextus-migrate` skill wraps it.)
+> ⚠ **Do not use `pnpm --prefix ~/src/claude-contextus run embed`.** `pnpm --prefix
+> <dir> run` sets `process.cwd()` to `<dir>`, so the script resolves sources against
+> *contextus*, embeds contextus's own corpus, writes to `~/.contextus/data/
+> claude-contextus`, and prints a green `✓` — your project's files are never embedded.
+> (Verified during the automation dogfood — this was the guide's worst bug.) Calling
+> the repo-local `tsx` binary directly keeps *your project* as cwd, which is what the
+> cwd-relative source resolution actually needs. The `/contextus-migrate` skill wraps
+> this so you don't retype the path.
 
 **What to watch for:**
 - Embedding provider (Ollama vs Transformers.js) — check `plugin.json`
@@ -190,10 +202,13 @@ pnpm --prefix ~/src/claude-contextus run embed
 # Check LanceDB created the table (parent dir, not the .lance dir — see lancedb-connect-parent-dir)
 ls -la ~/.contextus/data/your-project/
 
-# Spot-check a retrieval (prints all top-k with similarity scores; no --verbose needed)
+# Spot-check a retrieval (prints all top-k with similarity scores; no --verbose needed).
+# Same cwd rule as embed — call tsx by path; `pnpm --prefix` would query the WRONG corpus.
 cd ~/your-project
-pnpm --prefix ~/src/claude-contextus run query "how do I handle X"
+~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/search.ts "how do I handle X"
 ```
+
+> **Tip:** alias the long path once — `alias ctx-query='~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/search.ts'` and `alias ctx-embed='~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/embed-contexts.ts'` — then run `ctx-query "…"` from your project dir. The `/contextus-migrate` skill bakes these in.
 
 ---
 
@@ -295,7 +310,7 @@ User: "How do I handle X?"
 
 **If nothing injects:**
 - Check daemon logs: `tail -f ~/.contextus/logs/daemon.log`
-- Check similarity scores (from the project dir): `cd ~/your-project && pnpm --prefix ~/src/claude-contextus run query "your question"`
+- Check similarity scores (from the project dir): `cd ~/your-project && ~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/search.ts "your question"`
 - Verify corpus isn't empty: `ls ~/.contextus/data/your-project/`
 
 ### 4.3 Test Awareness Footer
@@ -447,7 +462,7 @@ ls ~/.contextus/data/your-project/
 **Check query returns results:**
 ```bash
 cd ~/your-project
-pnpm --prefix ~/src/claude-contextus run query "test query"
+~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/search.ts "test query"
 # Prints the top-k with similarity scores
 ```
 
@@ -463,7 +478,7 @@ grep injectionFloor ~/src/claude-contextus/plugin.json
 default — there's no `--verbose`; raise `--k` to see more):
 ```bash
 cd ~/your-project
-pnpm --prefix ~/src/claude-contextus run query "your prompt" --k 10
+~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/search.ts "your prompt" --k 10
 ```
 
 **Tune retrieval:**

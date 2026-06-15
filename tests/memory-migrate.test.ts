@@ -8,8 +8,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   planFile,
+  planMigration,
   kebab,
   reclassifyFeedback,
+  renderContextIndex,
   type MemoryFile,
 } from '../lib/capture/memory-migrate.js';
 
@@ -130,4 +132,46 @@ test('planFile: filename head forced to equal type (prefix↔type gate will pass
   );
   const head = item.toRelPath.split('/')[1].split('-')[0];
   assert.equal(head, item.type);
+});
+
+test('renderContextIndex: groups by type, links each file, lists every entry', () => {
+  const plan = planMigration([
+    mem('decision_use_logger.md', {
+      name: 'use-logger',
+      description: 'use the logger',
+      metadata: { type: 'decision' },
+    }),
+    mem('feedback_ios_quirk.md', {
+      name: 'ios-quirk',
+      description: 'isDisplayed quirk',
+      metadata: { type: 'feedback' }, // reclassified → gotcha
+    }),
+    mem('reference_accounts.md', { name: 'accounts', description: 'where accounts live' }),
+  ]);
+  const idx = renderContextIndex(plan);
+
+  assert.match(idx, /^# Context Index/);
+  assert.match(idx, /## Decisions\n\n- \[use-logger\]\(decisions\/decision-use-logger\.md\) — use the logger/);
+  assert.match(idx, /## Gotchas\n\n- \[ios-quirk\]\(gotchas\/gotcha-ios-quirk\.md\)/);
+  assert.match(idx, /## Reference\n\n- \[accounts\]\(reference\/reference-accounts\.md\)/);
+  // every plan item appears exactly once
+  for (const it of plan) {
+    const occurrences = idx.split(`(${it.toRelPath})`).length - 1;
+    assert.equal(occurrences, 1, `${it.toRelPath} should appear once`);
+  }
+});
+
+test('renderContextIndex: unknown type lands under Other, never dropped', () => {
+  // A file whose frontmatter type isn't a known section heading.
+  const plan = planMigration([
+    mem('weird_thing.md', { name: 'weird', description: 'd', metadata: { type: 'implementation' } }),
+  ]);
+  const idx = renderContextIndex(plan);
+  // implementation IS known; assert it's placed, then synthesize a truly-unknown one.
+  assert.match(idx, /## Implementation/);
+
+  const orphan = planMigration([mem('x.md', { name: 'x', description: 'd' })]);
+  orphan[0].type = 'mystery';
+  const idx2 = renderContextIndex(orphan);
+  assert.match(idx2, /## Other\n\n- \[x\]/);
 });
