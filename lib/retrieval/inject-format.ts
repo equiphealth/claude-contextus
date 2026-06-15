@@ -17,15 +17,16 @@
 import type { RankedResult } from './reranker.js';
 
 /**
- * Bracketed header. Two jobs: (1) framing — these are retrieved resources, use if
- * useful, not user words; (2) ATTRIBUTION — a `contextus` source tag so the block
- * is unmistakable in a live session where several injectors (claude-mem, lean-ctx,
- * reminder hooks) all add "context". Without this tag an instance can't tell which
- * block came from contextus and may misattribute another system's scores to it
- * (observed in Phase-2 verification — see floor-calibration-signals memory).
+ * Bracketed header — kept terse (it's paid on every injection). Two jobs in five
+ * words: (1) ATTRIBUTION — the `contextus` tag so the block is unmistakable in a
+ * session where several injectors (claude-mem, lean-ctx, reminder hooks) all add
+ * "context"; without it an instance can misattribute another system's scores to
+ * contextus (observed in Phase-2 verification — floor-calibration-signals memory).
+ * (2) framing — "context", so it reads as a resource to use if relevant, not user
+ * words. The `[contextus —` prefix is load-bearing (tests + the CLAUDE.md stanza
+ * reference the `[contextus — …]` shape); keep it when editing the wording.
  */
-const HEADER =
-  "[contextus — retrieved from your project's context patterns; reference these if relevant]";
+const HEADER = '[contextus — relevant project context]';
 
 /** Cheap token estimate: ~4 chars/token for English. Good enough for budgeting. */
 export function estimateTokens(text: string): number {
