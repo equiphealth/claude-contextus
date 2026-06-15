@@ -98,6 +98,7 @@ export function logRetrieval(e: RetrievalLog): void {
   appendSafe(
     DAEMON_LOG_PATH,
     humanLine('INFO', `Retrieved ${e.retrieved.length} patterns`, {
+      scores: e.similarityScores.map((s) => s.toFixed(2)).join('/') || '—',
       latency: `${e.latencyMs}ms`,
       dropped: e.floorDropped.length,
       project: e.project,
