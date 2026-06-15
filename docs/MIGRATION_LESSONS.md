@@ -184,6 +184,48 @@ corpus injects at the inherited 0.45. Automation's distribution differs from
 contextus's, so `/context-calibrate --floor` will refine it (plan step 5) — but the
 system is live and injecting *now*, not blocked on calibration.
 
+---
+
+## Phase 3 — Retire the old injector (the judgment step)
+
+💡 **The "old injector" was USER-level, not project-level — and not where I first
+looked.** Initial Phase-1 audit checked the *project's* `settings.json` (none) and the
+GAP_ANALYSIS said "no hooks." Both true — but the real injector lives in
+`~/.claude/settings.json` (user-level `UserPromptSubmit`), so it fires in *every*
+project including this contextus session. **Lesson for the guide: audit user-level
+settings.json explicitly, not just project-level.** A project with "no hooks" can still
+be getting injected by a global hook.
+
+💡 **The injector blob conflated THREE concerns; only one was contextus's to replace.**
+The single `echo '{…}'` hook mixed: (a) a `Memory: used/propose/update` footer
+instruction (← contextus's awareness-hook replaces this), (b) claude-mem search guidance
+(`/mem-search`, ticket-number patterns — NOT contextus's job), and (c) a live A/B
+experiment with an explicit `expires 2026-06-17` (`[mem-value:…]`). A blunt "remove the
+hook" would have (b) lost unrelated guidance and (c) **killed a running experiment two
+days early.** The correct edit was a *surgical extraction* of only (a). This is why hook
+hygiene **must be LLM-driven, not scripted** — separating three welded concerns in one
+opaque JSON string needs judgment about what each sentence *does*; no regex is safe
+here. The mechanical halves (migrate, embed, index) are deterministic; this half is a
+guided conversation. Done with: backup first (`settings.json.bak-pre-contextus-*`),
+build a candidate, `diff` it, show the human each concern, ask, then promote.
+
+💡 **The migration is a back-and-forth, not a command (user, 2026-06-15).** Every
+genuinely tricky decision this run required *this user's specific* context: which
+category to ban, how to scope the reclassifier, whether to share the LanceDB, and above
+all which parts of a personal hook to keep. The `/contextus-migrate` skill should NOT
+try to auto-apply settings.json edits — it should drive the dialogue: detect, propose,
+diff, ask, back up, then write. The deterministic script is the skill's tool, not its
+replacement.
+
+🔭 **Follow-up — build claude-mem footer detection into `/contextus-migrate` (user
+request, 2026-06-15).** The highest-value, most error-prone step (splitting a
+claude-mem-style footer hook) is also the most *recurring*: anyone running claude-mem +
+contextus hits it. The skill could pattern-match a `UserPromptSubmit` hook carrying a
+`Memory: used/propose/update`-style footer, distinguish it from co-located search
+guidance and experiments, and *offer* exactly the surgical trim done by hand here —
+backup, diff, confirm. Detection + proposal, never silent auto-edit. Filed as a skill
+feature when `/contextus-migrate` is extracted.
+
 💡 **Migration stays deterministic; Haiku judgment goes in the skill, not the script.**
 Considered making the whole conversion (recategorize + generate + write) a Haiku
 subagent. Decided: keep the **mechanical** path deterministic — I/O, slug/frontmatter
