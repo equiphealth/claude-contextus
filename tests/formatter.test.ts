@@ -5,7 +5,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatInjection, estimateTokens } from '../lib/retrieval/inject-format.js';
+import {
+  formatInjection,
+  estimateTokens,
+  renderFooterInstruction,
+} from '../lib/retrieval/inject-format.js';
 import type { RankedResult } from '../lib/retrieval/reranker.js';
 
 function chunk(id: string, body: string, similarity = 0.5, hit_count = 0): RankedResult {
@@ -76,4 +80,24 @@ test('formatInjection: drops later chunks that blow the budget, keeps order', ()
 test('estimateTokens: ~4 chars per token', () => {
   assert.equal(estimateTokens('12345678'), 2);
   assert.equal(estimateTokens(''), 0);
+});
+
+test('renderFooterInstruction: empty input → empty string (no footer when nothing injected)', () => {
+  assert.equal(renderFooterInstruction([]), '');
+});
+
+test('renderFooterInstruction: whitelists exactly the injected files + scores', () => {
+  const s = renderFooterInstruction([chunk('a', 'x', 0.82), chunk('b', 'y', 0.51)]);
+  assert.match(s, /a\.md \(0\.82\)/);
+  assert.match(s, /b\.md \(0\.51\)/);
+  // It must instruct against fabrication — the whole point of the deterministic fix.
+  assert.match(s, /Never write a filename or score not in this list/);
+  assert.match(s, /Context: used:/);
+});
+
+test('renderFooterInstruction: a file NOT injected never appears in the instruction', () => {
+  const s = renderFooterInstruction([chunk('real-pattern', 'x', 0.6)]);
+  assert.match(s, /real-pattern\.md/);
+  // The hallucinated file from the 2026-06-15 session must not be derivable from here.
+  assert.doesNotMatch(s, /platform-aware/);
 });

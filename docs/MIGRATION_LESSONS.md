@@ -8,6 +8,61 @@ Legend: ❌ Blocker · ⚠️ Friction · ✅ Smooth · 💡 Discovery
 
 ---
 
+## Phase 5 — Real-use bugs (separate test session, 2026-06-15 PM)
+
+User tested in a live automation session ("Do we have any good selector patterns?") and
+hit three distinct issues. Ground truth from the daemon log + `search.ts` replay:
+
+❌ **CRITICAL — Claude HALLUCINATED an injection (filename + score).** First response
+footer claimed `Context: used: reference-platform-aware-locators.md (0.82)`. **That file
+does not exist**, and the daemon log shows the query actually fell *below floor* (no
+injection). Claude invented a plausible filename AND a convincing score, then — when
+pressed — first *rationalized* it ("working as designed, navigation not document-
+dumping") before finally catching its own confabulation. Root cause is partly OUR
+design: the awareness footer *instructs* Claude to write `Context: used: <file>
+(<score>)` from memory, with no ground-truth check — so when nothing injected, the
+instruction invites a fabricated footer. **The score we added this session made the
+hallucination more authoritative-looking (0.82 reads as real data).** Fix candidates:
+(a) the footer should be emitted/validated against what the daemon actually returned
+(query-hook knows the real injected filenames+scores — pass them to the awareness hook,
+or have the awareness hook read the daemon's last-injection record, rather than asking
+Claude to recite); (b) at minimum, instruct Claude to write the footer ONLY from the
+`[contextus — …]` block actually present in its context, and omit it if absent. This is
+the inverse of attribution — we made contextus *legible*, now we must make it
+*truthful*. **High priority — a confidently-wrong provenance footer is worse than none.**
+
+✅ **FIXED (2026-06-15) — deterministic, hallucination-proof-by-construction.** Moved
+the `used:` footer instruction OUT of the awareness hook (which is blind to injection)
+and INTO the daemon's injection block (`renderFooterInstruction`, appended to
+`additionalContext`). It (1) only exists when injection did, and (2) whitelists the
+EXACT injected filenames+scores, instructing "use ONLY these; never write a filename or
+score not in this list." The awareness hook now does `propose:` only. Verified live: an
+injecting query carries the whitelist (real files, e.g. `selectors.md (0.46)` — which
+the test session wrongly thought contextus "won't inject"); a no-injection query carries
+**no `additionalContext` at all**, so there's nothing to fabricate from. The hallucinated
+`reference-platform-aware-locators.md` is now structurally underivable. Tests added in
+`formatter.test.ts` (empty→empty, whitelist scoping, no-fabrication).
+
+💡 **Dilution CONFIRMED live — filler words pushed a good hit under the floor.**
+Replayed the exact query vs. a sharpened one against the real corpus:
+- `"Do we have any good selector patterns?"` → top **0.4475** ❌ (misses 0.45 floor by
+  0.0025)
+- `"selector patterns"` → top **0.5635** ✅ injects
+Same corpus, same intent; the chatty phrasing dropped the top score **0.116** and killed
+the injection. This is the exact single-vector mean-pooling dilution predicted in
+`reference-query-is-single-vector-dilution.md` — now with a live repro. Strengthens the
+case for the V2 query-transformation item (boilerplate-strip would have saved this one).
+
+⚠️ **Automation's floor (inherited 0.45) is mis-calibrated for its distribution.** Real
+selector queries top out ~0.45–0.56; `docs/selectors.md` itself surfaced at rank 3–4
+(0.385) — relevant but well under floor. The plan always said automation needs its OWN
+`/context-calibrate --floor` (≠ contextus's 0.45); this is the proof. The
+"navigation/breadcrumb" behavior the test session described IS a real design intent, but
+it didn't happen here — the doc was retrieved and floor-dropped, not deliberately
+withheld.
+
+---
+
 ## Phase 1 — Audit
 
 ✅ **Gotcha pre-flight all held.** Every gotcha the memories warned about checked out
