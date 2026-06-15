@@ -6,7 +6,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planFile, kebab, type MemoryFile } from '../lib/capture/memory-migrate.js';
+import {
+  planFile,
+  kebab,
+  reclassifyFeedback,
+  type MemoryFile,
+} from '../lib/capture/memory-migrate.js';
 
 function mem(filename: string, data: Record<string, unknown>, body = 'body text'): MemoryFile {
   return { filename, data, body };
@@ -32,9 +37,9 @@ test('planFile: legacy decision_ file → decisions/decision-<slug>.md', () => {
 
 test('planFile: target frontmatter uses nested metadata schema', () => {
   const item = planFile(
-    mem('feedback_x.md', { name: 'x', description: 'd', metadata: { type: 'feedback' } })
+    mem('decision_x.md', { name: 'x', description: 'd', metadata: { type: 'decision' } })
   );
-  assert.match(item.content, /metadata:\n {2}type: feedback/);
+  assert.match(item.content, /metadata:\n {2}type: decision/);
   assert.match(item.content, /^---\n/);
 });
 
@@ -73,6 +78,50 @@ test('planFile: never double-prefixes the slug (decision- under type decision)',
   );
   assert.equal(item.slug, 'foo');
   assert.equal(item.toRelPath, 'decisions/decision-foo.md');
+});
+
+test('reclassifyFeedback: pitfall language → gotcha', () => {
+  const g = reclassifyFeedback(
+    mem('feedback_ios_quirk.md', {
+      name: 'ios-isdisplayed-quirk',
+      description: 'iOS isDisplayed() can return false for visually present elements',
+    })
+  );
+  assert.equal(g.type, 'gotcha');
+});
+
+test('reclassifyFeedback: AI-process meta → reference', () => {
+  const r = reclassifyFeedback(
+    mem('feedback_check_claude_mem_first.md', {
+      name: 'check-claude-mem-first',
+      description: 'Search claude-mem for related past work before diving into code',
+    })
+  );
+  assert.equal(r.type, 'reference');
+});
+
+test('reclassifyFeedback: resolved convention → decision (default)', () => {
+  const d = reclassifyFeedback(
+    mem('feedback_use_logger.md', {
+      name: 'use-logger-helper',
+      description: 'Always use getLogger() helper instead of console.log',
+    })
+  );
+  assert.equal(d.type, 'decision');
+});
+
+test('planFile: banned feedback type is reclassified, never emitted as feedback', () => {
+  const item = planFile(
+    mem('feedback_use_logger.md', {
+      name: 'use-logger-helper',
+      description: 'Always use getLogger() helper',
+      metadata: { type: 'feedback' },
+    })
+  );
+  assert.notEqual(item.type, 'feedback');
+  assert.equal(item.type, 'decision');
+  assert.equal(item.toRelPath, 'decisions/decision-use-logger-helper.md');
+  assert.doesNotMatch(item.content, /type: feedback/);
 });
 
 test('planFile: filename head forced to equal type (prefix↔type gate will pass)', () => {

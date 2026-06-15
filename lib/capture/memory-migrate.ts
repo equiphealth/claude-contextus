@@ -50,7 +50,6 @@ export interface MigrationPlanItem {
 /** Folder per category. Defaults to the type name when not specially mapped. */
 const TYPE_FOLDER: Record<string, string> = {
   decision: 'decisions',
-  feedback: 'feedback',
   reference: 'reference',
   project: 'project',
   implementation: 'implementation',
@@ -89,15 +88,45 @@ function readMeta(data: Record<string, unknown>): { type?: string; tags: string[
 }
 
 /**
+ * Reclassify the banned `feedback` category into a real semantic role.
+ *
+ * `feedback` describes provenance ("this came from feedback"), not retrieval
+ * intent — CATEGORIES_AND_TAGS.md §1 calls it invalid ("method, not meaning").
+ * Legacy memory leaned on it as a catch-all, so on migration we re-home each file
+ * by what question it actually answers:
+ *   - gotcha    → a pitfall / quirk / instability ("what went wrong?")
+ *   - reference → AI-workflow meta (memory/doc process, not domain knowledge)
+ *   - decision  → a resolved convention ("what did we choose?") — the default,
+ *                 since most feedback is "always use X / don't use Y".
+ */
+export function reclassifyFeedback(file: MemoryFile): { type: string; note: string } {
+  const name = typeof file.data.name === 'string' ? file.data.name : '';
+  const desc = typeof file.data.description === 'string' ? file.data.description : '';
+  const hay = `${file.filename} ${name} ${desc} ${file.body.slice(0, 200)}`.toLowerCase();
+
+  // Pitfall language → gotcha (something bites you if you don't know it).
+  const GOTCHA = /quirk|pitfall|footgun|gotcha|crash|instabilit|flak|timeout|inconsistent|unstable|do ?n['o]t await|returns? false|can return|expects? .*not|distinguish|troubleshoot/;
+  // AI-process / workflow meta → reference (not domain knowledge to act on).
+  const REFERENCE = /proactive|claude-?mem|memory file|document(ing|ation) (investigation|belongs)|search .*before|ai assistant|ai docs/;
+
+  if (GOTCHA.test(hay)) return { type: 'gotcha', note: `feedback→gotcha (pitfall language)` };
+  if (REFERENCE.test(hay)) return { type: 'reference', note: `feedback→reference (AI-process meta)` };
+  return { type: 'decision', note: `feedback→decision (resolved convention)` };
+}
+
+/**
  * Infer the semantic type. Prefer explicit frontmatter `type`; else the filename
  * prefix before the first `_`/`-` (legacy `decision_foo.md`). Falls back to
- * `reference` (the most neutral known category) with a note.
+ * `reference` (the most neutral known category) with a note. The banned
+ * `feedback` category (whether from frontmatter or filename) is reclassified.
  */
 function inferType(file: MemoryFile, frontmatterType?: string): { type: string; note?: string } {
+  if (frontmatterType === 'feedback') return reclassifyFeedback(file);
   if (frontmatterType && (KNOWN_CATEGORY_PREFIXES as readonly string[]).includes(frontmatterType)) {
     return { type: frontmatterType };
   }
   const head = file.filename.replace(/\.md$/, '').split(/[-_]/)[0];
+  if (head === 'feedback') return reclassifyFeedback(file);
   if ((KNOWN_CATEGORY_PREFIXES as readonly string[]).includes(head)) {
     return { type: head, note: `type inferred from filename prefix '${head}'` };
   }

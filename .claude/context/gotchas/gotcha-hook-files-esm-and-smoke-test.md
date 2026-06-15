@@ -2,7 +2,7 @@
 name: hook-files-esm-and-smoke-test
 description: Hook .js files must be ESM (repo is type:module) AND be smoke-tested by executing the file via stdin, not just unit-testing imported functions
 metadata:
-  type: feedback
+  type: gotcha
   tags: [hooks, esm, testing, phase-6]
 ---
 

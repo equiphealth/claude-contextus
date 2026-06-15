@@ -2,7 +2,7 @@
 name: opus-metrics-critique
 description: Opus feedback on contextus design - tokens saved is vanity metric, need real quality measurement
 metadata:
-  type: feedback
+  type: reference
 ---
 
 Opus reviewed contextus design (docs/opus_feedback.txt) and identified critical issues:

@@ -2,7 +2,7 @@
 name: stage-explicit-paths
 description: Never `git add -A` — stage only the explicit paths you changed, so unrelated working-tree edits don't get swept into the commit
 metadata:
-  type: feedback
+  type: decision
   tags: [git, commit, hygiene]
 ---
 

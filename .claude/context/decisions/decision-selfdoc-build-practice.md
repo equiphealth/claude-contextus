@@ -2,7 +2,7 @@
 name: selfdoc-build-practice
 description: How Claude should self-document during the build — verify before embedding, one ledger
 metadata:
-  type: feedback
+  type: decision
 ---
 
 **Guidance**: When authoring `.claude/context/` files during the contextus build, treat them as corpus, not diary.

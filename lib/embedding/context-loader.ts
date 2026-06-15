@@ -27,8 +27,9 @@ export const KNOWN_CATEGORY_PREFIXES = [
   'schema',
   'security',
   'perf',
-  // legacy memory types still present pre-migration
-  'feedback',
+  // legacy memory types still present pre-migration. `feedback` is BANNED
+  // (CATEGORIES_AND_TAGS.md §1: provenance, not meaning) — migrate-memory's
+  // reclassifyFeedback re-homes it to decision/gotcha/reference on conversion.
   'reference',
   'implementation',
 ] as const;
