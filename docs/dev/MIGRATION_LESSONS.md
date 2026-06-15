@@ -8,6 +8,47 @@ Legend: ❌ Blocker · ⚠️ Friction · ✅ Smooth · 💡 Discovery
 
 ---
 
+## Phase 8 — The "re-embedding 1" phantom RETURNS (different cause) + resilience (2026-06-15 PM)
+
+User still saw "re-embedding 1 every session" after the Phase-6 glob fix — but a
+DIFFERENT cause. The phantom was `reference-skill-cli-bridge-pattern.md`, created
+**in the user's automation session** with stale frontmatter: top-level `type: pattern`
+(invalid — `pattern` isn't a category) + a `category:` field, instead of nested
+`metadata.type: reference`. Three layered problems:
+
+❌→✅ **One malformed file ABORTED the entire embed** (`process.exit(1)` on any
+prefix/type mismatch → embedded nothing) AND reconcile re-proposed it as "new" every
+session (it fails its own gate, never lands). **Fixed (resilience):** embed now
+QUARANTINES bad files — skips them, embeds the rest, reports loudly (`⚠ Skipping 1
+file…` then `✓ Embedded 922 chunks (102 files)`). reconcile (both the runner and the
+daemon's `check` dry-run) filters the same mismatches so they stop showing as perpetual
+"new"; the check response carries a `quarantined: [relPath]` list, and session-start
+surfaces it (`N file(s) can't embed — prefix disagrees with metadata.type: …`). Verified:
+check → `state: fresh, quarantined: [bad file]`.
+
+💡 **ROOT CAUSE — contextus helped create the bad file (user's real concern).** Nothing
+in contextus *emits* `type: pattern` — but `/create-context` **never specified the
+frontmatter schema** (107 lines, zero frontmatter examples; its examples even used the
+banned `feedback_` naming). So Claude improvised the shape and invented `type: pattern`.
+Same class as the hallucinated footer: a skill asking for structured output without
+pinning the structure. **Fixed:** added a "File format (MUST match exactly)" section to
+the skill — canonical nested-metadata template, the 12 valid `metadata.type` values
+(explicitly "`pattern`/`note`/`misc`/`feedback` are NOT valid"), the
+`<category>/<type>-<slug>.md` filename rule. Updated all 10 stale `feedback_` examples.
+
+🔭 **DEEPER QUESTION (user): "how do we know we covered enough categories?"** We don't —
+the 12 categories are an a-priori design, never validated against real corpora, with no
+feedback loop. `type: pattern` may be the corpus VOTING for a gap, not a typo; and
+`reference` is becoming a catch-all (32/56 automation files). Filed as V2_ROADMAP
+"Evidence-driven category taxonomy": instrument rejected types + per-category
+distribution so the taxonomy is falsifiable by usage (measure-don't-assume, à la the
+opus-metrics-critique). Plus the new-category PATH gap: `KNOWN_CATEGORY_PREFIXES` is a
+hardcoded const with no registration route, so a legit new category and a typo both
+abort identically. User's UX sketch for the fix: *"Creating memory… category doesn't
+exist. Create new, or choose: x / y / z."* — skill validates the type up-front against
+the (future config-driven) list, refuses unknowns in-session, offers the deliberate
+add-or-pick choice. All v2 (needs the rejection-logging data first).
+
 ## Phase 7 — Full A–D battery via self-driven `claude -p` harness (2026-06-15 PM, floor 0.40)
 
 Ran the A–D tests end-to-end through `scripts/test-retrieval.sh` (real `claude -p` +

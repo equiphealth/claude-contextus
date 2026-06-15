@@ -37,7 +37,7 @@ import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
-import { loadContexts } from '../lib/embedding/context-loader.js';
+import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { getContentHashes } from '../lib/storage/lance-client.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
@@ -324,8 +324,14 @@ async function handleReconcile(
 
   // Dry-run: report the corpus state without touching anything.
   if (check) {
-    const contexts = await loadContexts(contextDir);
+    const allContexts = await loadContexts(contextDir);
     const exists = await tableExists(project);
+    // Quarantine prefix/type-mismatch files — MUST match runReconcile, or they'd
+    // show as perpetual "new" here (the "re-embedding 1 forever" phantom). Report
+    // the count so session-start can surface "N file(s) can't embed — fix them".
+    const quarantined = findPrefixTypeMismatches(allContexts).map((m) => m.relPath);
+    const badPaths = new Set(quarantined);
+    const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
     // Scope to projectContext — MUST match runReconcile (which only manages the
     // context source). Unfiltered, doc/user-pack rows (which refresh on a full
     // embed, not via reconcile) look like orphans of the context dir → bogus
@@ -342,6 +348,7 @@ async function handleReconcile(
       newCount: plan.toEmbedNew.length,
       changedCount: plan.toEmbedChanged.length,
       removeCount: plan.toRemove.length,
+      quarantined, // relPaths of files that can't embed (bad prefix/type) — surface these
     });
   }
 

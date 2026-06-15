@@ -16,7 +16,7 @@
  * automatically every session).
  */
 
-import { loadContexts } from './context-loader.js';
+import { loadContexts, findPrefixTypeMismatches } from './context-loader.js';
 import { embedDocuments } from './embedder.js';
 import { embedSingleFile } from './embed-file.js';
 import { planChunks, buildRows } from './file-to-rows.js';
@@ -45,7 +45,14 @@ export async function runReconcile(
   contextDir: string,
   projectName?: string
 ): Promise<ReconcileResult> {
-  const contexts = await loadContexts(contextDir);
+  const allContexts = await loadContexts(contextDir);
+  // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
+  // so if reconcile kept them in the disk set planReconcile would mark them "new"
+  // EVERY session — the "re-embedding 1 forever" phantom (observed 2026-06-15 with a
+  // stray `type: pattern`). Drop them here so reconcile and embed agree; they simply
+  // don't inject until fixed. A full `pnpm run embed` reports them loudly.
+  const badPaths = new Set(findPrefixTypeMismatches(allContexts).map((m) => m.relPath));
+  const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
   const exists = await tableExists(projectName);
   // Reconcile manages ONLY the projectContext source — doc/user packs refresh on a
   // full `pnpm run embed`, so scoping the hash map keeps reconcile from seeing

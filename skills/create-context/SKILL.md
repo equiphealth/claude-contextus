@@ -21,12 +21,41 @@ You don't choose — it chooses for you.
 # Force create new (skip similarity check)
 /create-context "topic" "content" --force-new
 
-# Specify category
-/create-context "topic" "content" --category framework
-
-# Specify type
+# Specify type (= category; one of the valid values below)
 /create-context "topic" "content" --type decision
 ```
+
+## File format (MUST match exactly — the embed gate rejects anything else)
+
+A created file uses this frontmatter. Do **not** improvise the shape — a wrong schema
+(e.g. top-level `type:`, a `category:` field, or an invalid type like `pattern`) fails
+the prefix↔type gate and **aborts the whole embed**:
+
+```markdown
+---
+name: <kebab-slug>
+description: <one line — strong topical signal, gets embedded>
+metadata:
+  type: <one of the valid categories below>
+  tags: [optional, comma, list]
+---
+
+<body>
+```
+
+**Valid `metadata.type` values (the ONLY ones — `pattern`/`note`/`misc`/`feedback` are
+NOT valid):**
+`arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`,
+`security`, `perf`, `reference`, `implementation`.
+
+**Filename MUST be `<category>/<type>-<slug>.md`** — the folder and the filename prefix
+both equal `metadata.type` (e.g. `decisions/decision-use-logger-helper.md`,
+`gotchas/gotcha-ios-isdisplayed-quirk.md`). The filename prefix and `metadata.type` must
+agree or the file won't embed. (Rules: see CATEGORIES_AND_TAGS.md.)
+
+> Pick the category by *what question the file answers* — `decision-` "what did we
+> choose?", `gotcha-` "what bites you?", `reference-` "where/how does X work?". When
+> unsure, `reference` is the safe neutral choice. Never `pattern` (not a category).
 
 ## How It Works
 
@@ -36,7 +65,7 @@ You don't choose — it chooses for you.
 /create-context "use logger helper" "Always use getLogger() for logging"
 
 → Semantic search existing context files
-→ Found: framework/feedback_use_logger_helper.md (similarity: 0.94)
+→ Found: decisions/decision-use-logger-helper.md (similarity: 0.94)
 → Decision: UPDATE existing (very similar)
 → Routes to /update-context automatically
 ```
@@ -49,7 +78,7 @@ You don't choose — it chooses for you.
 → Semantic search existing context files
 → No similar context found (best match: 0.42)
 → Decision: CREATE new
-→ Creates sdk/feedback_sdk_encryption.md
+→ Creates decisions/decision-sdk-password-encryption.md
 ```
 
 ### 3. Threshold Logic
@@ -66,7 +95,7 @@ When similarity is 0.75-0.89:
 
 ```
 Found similar context:
-  framework/feedback_typescript_patterns.md (similarity: 0.82)
+  decisions/decision-typescript-patterns.md (similarity: 0.82)
   "TypeScript conventions and best practices"
   Last modified: 2 months ago
 
@@ -81,7 +110,7 @@ Is this about the same topic?
 ```
 /create-context "logger usage" "Use getLogger()..."
 
-→ Found framework/feedback_use_logger_helper.md (0.96)
+→ Found decisions/decision-use-logger-helper.md (0.96)
 → Automatically invoking /update-context
 → Opening editor with existing content...
 → [You add new information to existing context]
@@ -94,7 +123,7 @@ Is this about the same topic?
 
 → No similar context (best: 0.41)
 → Creating new context file...
-→ Created framework/feedback_new_pattern.md
+→ Created reference/reference-new-pattern.md
 ```
 
 ## Footer Integration
@@ -146,11 +175,11 @@ Claude: Context: propose: test-framework-change
 
 /create-context "test-framework-change" "Switched from Jest to Vitest..."
 
-→ Found: framework/feedback_use_jest.md (similarity: 0.93)
+→ Found: decisions/decision-use-jest.md (similarity: 0.93)
 → Routing to /update-context...
 → Opening editor with Jest context...
 → [You update "Jest" → "Vitest" throughout]
-→ ✓ Updated framework/feedback_use_vitest.md
+→ ✓ Updated decisions/decision-use-vitest.md
 ```
 
 ### Workflow 2: New Context
@@ -162,9 +191,9 @@ Claude: Context: propose: sdk-encryption-pattern
 /create-context "sdk-encryption-pattern" "SDK users must encrypt passwords..."
 
 → Searching existing context files...
-→ Best match: sdk/reference_sdk_helper.md (similarity: 0.54)
+→ Best match: reference/reference-sdk-helper.md (similarity: 0.54)
 → Not similar enough, creating new context file
-→ Created sdk/feedback_sdk_encryption.md
+→ Created decisions/decision-sdk-password-encryption.md
 → ✓ Added to CONTEXT.md index
 ```
 
@@ -173,7 +202,7 @@ Claude: Context: propose: sdk-encryption-pattern
 ```
 /create-context "error handling" "Use try-catch for API calls"
 
-→ Found: framework/feedback_error_logging.md (similarity: 0.79)
+→ Found: gotchas/gotcha-error-logging.md (similarity: 0.79)
 → Similar, but not identical. What would you like to do?
 
 [1] Update existing context (add API error handling section)
@@ -181,7 +210,7 @@ Claude: Context: propose: sdk-encryption-pattern
 [3] Show me the existing context first
 
 → [User picks 2]
-→ Creating framework/feedback_api_error_handling.md
+→ Creating reference/reference-api-error-handling.md
 ```
 
 ## Related Skills
