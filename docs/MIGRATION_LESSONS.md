@@ -16,6 +16,26 @@ Legend: ❌ Blocker · ⚠️ Friction · ✅ Smooth · 💡 Discovery
 finding #3. Smooth ramp (median #1↔#2 sep 0.020) → no clean signal/noise gap, as
 expected. User hasn't applied yet (`--floor --apply` pending their call).
 
+💡 **"Screen patterns" query (3rd test) — floor-too-high demonstrated live, no new
+bug.** User asked "Screen patterns"; contextus injected only `writing-specs.md (0.49)`
+(a legitimate "# Patterns — use the POM" chunk, but generic), while the screen-specific
+`gotcha-screen-component-constructor-pattern.md` sat at rank #2 (**0.418**) — under the
+0.45 floor — and didn't inject. Diagnosis (replayed):
+- **Cleared `writing-specs.md` of being a catch-all** — it does NOT surface for unrelated
+  queries (test data / logging / git → not in top 5). Its win here is legit, just less
+  *specific* than the dropped gotcha 0.07 below it.
+- **At floor 0.40, the query is FIXED**: the screen gotcha (0.418) + screen-component
+  template (0.416) both clear 0.40 — the exact content Claude wanted. Concrete proof that
+  applying the calibrated 0.40 resolves real misses, not just abstract coverage %.
+- **Smooth-ramp wrinkle:** 0.40 also admits `decision-use-logger-helper` (0.402),
+  irrelevant to screens. Net still a win (3 relevant + 1 noise > 1 generic alone), but a
+  textbook motivating case for the **v2 relative-separation gate** — it'd keep the
+  0.41–0.42 cluster and cut the lone 0.40 outlier, which an absolute floor can't.
+- **Dilution again:** "Screen patterns" (2 words) → 1 hit clears floor; "screen class
+  patterns and page object model conventions" → **5 clear** (top 0.658). Terse prompts
+  suppress breadth, not just the top score.
+**Action: this is the unapplied floor (0.45→0.40), demonstrated. No code change.**
+
 ⚠️ **But the calibration skill FLAILED for ~3 min on stale knowledge.** The transcript
 shows it hit Node22/pnpm, `embed --project` not working, and plugin.json-location
 confusion — rediscovering, live, the exact gotchas we fixed in MIGRATION_GUIDE. The
