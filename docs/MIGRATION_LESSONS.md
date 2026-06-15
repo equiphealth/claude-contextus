@@ -244,8 +244,15 @@ Validation Needed" (*does user-message prepend make thinking reference context
 clearly?*) — answered YES. Validates the **entire chain end-to-end**: migrate →
 reclassify (feedback→decision; the injected pattern shows as `[decision]`) → embed (right
 corpus via the tsx-by-path fix) → retrieve (0.529) → gate (0.45 floor) → inject → thinking
-*uses* it. Also: **no double-footer**, confirming the injector trim. Footer-on-exit
-(`Context: used:`) still to be confirmed.
+*uses* it. Also: **no double-footer**, confirming the injector trim.
+
+✅ **Awareness footer confirmed — final checkbox.** The logger response closed with
+`Context: used: decision-use-logger-helper.md` — exactly the awareness-hook output, and
+the rendered answer faithfully reproduced the migrated pattern (getLogger import, the
+why, the never-use-console rule). **Every validation-plan checkbox is now green:**
+daemon reuse, background auto-reconcile, injection-in-thinking (by name + full
+structure), reclassification live (`[decision]`), no double-footer, and the
+`Context: used:` footer. The automation migration is functionally proven end-to-end.
 
 ❌→⚠️ **The `/contextus-setup` nudge MISFIRES on a migrated project (finding).**
 Third session-start message: *"run /contextus-setup to scaffold `.claude/context/` and
@@ -257,12 +264,34 @@ never *registers* the project, while only `contextus-setup` writes the stanza. *
 paths don't converge:** a fully-migrated project falls in the crack — works perfectly,
 but nags forever, and the wording ("scaffold `.claude/context/`") is actively wrong when
 that dir is already populated. Does NOT block injection (query-hook retrieves by project
-basename, stanza-independent). **Fixes to consider:** (a) `migrate-memory --apply` should
-write the CLAUDE.md stanza too (converge the paths), or (b) the nudge should distinguish
-"no stanza BUT `.claude/context/` populated" (→ *"contextus is active here; add the
-CLAUDE.md stanza with /contextus-setup to silence this"*) from "nothing exists" (→
-current scaffold message). (a) is cleaner — migration should leave a project as
-"registered" as setup does.
+basename, stanza-independent). **Fixes to consider:** (a) ~~`migrate-memory --apply` should
+write the CLAUDE.md stanza too~~ — **REJECTED, see below**; (b) the nudge should
+distinguish "no stanza BUT `.claude/context/` populated" (→ *"contextus is active here;
+add the CLAUDE.md stanza with /contextus-setup to silence this"*) from "nothing exists"
+(→ current scaffold message). **(b) is the right fix** — a content-aware nudge, not an
+auto-write.
+
+❌ **CLAUDE.md is a propose-and-PR step, NOT an auto-write — a real project's CLAUDE.md
+already documents the OLD system (user, 2026-06-15).** My first instinct (have
+`migrate-memory` append the contextus stanza) is **wrong** for any real project.
+Automation's CLAUDE.md has a 50-line **"Shared Team Memory System"** section (lines
+32-81) plus scattered references — explicit, version-controlled, *team-facing*
+instructions to use `.claude/memory/` + `MEMORY.md` + `/create-memory`. Auto-appending a
+contextus stanza would produce a CLAUDE.md that **contradicts itself** (use memory/ AND
+contextus auto-injects from context/) — worse than the nudge. Three reasons migration
+must NOT touch CLAUDE.md automatically:
+1. **Shared + version-controlled + team-facing** — editing it is a team decision + a PR,
+   not a migration side-effect. A tool silently rewriting a checked-in team doc is the
+   exact overreach we said migration shouldn't do (cf. the hook trim being LLM+human).
+2. **Not all of it is obsolete** — lines 66/98 point at claude-mem + proactive-doc
+   workflows that SURVIVE the migration (same reason we kept claude-mem search guidance
+   in the hook). It's a surgical edit distinguishing replaced-vs-kept, not a delete.
+3. **Still partly TRUE during coexistence** — the plan keeps `.claude/memory/`
+   read-only for 1-2 weeks, so the memory section is accurate-ish until you commit.
+   Rewriting it now is premature.
+**Conclusion:** the `/contextus-migrate` skill (and `contextus-setup`) should *propose* a
+CLAUDE.md diff for human review + PR, never auto-write — and only at the *commit* phase,
+not at migration time. This is hook-hygiene's twin: judgment + mechanical, LLM-driven.
 
 🔭 **Follow-up B — claude-mem as a content *source*, not just a hook to clean up (user
 clarification, 2026-06-15).** The deeper idea: detect claude-mem and **piggyback off its
