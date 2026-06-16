@@ -47,12 +47,15 @@ decision):
 /contextus-setup                  # set up the current project
 ```
 
-Engine (dev/direct):
+Engine (dev/direct). Run the repo-local `tsx` **by path** — NOT `pnpm` (the
+contextus repo needs Node 22 and your shell may be on a different Node, so `pnpm`
+errors out):
 
 ```bash
-pnpm contextus-setup              # current project (cwd)
-pnpm contextus-setup --dir <path> # a specific project root
-pnpm contextus-setup --no-embed   # scaffold + stanza only, skip embedding
+cd <target-project>   # the project to set up (cwd = its corpus)
+~/src/claude-contextus/node_modules/.bin/tsx \
+  ~/src/claude-contextus/scripts/contextus-setup.ts              # current project (cwd)
+# flags: --dir <path> (a specific project root) · --no-embed (scaffold + stanza only)
 ```
 
 ## Idempotency
