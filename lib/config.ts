@@ -177,10 +177,30 @@ let _config: ContextusConfig | null = null;
 /** Per-project merged configs, keyed by project name. */
 const _projectConfig = new Map<string, ContextusConfig>();
 
-/** Locate plugin.json (repo root is one level up from lib/). */
+/**
+ * Locate plugin.json across all three layouts. The `..`-from-lib assumption broke
+ * once the daemon ran COMPILED: as `dist/lib/config.js`, `..` is `dist/` (no
+ * plugin.json) → silent fallback to DEFAULTS (wrong provider). So resolve robustly:
+ *   1. $CLAUDE_PLUGIN_ROOT/plugin.json  — the packaged/installed plugin (authoritative)
+ *   2. walk up from this module's dir   — covers dev (lib/) AND built (dist/lib/)
+ * Returns null only if no plugin.json exists anywhere up the tree (true standalone).
+ */
 function findPluginJson(): string | null {
-  const candidate = path.resolve(__dirname, '..', 'plugin.json');
-  return fs.existsSync(candidate) ? candidate : null;
+  const fromEnv = process.env.CLAUDE_PLUGIN_ROOT
+    ? path.join(process.env.CLAUDE_PLUGIN_ROOT, 'plugin.json')
+    : null;
+  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+
+  // Walk up from __dirname until we find a plugin.json (handles lib/ and dist/lib/).
+  let dir = __dirname;
+  for (let i = 0; i < 5; i++) {
+    const candidate = path.join(dir, 'plugin.json');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // hit filesystem root
+    dir = parent;
+  }
+  return null;
 }
 
 /** Apply a raw `config` object (plugin.json or an override file) onto `merged`. */

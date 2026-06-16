@@ -27,7 +27,11 @@ export const BASE_URL = `http://127.0.0.1:${PORT}`;
 const RUNTIME_DIR = path.join(os.homedir(), '.contextus', 'runtime');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
 const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
+// Two launch targets per process: the compiled JS (shipped/packaged) and the
+// TypeScript source (dev, run via tsx). resolveLaunch() picks per-process.
+const DAEMON_JS = path.join(REPO_ROOT, 'dist', 'daemon', 'server.js');
 const DAEMON_TS = path.join(REPO_ROOT, 'daemon', 'server.ts');
+const EVAL_WORKER_JS = path.join(REPO_ROOT, 'dist', 'daemon', 'eval-worker.js');
 const EVAL_WORKER_TS = path.join(REPO_ROOT, 'daemon', 'eval-worker.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
@@ -75,12 +79,24 @@ export async function getHealth(timeoutMs = 1000) {
   }
 }
 
-/** Spawn a detached tsx process (daemon or eval worker) that outlives the hook. */
-function spawnDetached(scriptTs) {
-  // Prefer the repo-local tsx binary; fall back to `npx tsx` if it's missing.
+/**
+ * Resolve how to launch a daemon process. Prefers the COMPILED JS
+ * (`node dist/daemon/X.js`) — the packaged/shipped path, no tsx at runtime. Falls
+ * back to `tsx X.ts` only when the build is absent (dev working in the repo before
+ * `npm run build`). Returns { cmd, args } for spawn().
+ */
+function resolveLaunch(jsPath, tsPath) {
+  if (fs.existsSync(jsPath)) {
+    return { cmd: process.execPath, args: [jsPath] }; // node dist/.../X.js
+  }
+  // Dev fallback: no build present → run the .ts via tsx (repo-local, else npx).
   const useBin = fs.existsSync(TSX_BIN);
-  const cmd = useBin ? TSX_BIN : 'npx';
-  const args = useBin ? [scriptTs] : ['tsx', scriptTs];
+  return useBin ? { cmd: TSX_BIN, args: [tsPath] } : { cmd: 'npx', args: ['tsx', tsPath] };
+}
+
+/** Spawn a detached daemon process that outlives the hook. */
+function spawnDetached(jsPath, tsPath) {
+  const { cmd, args } = resolveLaunch(jsPath, tsPath);
   const child = spawn(cmd, args, {
     cwd: REPO_ROOT,
     detached: true,
@@ -92,13 +108,13 @@ function spawnDetached(scriptTs) {
 
 /** Spawn the daemon + the background eval worker, both detached. */
 function spawnDaemon() {
-  spawnDetached(DAEMON_TS);
+  spawnDetached(DAEMON_JS, DAEMON_TS);
   // The eval worker is a separate, idle-cheap process: it polls the eval queue
   // and only does work during a calibration campaign. Spawning it here means a
   // started campaign needs no manual worker launch. Its own EADDR-free design +
   // queue truncation make a duplicate spawn harmless (worst case: two pollers
   // racing a tiny file, last-write-wins on truncate).
-  spawnDetached(EVAL_WORKER_TS);
+  spawnDetached(EVAL_WORKER_JS, EVAL_WORKER_TS);
 }
 
 /**
