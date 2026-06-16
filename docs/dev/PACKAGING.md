@@ -60,31 +60,55 @@ The documented way for a dep-heavy plugin:
 
 ## The v1.1 work, concretely
 
-- [ ] Add the `SessionStart` dep-install step (`package.json` diff → install into
-      `${CLAUDE_PLUGIN_DATA}`). Must run BEFORE `ensureDaemonRunning`.
-- [ ] **Drop the `tsx` runtime requirement** — `${CLAUDE_PLUGIN_ROOT}` is ephemeral
-      and shouldn't be compiled into. Either (a) commit a `dist/` build and run the
-      daemon as `node dist/daemon/server.js`, or (b) make `tsx` one of the managed
-      `${CLAUDE_PLUGIN_DATA}` deps. (a) is cleaner — no tsx at runtime at all.
-- [ ] `daemon-control.js`: spawn with `NODE_PATH` / resolved `dist` paths instead of
-      `REPO_ROOT/node_modules/.bin/tsx`.
-- [ ] First-run install latency: surface it via the existing systemMessage verbosity
-      ("installing dependencies, first launch only…").
-- [ ] Toolchain caveat in README: target needs Node + a build toolchain for the native
-      `@lancedb` bindings; on HF-blocked networks the transformers path still needs the
-      model-fetch workaround (see embedding-download-risk).
-- [ ] A `marketplace.json` / publish flow. **Acceptance spec (from `docs/quick-start.md`,
-      written document-driven):** these exact commands must work for an end user:
-      ```text
-      /plugin marketplace add anthonypdawson/claude-contextus
-      /plugin install contextus@claude-contextus
-      ```
-      Requires `.claude-plugin/marketplace.json` at the repo root with `name:
-      "claude-contextus"` (the marketplace id after `@`) and a plugin entry `name:
-      "contextus"` (the now-renamed plugin) pointing at `source: "."`. After install,
-      hooks must fire automatically (no enable step), the daemon must spawn via the
-      SessionStart dep-install path (NOT repo-local tsx), and `/contextus-setup` must
-      work first-try. quick-start.md's **[v1.1]** lines are the pass/fail checklist.
+**Status (2026-06-15): the mechanics below are DONE; what remains is a real
+marketplace-install smoke test (unverifiable locally).**
+
+- [x] Add the `SessionStart` dep-install step (`package.json` diff → install into
+      `${CLAUDE_PLUGIN_DATA}`). Must run BEFORE `ensureDaemonRunning`. — DONE:
+      `ensureDepsInstalled()` (detached `npm install --omit=dev`, idempotent via
+      package.json diff), called first in `session-start-hook.js`. Strict no-op in
+      dev / `--plugin-dir`.
+- [x] **Drop the `tsx` runtime requirement** — DONE via option (a): `tsconfig`
+      includes `daemon/**`, `dist/` is committed (runtime `.js` only), and the daemon
+      runs as `node dist/daemon/server.js`. tsx-on-`.ts` is now a dev-only fallback.
+- [x] `daemon-control.js`: spawn with `NODE_PATH` / resolved `dist` paths instead of
+      `REPO_ROOT/node_modules/.bin/tsx`. — DONE: `resolveLaunch()` prefers compiled
+      JS; `depsNodeModules()` sets `NODE_PATH` to `${CLAUDE_PLUGIN_DATA}/node_modules`
+      when packaged, repo `node_modules` in dev.
+      - ⚠️ **Bug found + fixed in the process:** `findPluginJson()` resolved
+        `..`-from-`lib/`, which returned null when run as `dist/lib/config.js` (→ `..`
+        is `dist/`), silently falling back to DEFAULTS (`provider: transformers`,
+        HF-blocked) instead of the configured `ollama`. Now honors
+        `$CLAUDE_PLUGIN_ROOT` then walks up. This would have shipped a broken default
+        for every install.
+- [x] First-run install latency: surface it via systemMessage. — DONE (the
+      "installing dependencies, first launch only…" line).
+- [ ] Toolchain caveat in README: target needs Node 22 + a build toolchain for the
+      native `@lancedb` bindings; on HF-blocked networks the transformers path still
+      needs the model-fetch workaround (see embedding-download-risk). — STILL TODO.
+- [x] A `marketplace.json`. — DONE: `.claude-plugin/marketplace.json` (`name:
+      "claude-contextus"`, plugin `name: "contextus"`, `source: "."`). The two
+      plugin.json files are now intentional + documented (root = runtime config,
+      `.claude-plugin/` = manifest; names aligned to `contextus`).
+
+**Acceptance spec (from `docs/quick-start.md`, document-driven) — NOT yet smoke-tested
+on a real install:** these exact commands must work for an end user:
+```text
+/plugin marketplace add anthonypdawson/claude-contextus
+/plugin install contextus@claude-contextus
+```
+After install, hooks must fire automatically (no enable step), the daemon must spawn
+via the SessionStart dep-install path (NOT repo-local tsx), and `/contextus-setup`
+must work first-try. quick-start.md's **[v1.1]** lines are the pass/fail checklist.
+
+**Guardrails added this round:** `npm run verify:dist` + a CI "Verify committed dist/
+is fresh" gate (a rebuild must produce no diff), and CI Node bumped 20 → 22 to match
+`engines >=22` + `engine-strict`.
+
+**The one thing left:** push to GitHub and run the acceptance commands against the
+real marketplace. The packaged dep-install + NODE_PATH path is unverifiable from a
+`--plugin-dir` dogfood session (node_modules present → the bootstrap no-ops by
+design), so it needs a genuine clean-machine install to confirm.
 
 ## Decision
 
