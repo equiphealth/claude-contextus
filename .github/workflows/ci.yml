@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -52,7 +52,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -78,7 +78,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -87,10 +87,17 @@ jobs:
       - name: Build TypeScript
         run: pnpm build
 
-      - name: Verify dist/ output
+      - name: Verify committed dist/ is fresh
         run: |
           if [ ! -d "dist" ]; then
             echo "Error: dist/ directory not created"
             exit 1
           fi
-          echo "✓ Build output verified"
+          # dist/ is committed (packaging: marketplace clones run node dist/...).
+          # A rebuild must produce no diff — otherwise the committed dist is stale.
+          if ! git diff --quiet -- dist; then
+            echo "Error: committed dist/ is stale. Run 'pnpm build' and commit dist/."
+            git diff --stat -- dist
+            exit 1
+          fi
+          echo "✓ Committed dist/ is up to date"
