@@ -10,7 +10,7 @@ _Last updated: June 12, 2026_
 
 This document describes how to implement automatic semantic retrieval for the `.claude/context/` system using vector embeddings and LanceDB. Proactive context injection on every prompt — no search commands required.
 
-**Vector DB Strategy**: v1 uses LanceDB in file-based mode only (no server required). References to "server mode" or other vector DBs in this doc are artifacts from the ChromaDB prototype and will be updated. Future versions may support pluggable vector DB backends (ChromaDB server, Pinecone, etc.).
+**Vector DB Strategy**: v1 uses LanceDB in file-based mode only (no server required). This document reflects the LanceDB-based architecture (migrated from ChromaDB in Phase 0). Future versions may support pluggable vector DB backends.
 
 **Relationship with claude-mem**: contextus provides curated patterns (normative), claude-mem provides activity history (observational). They complement each other: claude-mem captures what happened, contextus injects reusable patterns. In v2, contextus can promote frequently-used observations to patterns.
 
@@ -23,7 +23,7 @@ These decisions are settled. Do not re-litigate without strong evidence.
 1. **Daemon architecture**: Persistent HTTP daemon instead of stateless hooks (solves model warm-up latency).
 1. **Daemon lifecycle**: Single shared daemon across all projects (one embedding model loaded once), graceful degradation on crash.
 1. **Chunking strategy**: Chunk long docs with breadcrumb injection; freeform human-written docs use dual embedding (whole-doc overview + chunks).
-1. **Embedding model validation**: Store model name in collection metadata, validate on query to prevent silent failures. Model change requires full rebuild.
+1. **Embedding model validation**: Store model name in table metadata, validate on query to prevent silent failures. Model change requires full rebuild.
 1. **Awareness hook**: Opt-out framing (“omit only if trivial”), separate JS script for cross-platform safety.
 1. **Result destructuring**: Correct LanceDB parallel array handling (ids/documents/metadatas/distances).
 1. **Proactive capture**: The awareness hook handles proactive context creation. Retrieval quality is what makes captured patterns useful. These are complementary, not competing concerns.
@@ -100,7 +100,7 @@ This requires a real prompt history and a curated corpus — both of which a cur
 
 ### Capture Modes
 
-Configurable per project in `.claude/settings.json`:
+Configurable per project in `.claude/contextus.json`:
 
 ```json
 {
@@ -238,7 +238,7 @@ No confirmation prompt — act or ignore. Passive rejection signal is inferred f
 ┌─────────────────────────────────────────────────────────┐
 │                   LanceDB Database                       │
 │                                                         │
-│  Collection: "contextus"                                │
+│  Table: "contextus"                                     │
 │    - Documents (one per context file / chunk)            │
 │    - Metadata: file_path, category, type, source,       │
 │                hit_count, last_hit, content_hash,       │
@@ -430,7 +430,7 @@ A shared daemon only works if all projects use the **same embedding model**. Dif
 **Strategy:**
 
 1. **Global default model** in `~/.contextus/config.json`, used by all projects
-1. **Store model name** in collection metadata on index build
+1. **Store model name** in table metadata on index build
 1. **Validate on every query**: if project DB was built with a different model, return error + instructions to rebuild
 1. **Per-project override** forces a dedicated per-project daemon (Option B lifecycle)
 
@@ -439,7 +439,7 @@ A shared daemon only works if all projects use the **same embedding model**. Dif
 ```typescript
 async function validateProjectDB(projectName: string): Promise<void> {
   const table = await db.openTable('contextus');
-  const metadata = await collection.metadata();
+  const metadata = await table.schema.metadata;
 
   if (metadata.embeddingModel !== DAEMON_MODEL) {
     throw new Error(
@@ -472,7 +472,7 @@ async function validateProjectDB(projectName: string): Promise<void> {
 }
 ```
 
-**Note**: `dimensions` must match the model. 768 for nomic, 384 for MiniLM. Mismatch causes silent failure on first index build — validate this at collection creation time.
+**Note**: `dimensions` must match the model. 768 for nomic, 384 for MiniLM. Mismatch causes silent failure on first index build — validate this at table creation time.
 
 **Similarity threshold caveat**: The `0.7` default is model-dependent. Different embedding models have different similarity distributions. Prefer **top-K selection** (retrieve best N results) over hard thresholds. Use threshold as a quality filter _after_ ranking, not as a retrieval gate. Calibrate during testing with `/context-debug`.
 
@@ -930,15 +930,13 @@ Hit count is a first-class metadata field, updated on every retrieval by the dae
 ```typescript
 // After query results are returned
 for (const match of topMatches) {
-  await collection.update({
-    ids: [match.id],
-    metadatas: [
-      {
-        ...match.metadata,
-        hit_count: (match.metadata.hit_count || 0) + 1,
-        last_hit: new Date().toISOString(),
-      },
-    ],
+  await table.update({
+    where: `id = '${match.id}'`,
+    values: {
+      ...match.metadata,
+      hit_count: (match.metadata.hit_count || 0) + 1,
+      last_hit: new Date().toISOString(),
+    },
   });
 }
 ```
@@ -1042,7 +1040,7 @@ interface EmbeddingMetadata {
 }
 
 async function auditStaleness(): Promise<StaleReport> {
-  const allDocs = await collection.get();
+  const allDocs = await table.search().limit(10000).execute();
   const stale = allDocs.filter((doc) => {
     const currentHash = hashFile(doc.metadata.parent_file || doc.id);
     return currentHash !== doc.metadata.content_hash;
@@ -1289,7 +1287,7 @@ claude-contextus/
 │   └── update-context-index/SKILL.md
 ├── lib/
 │   ├── embedder.js
-│   ├── chroma-client.js
+│   ├── lance-client.ts
 │   ├── context-loader.js
 │   ├── context-creator.js
 │   ├── context-validator.js
@@ -1316,13 +1314,12 @@ claude-contextus/
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "chromadb": "^1.8.0",
+    "@lancedb/lancedb": "^0.4.0",
     "@xenova/transformers": "^2.6.0"
   },
   "config": {
     "enabled": true,
-    "chroma": {
-      "mode": "file",
+    "lancedb": {
       "path": "~/.contextus/data/{project-name}"
     },
     "embedding": {
@@ -1418,20 +1415,22 @@ claude-contextus/
 async function embedContexts({ rebuild = false, verbose = false }) {
   const EMBEDDING_MODEL = loadConfig().embedding.model; // From config, not hardcoded
 
-  const client = new LanceDBClient({ path: resolveDBPath() });
-  const collection = await client.getOrCreateCollection('contextus', {
-    metadata: {
-      embeddingModel: EMBEDDING_MODEL,
-      dimensions: loadConfig().embedding.dimensions,
-      createdAt: new Date().toISOString(),
-    },
-  });
+  const db = await lancedb.connect(resolveDBPath());
+  const table = await db.openTable('contextus').catch(() =>
+    db.createTable('contextus', [], {
+      metadata: {
+        embeddingModel: EMBEDDING_MODEL,
+        dimensions: loadConfig().embedding.dimensions,
+        createdAt: new Date().toISOString(),
+      },
+    })
+  );
 
   // Validate model consistency
-  const meta = await collection.metadata();
+  const meta = table.schema.metadata;
   if (meta.embeddingModel && meta.embeddingModel !== EMBEDDING_MODEL) {
     throw new Error(
-      `Collection built with ${meta.embeddingModel}, config specifies ${EMBEDDING_MODEL}. ` +
+      `Table built with ${meta.embeddingModel}, config specifies ${EMBEDDING_MODEL}. ` +
         `Run /rebuild-embeddings to regenerate.`
     );
   }
@@ -1439,7 +1438,7 @@ async function embedContexts({ rebuild = false, verbose = false }) {
   // Validate dimensions match
   if (meta.dimensions && meta.dimensions !== loadConfig().embedding.dimensions) {
     throw new Error(
-      `Dimension mismatch: collection has ${meta.dimensions}, ` +
+      `Dimension mismatch: table has ${meta.dimensions}, ` +
         `config specifies ${loadConfig().embedding.dimensions}. ` +
         `Run /rebuild-embeddings to regenerate.`
     );
@@ -1447,7 +1446,7 @@ async function embedContexts({ rebuild = false, verbose = false }) {
 
   const sources = await getAllReadSources();
   for (const source of sources) {
-    await embedSource(source, collection, { rebuild, verbose });
+    await embedSource(source, table, { rebuild, verbose });
   }
 }
 ```
@@ -1625,7 +1624,7 @@ Config:
 **Vector Inspector integration:**
 
 ```bash
-# Point vector-inspector at contextus collection for embedding visualization
+# Point vector-inspector at contextus table for embedding visualization
 vector-inspector ~/.contextus/data/automation contextus
 ```
 
@@ -1649,7 +1648,7 @@ Useful for identifying clusters of near-duplicate memories, visualizing coverage
 ~/.contextus/
   data/
     {project-name}/      # Per-project LanceDB instance
-      chroma.sqlite3
+      data/
       index/
   runtime/
     daemon.pid
@@ -1664,7 +1663,7 @@ Useful for identifying clusters of near-duplicate memories, visualizing coverage
 
 ```json
 {
-  "chroma": {
+  "lancedb": {
     "projectId": "automation-mobile" // Override default
   }
 }
@@ -1697,7 +1696,7 @@ const sourceWeights = {
 };
 ```
 
-All sources in one collection, single query per prompt. Source isolation via metadata, not separate collections.
+All sources in one table, single query per prompt. Source isolation via metadata, not separate tables.
 
 ### Custom Sources (Read-Only)
 
@@ -1785,7 +1784,7 @@ See [token_optimization.md](token_optimization.md) for detailed explanation.
 
 ```bash
 CONTEXTUS_RAG_ENABLED=true
-CONTEXTUS_RAG_CHROMA_PATH=~/.contextus/data      # User space, not project
+CONTEXTUS_RAG_LANCEDB_PATH=~/.contextus/data      # User space, not project
 CONTEXTUS_RAG_TOP_K=5
 CONTEXTUS_RAG_SIMILARITY_THRESHOLD=0.7
 CONTEXTUS_RAG_DEDUP_THRESHOLD=0.85
@@ -1795,7 +1794,7 @@ CONTEXTUS_RAG_AUTO_REBUILD=true
 CONTEXTUS_RAG_CAPTURE_MODE=propose
 ```
 
-### Per-Project Settings (`.claude/settings.json`)
+### Per-Project Settings (`.claude/contextus.json`)
 
 ```json
 {
@@ -1831,7 +1830,7 @@ During implementation:
 
 - [ ] **Add `/health` endpoint** with `modelLoaded` field — session start hook polls this, not sleep()
 - [ ] **Implement `ensureDaemonRunning()`** as shared JS utility (SessionStart + crash recovery)
-- [ ] **Store embedding model + dimensions** in LanceDB metadata at collection creation
+- [ ] **Store embedding model + dimensions** in LanceDB metadata at table creation
 - [ ] **Validate model + dimensions** on every query — fail fast with actionable error
 - [ ] **Handle chunked results** with breadcrumb deduplication in `formatContextInjection`
 - [ ] **Implement hit count tracking** — increment on every retrieval, expose in `/context-debug`
@@ -1849,7 +1848,7 @@ LanceDB v1 uses file-based mode only. Future versions may support server-based v
     "type": "lancedb-server",  // or "chromadb", "pinecone", etc.
     "host": "localhost",
     "port": 8000,
-    "collection": "{project-name}-contextus"
+    "table": "{project-name}-contextus"
   }
 }
 ```
