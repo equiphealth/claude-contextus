@@ -20,28 +20,38 @@ on a whim mid-build (migrating early just creates orphaned files).
 
 This skill moves truth into the **injected corpus**, so it is deliberately careful:
 
-- **Dry-run by default** — `pnpm migrate-memory` prints the plan (each `slug → prefix-name`,
+- **Dry-run by default** — the engine prints the plan (each `slug → prefix-name`,
   inferred `type`, seeded `tags`) and writes **nothing**.
 - **Idempotent** — a target file that already exists is **skipped**, never clobbered. Safe
   to re-run if interrupted; no half-converted corpus.
 - **Verify-before-embed** — it never auto-embeds. After `--apply` it prints the exact
-  `pnpm run embed` command for you to run *after* eyeballing the converted files
+  embed command for you to run *after* eyeballing the converted files
   (per `selfdoc-build-practice`: verify before it hardens into the corpus).
 
 ## Usage
 
+Run the repo-local `tsx` **by path** from the TARGET project — NOT `pnpm` (the
+contextus repo needs Node 22 and your shell may be on a different Node, so `pnpm`
+errors out; `pnpm --prefix` is doubly wrong — it sets cwd to contextus and embeds
+the wrong corpus):
+
 ```bash
+cd <target-project>   # the project whose .claude/memory you're migrating
+TSX=~/src/claude-contextus/node_modules/.bin/tsx
+MIG=~/src/claude-contextus/scripts/migrate-memory.ts
+EMBED=~/src/claude-contextus/scripts/embed-contexts.ts
+
 # 1. Dry-run — see exactly what would happen (no writes)
-pnpm migrate-memory
+$TSX $MIG
 
 # 2. Apply — write the converted files into .claude/context/ (still no embed)
-pnpm migrate-memory --apply
+$TSX $MIG --apply
 
 # 3. Apply + repoint plugin.json's projectMemory source at .claude/context
-pnpm migrate-memory --apply --repoint
+$TSX $MIG --apply --repoint
 
 # 4. Verify the converted files look right, THEN re-embed
-pnpm run embed
+$TSX $EMBED
 ```
 
 ## What It Does

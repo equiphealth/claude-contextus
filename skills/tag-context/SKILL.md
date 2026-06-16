@@ -22,8 +22,9 @@ corpus is ready when tag-driven gating lands.
 The proposal step is offloaded to a **lightweight subagent**, not the (expensive)
 session model — "read a file, suggest 3-5 topic tags" is a small bounded task.
 
-1. **List** — `pnpm tag-context --list` returns the tagless files (relpath, name,
-   description) as JSON. This CLI is a pure deterministic engine: no model call.
+1. **List** — `tag-context --list` (run via tsx-by-path, see Usage) returns the
+   tagless files (relpath, name, description) as JSON. This CLI is a pure
+   deterministic engine: no model call.
 2. **Propose (subagent)** — dispatch a subagent with a **lightweight model**
    (default `claude-haiku-4-5-20251001`; configurable — see below) to READ the
    tagless files and propose 2-5 topical tags each from their actual content (not
@@ -34,9 +35,10 @@ session model — "read a file, suggest 3-5 topic tags" is a small bounded task.
    model set to the lightweight default.
 3. **Approve** — show the user the subagent's proposals; they confirm or edit per
    file. Tags are never written without approval.
-4. **Apply** — `pnpm tag-context --apply <relpath> tag1,tag2,tag3` writes the
-   approved tags into the file's frontmatter (nested `metadata.tags`, idempotent,
-   preserves everything else). Add `--embed` to re-embed the file immediately.
+4. **Apply** — `tag-context --apply <relpath> tag1,tag2,tag3` (run via tsx-by-path,
+   see Usage) writes the approved tags into the file's frontmatter (nested
+   `metadata.tags`, idempotent, preserves everything else). Add `--embed` to
+   re-embed the file immediately.
 
 ### Proposal model (configurable)
 
@@ -48,17 +50,25 @@ calls a model, so only this proposal step is affected.
 
 ## Usage
 
+Run the repo-local `tsx` **by path** from the TARGET project — NOT `pnpm` (the
+contextus repo needs Node 22 and your shell may be on a different Node, so `pnpm`
+errors out):
+
 ```bash
+cd <target-project>   # the project whose corpus you're tagging
+TSX=~/src/claude-contextus/node_modules/.bin/tsx
+TAG=~/src/claude-contextus/scripts/tag-context.ts
+
 # 1. Find what's tagless
-pnpm tag-context --list
+$TSX $TAG --list
 
 # 2. (a lightweight Haiku subagent reads the files + proposes tags; you approve)
 
 # 3. Write approved tags to a file
-pnpm tag-context --apply decisions/decision-injection-format.md injection,ux,attention
+$TSX $TAG --apply decisions/decision-injection-format.md injection,ux,attention
 
 # 3b. …and re-embed it right away
-pnpm tag-context --apply gotchas/gotcha-foo.md lancedb,gotcha --embed
+$TSX $TAG --apply gotchas/gotcha-foo.md lancedb,gotcha --embed
 ```
 
 ## Safety

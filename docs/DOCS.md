@@ -9,10 +9,10 @@
 
 - **[quick-start.md](quick-start.md)** — Zero to your first auto-injected context in ~5
   minutes. Install, set up a project, see retrieval work, verify it.
-- **[usage.md](usage.md)** *(planned)* — Day-to-day: creating context, reading
-  injections, understanding sources, maintenance.
-- **[calibration.md](calibration.md)** *(planned)* — Tuning the injection floor to your
-  corpus, the usage-eval refinement loop, and the per-project config tiers.
+- **[usage.md](usage.md)** — Day-to-day: creating context, reading injections,
+  understanding sources, maintenance.
+- **[calibration.md](calibration.md)** — Tuning the injection floor to your corpus, the
+  usage-eval refinement loop, and the per-project config tiers.
 - **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** — Moving from an older `.claude/memory/` +
   hooks system to contextus.
 

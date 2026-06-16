@@ -45,7 +45,7 @@
     "url": "https://github.com/anthonypdawson/claude-contextus.git"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.30.0",

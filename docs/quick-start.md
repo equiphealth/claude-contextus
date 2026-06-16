@@ -56,7 +56,7 @@ claude --plugin-dir ~/src/claude-contextus
 
 > **Tip (v1 today):** a directory-aware shell wrapper auto-adds `--plugin-dir` only in
 > projects that have contextus set up, so you don't type it every time. See
-> [usage.md](usage.md#shell-wrapper).
+> [usage.md](usage.md#shell-wrapper-v1-today).
 
 ---
 
