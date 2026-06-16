@@ -197,8 +197,9 @@ Only include the keys you're overriding. The shape (from `plugin.json`):
 ---
 name: typescript-strict-mode
 description: Always use TypeScript strict mode to avoid runtime errors
-type: feedback
-category: framework
+metadata:
+  type: decision
+  tags: [typescript, config, strict-mode]
 ---
 
 # TypeScript Strict Mode
@@ -267,7 +268,7 @@ Requires **Node 22** (`engine-strict` enforces it). Install with your package ma
 of choice:
 
 ```bash
-pnpm install          # builds native deps (@lancedb / @xenova)
+pnpm install          # builds native deps (@lancedb, @xenova/transformers)
 
 pnpm build            # compile to dist/ (committed; the daemon runs node dist/...)
 pnpm run verify:dist  # rebuild + assert committed dist/ is fresh (CI runs this)
@@ -299,11 +300,13 @@ See `examples/` directory for:
 
 ## Roadmap
 
-- [ ] Phase 1: Embedding pipeline (Week 1)
-- [ ] Phase 2: Query hook integration (Week 2)
-- [ ] Phase 3: Skills implementation (Week 3)
-- [ ] Phase 4: Testing & tuning (Week 4)
-- [ ] Phase 5: Documentation & publish (Week 5)
+- [x] Phase 1: Embedding pipeline (LanceDB + nomic-embed-text)
+- [x] Phase 2: Daemon + query hook integration
+- [x] Phase 3: Skills implementation
+- [x] Phase 4: Reconcile, calibration infrastructure
+- [x] Phase 5: Self-documentation, introspection, stop-eval hook
+- [x] Phase 6: Multi-source (docs + user packs), chunking, packaging
+- [ ] v2: Context-Aware Evaluation (CAE), tag-based retrieval, removal governance
 
 ## Do You Need Another Memory System?
 
@@ -325,4 +328,4 @@ Issues and PRs welcome! This is a vacation project but I'm happy to collaborate.
 
 ---
 
-**Status**: 🚧 Design Complete, Implementation Starting (see [IMPLEMENTATION_ESTIMATE.md](docs/dev/IMPLEMENTATION_ESTIMATE.md))
+**Status**: v1 shipped — daemon, embedding pipeline, retrieval, hooks, and skills are all working. See [V2_ROADMAP.md](docs/V2_ROADMAP.md) for what's next.

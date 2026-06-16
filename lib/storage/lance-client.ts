@@ -1,11 +1,10 @@
 /**
  * LanceDB client — file-based vector store for contextus.
  *
- * Replaces the old ChromaDB client. The real @lancedb/lancedb API (v0.30)
- * differs substantially from DESIGN.md's sketch (which used Chroma-shaped
- * `new LanceDBClient()` / `getOrCreateCollection()` / `collection.metadata()`
- * — none of which exist). Verified divergences are documented in DESIGN_DIVERGENCE
- * below and confirmed by the Phase-0 round-trip (scripts/verify-lance.ts).
+ * Uses @lancedb/lancedb v0.30. The real API differs from DESIGN.md's original
+ * sketch (which used a Chroma-shaped surface). Verified divergences are
+ * documented in DESIGN_DIVERGENCE below and confirmed by the Phase-0 round-trip
+ * (scripts/verify-lance.ts).
  *
  * Real surface used here:
  *   lancedb.connect(dir)        -> Connection
