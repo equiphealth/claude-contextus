@@ -22,9 +22,24 @@ because it must never edit your CLAUDE.md.
 | Step | Detail |
 |---|---|
 | **Scaffold** | Creates `.claude/context/` + a starter `CONTEXT.md` index if absent |
+| **Configure** | Asks setup questions (see below) and writes answers to plugin.json config |
 | **Register** | Upserts a **marked, idempotent** stanza into the project `CLAUDE.md` inside `<!-- contextus:start -->` … `<!-- contextus:end -->` — re-running updates in place, never appends a duplicate |
 | **Embed** | Runs the initial corpus embed (reconcile from the context files) |
 | **Confirm** | Reports row count + reminds you context now injects automatically |
+
+## Setup Questions
+
+During first-run, the user is asked:
+
+1. **Docs frontmatter** — "Should contextus manage frontmatter on your `docs/` files?
+   This adds `name`, `description`, `type`, and `tags` to docs for better retrieval.
+   Say no if your docs are shared with other tools or you don't want them modified."
+
+   Sets `config.docs.requireFrontmatter` (`true` | `false`, default `false`):
+   - `true` → `/audit-context` checks docs for missing frontmatter,
+     `/migrate-memory --docs` offers to backfill, `/create-doc` is the recommended way
+   - `false` → docs embed as-is (type=unknown, no tags), audit skips them,
+     `/create-doc` still adds frontmatter (you invoked it, you want it)
 
 The CLAUDE.md stanza tells a fresh Claude instance that context is injected here
 and that new patterns can be proposed via the awareness footer — making the
