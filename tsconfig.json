@@ -23,6 +23,6 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["lib/**/*", "scripts/**/*", "skills/**/*"],
+  "include": ["lib/**/*", "scripts/**/*", "skills/**/*", "daemon/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

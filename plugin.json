@@ -1,5 +1,6 @@
 {
-  "name": "claude-contextus",
+  "_role_note": "RUNTIME CONFIG, not the plugin manifest. The code reads this file's `config` block via findPluginJson() (config.ts). The Claude Code plugin MANIFEST is .claude-plugin/plugin.json (name: 'contextus' — the marketplace install id). Two files on purpose: this is the tunable runtime config, that is the install descriptor. Keep `version` in sync with the manifest.",
+  "name": "contextus",
   "version": "0.1.0",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
