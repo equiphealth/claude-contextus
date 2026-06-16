@@ -41,7 +41,7 @@ work the area:
 | Read-only sources: per-source granularity + cache | `.claude/context/questions/question-source-embed-scope.md` | content-hash cache so a single-source update / provider switch doesn't force a full-table rebuild. (The docs-watching half is a ready-now fix above, not an open question.) |
 | Version-pinning UX for installs | [tagged-releases memory] | `marketplace.json` version per release vs `@<tag>`/`@<sha>`; confirm vs Claude Code docs |
 | Transformers-with-loaded-model as a first-class mode | [DAEMON_LIFECYCLE.md](DAEMON_LIFECYCLE.md) | already half-true (in-process pipeline stays warm); needs blessing + RAM-cost docs |
-| Install-time convert of Claude-native memory → corpus | [idea-install-convert-native-memory memory] | Adoption hook: new user starts with a populated corpus. Scope-PRESERVING by default (project→project, user→user) + triage to promote only cross-project items. Reuse `/migrate-memory`, don't rebuild. |
+| Install-time convert of Claude-native memory → corpus | [idea-install-convert-native-memory memory] | Adoption hook: new user starts populated. Scope-PRESERVING default (project→project, user→user) + triage. Native memory is free-form bullets (not the structured per-file format the old migration had), so needs a NEW LLM front-end stage (split→classify→synthesize-frontmatter) feeding `/migrate-memory`'s back half (route/propose/embed). Reuse the tail, build the head. |
 
 ## 🔵 v2 feature roadmap (the big stuff)
 
