@@ -1,3 +1,9 @@
+---
+name: create-context
+aliases: [ctx-create]
+description: Capture a new pattern/decision/implementation note into .claude/context/ with validation, deduplication, proper structure (frontmatter + body), and auto-embed.
+---
+
 # Create or Update Context
 
 Smart context management: creates new context files or updates existing ones automatically.
