@@ -177,3 +177,16 @@ See `docs/dev/DESIGN_QUESTIONS.md` for complete list.
 **Ready to implement!** Design is solid, open questions are "validate during POC" not "decide before starting."
 
 Beach coding starts tomorrow 🏖️
+
+<!-- contextus:start -->
+## Context (claude-contextus)
+
+This project uses [claude-contextus](https://github.com/anthonypdawson/claude-contextus):
+relevant patterns from `.claude/context/` are **retrieved and injected automatically**
+on each prompt — you don't need to search for them. Injected blocks are tagged
+`[contextus — …]`.
+
+When you discover a durable pattern, decision, or gotcha worth keeping, you'll see
+an awareness footer inviting you to propose it; new context files live under
+`.claude/context/<category>/` and are embedded automatically when edited.
+<!-- contextus:end -->
