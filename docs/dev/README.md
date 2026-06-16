@@ -27,7 +27,12 @@ roadmap, and design reviews. For **using** contextus, see [../DOCS.md](../DOCS.m
 
 ## Roadmap, packaging, migration record
 
+- **[DEFERRED.md](DEFERRED.md)** — ⭐ The single "what was I supposed to do eventually?"
+  index: every deferred item + what it's blocked on. Start here.
 - **[V2_ROADMAP.md](V2_ROADMAP.md)** — Post-v1 backlog (Track A/B, open questions).
+- **[DAEMON_LIFECYCLE.md](DAEMON_LIFECYCLE.md)** — Open question: should the daemon run
+  constantly? (cost, options, the session-detection catch).
+- **[VERSIONING.md](VERSIONING.md)** — SemVer-in-manifests, 0.x-until-verified-1.0 scheme.
 - **[PACKAGING.md](PACKAGING.md)** — v1.1 distribution / GitHub-install plan + acceptance
   spec.
 - **[MIGRATION_LESSONS.md](MIGRATION_LESSONS.md)** — Friction log from the automation

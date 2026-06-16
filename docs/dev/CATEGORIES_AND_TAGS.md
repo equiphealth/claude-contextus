@@ -43,9 +43,18 @@ Examples:
 
 - `arch-` → "What is the structure?"
 - `decision-` → "What did we choose?"
+- `question-` → "What's still undecided?"
 - `tradeoff-` → "Why did we choose it?"
 - `gotcha-` → "What went wrong?"
 - `project-` → "What are the ground rules?"
+
+> **`question-` vs `decision-`.** A `question-` file is an OPEN question — a choice
+> deliberately not yet made (options weighed, no verdict). It exists so the open
+> question surfaces when you next work the area, instead of being silently re-discovered.
+> When it's resolved, it becomes a `decision-` file (rename + rewrite as the chosen
+> outcome) and the `question-` file is removed. Retrieval intent: inject when the user
+> approaches the undecided area so they don't re-litigate from scratch. Keep these rare —
+> a `question-` file is for a REAL fork worth remembering, not every passing "hmm".
 
 ## 2.2 Tags — content descriptors
 
