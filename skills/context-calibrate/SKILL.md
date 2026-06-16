@@ -1,3 +1,9 @@
+---
+name: context-calibrate
+aliases: [ctx-calibrate]
+description: Quality measurement and optimization — evaluate whether injected context is actually USED (not just retrieved), tune injectionFloor, report calibration results. The usage-eval campaign that proves whether contextus is working.
+---
+
 # Context Calibrate
 
 The single front door for **both** floor-calibration signals
