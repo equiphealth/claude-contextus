@@ -110,6 +110,50 @@ real marketplace. The packaged dep-install + NODE_PATH path is unverifiable from
 `--plugin-dir` dogfood session (node_modules present → the bootstrap no-ops by
 design), so it needs a genuine clean-machine install to confirm.
 
+### Smoke-test recipe (testing the install without trashing the dogfood loop)
+
+**What's "fresh" and what isn't.** A marketplace install git-clones the repo to
+Claude's plugin cache — so the *code* is fresh (no `node_modules`, committed `dist/`)
+and the dep-bootstrap path genuinely fires. But **state is NOT fresh**: `~/.contextus/`
+(corpora, daemon, port 37800) is hardcoded and SHARED by both install methods. So:
+
+- **The daemon is persistent + detached — it does NOT die when your last Claude session
+  closes** (no SessionEnd hook, no idle-exit; only SIGTERM/SIGINT or reboot stops it).
+  So if your `--plugin-dir` daemon is up, the marketplace session's `ensureDaemonRunning`
+  finds it healthy and **never spawns its own** → you'd "test" nothing. **Kill it first.**
+- Corpora already exist, so you won't exercise first-embed.
+- The native `@lancedb` build will likely succeed from your Mac's prebuilt-binary cache —
+  proving the WIRING, not that a toolchain-less / different-arch machine can build. That
+  still needs a VM/container.
+
+**Only ONE install method active at a time.** `--plugin-dir` ADDS a plugin on top of
+installed ones, so running both = double hooks → two injections + two footers. The data
+is never at risk (corpora are method-agnostic, same format); the mess is purely
+double-loading.
+
+```text
+# TEST the marketplace install:
+1. Turn OFF the --plugin-dir wrapper (so plugin-dir is not in play)
+2. kill $(cat ~/.contextus/runtime/daemon.pid)        # force a real spawn
+3. /plugin marketplace add anthonypdawson/claude-contextus
+   /plugin install contextus@claude-contextus
+4. New session (NO --plugin-dir). Verify:
+   - deps land in $CLAUDE_PLUGIN_DATA/node_modules
+   - daemon runs node dist/daemon/server.js  (lsof -ti :37800 | xargs ps)
+   - /health → provider=ollama, modelLoaded=true
+   - /contextus-setup works first-try
+
+# RESTORE the dogfood loop:
+5. /plugin uninstall contextus  (+ remove the marketplace)
+6. Re-enable the --plugin-dir wrapper
+   (leftover $CLAUDE_PLUGIN_DATA/node_modules is harmless dead weight)
+```
+
+> **Want true isolation instead?** A `CONTEXTUS_HOME` (+ `CONTEXTUS_PORT`) env override
+> instead of the hardcoded `~/.contextus` / 37800 would let a test session use a
+> throwaway state dir + separate port, never touching the live daemon. Small change,
+> filed as a future option.
+
 ## Decision
 
 **Defer to v1.1 (a Distribution milestone, separate from the v2 feature roadmap).**
