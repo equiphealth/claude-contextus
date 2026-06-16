@@ -48,51 +48,68 @@ Think of it as a context system that reads your mind — captures what you learn
 - **Auto-hooks**: Captures file changes, triggers rebuilds, injects context
 - **User + project scope**: Personal patterns persist across all projects
 
+## Requirements
+
+- **Claude Code** (CLI, desktop, or IDE extension)
+- **Node 22+** — the daemon runs on it (`engine-strict` enforces this on install)
+- **A C/C++ build toolchain** on the target machine — the native `@lancedb` bindings
+  build during install (Xcode CLT on macOS; `build-essential` on Linux)
+- **An embedding provider**: [Ollama](https://ollama.com) (recommended, local, private —
+  `ollama pull nomic-embed-text`) or Transformers.js (in-process; needs a one-time
+  Hugging Face model download, which some corporate networks block)
+
 ## Installation
 
-```bash
-# Clone or install via Claude plugin registry
-claude plugin install claude-contextus
+**[v1.1 — GitHub marketplace]** Add the marketplace, then install:
 
-# Or install from local directory
-claude plugin install ~/src/claude-contextus
+```text
+/plugin marketplace add anthonypdawson/claude-contextus
+/plugin install contextus@claude-contextus
 ```
+
+Hooks activate automatically (no enable step), the daemon starts on your next session
+(first launch installs native deps — one-time latency), and skills appear under the
+`/context-*` / `/contextus-*` namespace.
+
+**[v1 today — clone + `--plugin-dir`]** Until the marketplace listing is live:
+
+```bash
+git clone https://github.com/anthonypdawson/claude-contextus ~/src/claude-contextus
+cd ~/src/claude-contextus && pnpm install   # builds the native deps; needs Node 22
+# then, in any project you want contextus active:
+claude --plugin-dir ~/src/claude-contextus
+```
+
+> **Note:** the `claude plugin install` command and an `enabledPlugins` settings block
+> are NOT how this installs — use the marketplace flow above. See
+> [docs/quick-start.md](docs/quick-start.md) for the full walkthrough.
 
 ## Quick Start
 
-### 1. Enable in your project
+See **[docs/quick-start.md](docs/quick-start.md)** for the 5-minute version. The short
+form:
 
-```json
-// .claude/settings.json
-{
-  "enabledPlugins": {
-    "claude-contextus": true
-  }
-}
+### 1. Set up the project
+
+```text
+/contextus-setup
 ```
 
-### 2. Create context directory structure
+Scaffolds `.claude/context/`, registers a small marked stanza in your `CLAUDE.md`, and
+builds the initial embedding corpus. Migrating from an older `.claude/memory/` system?
+Run `/migrate-memory` (see [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)).
 
-```
-.claude/
-└── context/
-    ├── CONTEXT.md          # Index (human-readable)
-    ├── README.md           # Documentation
-    └── framework/
-        └── feedback_example.md
-```
-
-### 3. Create your first context pattern
+### 2. Create your first context pattern
 
 ```bash
 /create-context "Always use TypeScript strict mode" "We've had issues with `any` types causing runtime errors"
 ```
 
-### 4. Embeddings build automatically
+### 3. Embeddings build automatically
 
 On first use, embeddings are generated and stored in `~/.contextus/data/{project}/` (per-user, not committed to git).
 
-### 5. Automatic context injection
+### 4. Automatic context injection
 
 Ask a question, and relevant context patterns are injected automatically:
 
@@ -105,43 +122,59 @@ Claude: [Sees relevant "TypeScript strict mode" context pattern injected]
 
 ## Skills
 
-- `/create-context <topic> <content>` - Create a new context pattern with validation
-- `/create-doc <topic> <content>` - Create documentation file
-- `/add-patterns <file> <patterns>` - Add patterns to existing context file
-- `/rebuild-embeddings` - Regenerate all embeddings from scratch
-- `/context-search <query>` - Manual semantic search (debugging)
-- `/context-debug` - Show stats and tuning suggestions
-- `/audit-context` - Validate context structure and check duplicates
+**Setup & capture**
+- `/contextus-setup` — First-run setup for a project (scaffold + CLAUDE.md stanza + embed)
+- `/create-context <topic> <content>` — Create a new context pattern with validation
+- `/add-patterns <file> <patterns>` — Add patterns to an existing context file
+- `/create-doc <topic> <content>` — Create a documentation file
+- `/migrate-memory` — Convert a legacy `.claude/memory/` system into context files
+- `/tag-context` — Backfill topical tags on untagged context files
+
+**Health, tuning & troubleshooting**
+- `/context-status` — Impact dashboard (corpus size, injection rate, latency)
+- `/context-doctor` — Diagnose problems (no injections, wrong corpus, phantom re-embeds)
+- `/context-calibrate` — Tune the per-project injection floor + usage-eval refinement
+- `/context-search <query>` — Manual semantic search (debugging; shows scores + floor)
+- `/rebuild-embeddings` — Regenerate all embeddings from scratch
+- `/audit-context`, `/audit-stale` — Validate structure / flag stale patterns
+- `/configure` — Adjust configuration
+
+See **[docs/usage.md](docs/usage.md)** and **[docs/calibration.md](docs/calibration.md)**
+for day-to-day workflows and tuning.
 
 ## Configuration
 
+Config resolves through **3 tiers (later wins)**:
+
+1. **`plugin.json`** `config` block — the shipped global default
+2. **`~/.contextus/data/<project>/config.json`** — machine-local, per-project (where
+   `/context-calibrate --floor --apply` writes)
+3. **`<project>/.claude/contextus.json`** — git-committed, team-shared, **wins**
+
+Only include the keys you're overriding. The shape (from `plugin.json`):
+
 ```json
-// .claude/settings.json
 {
-  "claudeContextus": {
+  "config": {
     "enabled": true,
     "retrieval": {
       "topK": 5,
-      "similarityThreshold": 0.7,
-      "dedupThreshold": 0.85,
+      "injectionFloor": 0.45,
       "maxTokens": 3000
     },
-    "capture": {
-      "mode": "propose" // propose | auto | manual
-    },
+    "contextCapture": { "mode": "propose" },
     "embedding": {
-      "provider": "transformers.js",
+      "provider": "ollama",
+      "ollamaModel": "nomic-embed-text",
       "model": "nomic-ai/nomic-embed-text-v1.5"
-    },
-    "sources": {
-      "projectContext": { "enabled": true, "path": ".claude/context" },
-      "projectDocs": { "enabled": true, "path": "docs" },
-      "userContext": { "enabled": true },
-      "userDocs": { "enabled": true }
     }
   }
 }
 ```
+
+> **`injectionFloor`, not a fixed threshold.** It's the gate ("inject anything at
+> all?") and it's **per-project** — calibrate it to your corpus rather than trusting a
+> universal default. See [docs/calibration.md](docs/calibration.md).
 
 ## How It Works
 
@@ -226,24 +259,27 @@ Track hit counts → learn what's useful
 
 ## Development
 
+Requires **Node 22** (`engine-strict` enforces it). Install with your package manager
+of choice:
+
 ```bash
-# Install dependencies
-npm install
+pnpm install          # builds native deps (@lancedb / @xenova)
 
-# Run embedding pipeline
-npm run embed
+pnpm build            # compile to dist/ (committed; the daemon runs node dist/...)
+pnpm run verify:dist  # rebuild + assert committed dist/ is fresh (CI runs this)
+pnpm test             # 137 tests
+pnpm lint
+```
 
-# Rebuild all embeddings
-npm run rebuild
+Engine scripts run via tsx **from the target project**, not from this repo (cwd picks
+the corpus) — `pnpm --prefix` is wrong, it embeds the contextus repo's own corpus:
 
-# Test query hook
-echo '{"prompt": "How do I handle errors?"}' | npm run query
-
-# Run tests
-npm test
-
-# Lint
-npm run lint
+```bash
+cd <target-project>
+~/src/claude-contextus/node_modules/.bin/tsx \
+  ~/src/claude-contextus/scripts/embed-contexts.ts        # build/refresh the corpus
+~/src/claude-contextus/node_modules/.bin/tsx \
+  ~/src/claude-contextus/scripts/search.ts "your query"   # replay retrieval (scores + floor)
 ```
 
 ## Examples
