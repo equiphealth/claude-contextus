@@ -26,6 +26,7 @@ _Last updated: 2026-06-15._
 | **README toolchain caveat** | [PACKAGING.md](PACKAGING.md) unchecked box | Node 22 + build toolchain for native `@lancedb`; HF-blocked model-fetch note. (Partly done — README now has a Requirements section; confirm it's sufficient.) |
 | **`/contextus-stop` command** | [DAEMON_LIFECYCLE.md](DAEMON_LIFECYCLE.md) | Cheap. The daemon has no off switch today (must kill the PID by hand). |
 | **Daemon idle auto-shutdown** | `daemon/server.ts` | ~15 lines; respawn machinery already exists. See the open question below. |
+| **Watch the `docs/` dir for changes** ⚠️ | `question-source-embed-scope` (corpus) | **User's top-concern miss (2026-06-15).** Doc edits don't re-embed → retrieval serves stale `projectDocs` silently until a full `pnpm embed`. Extend the watch hook / reconcile beyond `.claude/context/`. |
 | **`contextus watch` running log** | [WEB_CONSOLE_EXPLORATION.md](WEB_CONSOLE_EXPLORATION.md) Option 6 | User's preferred observability direction. Audit LOGGING.md first. |
 | **`/contextus-reembed --provider`** | `gotcha-embedding-provider-switch` (corpus) | Switching provider/model is a manual re-embed + restart today, nothing automates it. One command: config-write + `--rebuild` + daemon restart. `/context-doctor` should also flag corpus-vs-daemon model mismatch. |
 
@@ -37,7 +38,7 @@ work the area:
 | Question | File | Leaning |
 |---|---|---|
 | Should the daemon run constantly? | `.claude/context/questions/question-daemon-lifecycle.md` | idle-timeout backstop + session-awareness + `/contextus-stop` |
-| Auto-embed scope + read-only sources | `.claude/context/questions/question-source-embed-scope.md` | extend incremental embed beyond `.claude/context/`; per-source granularity + content-hash cache so a provider switch / single-source update doesn't force a full-table rebuild |
+| Read-only sources: per-source granularity + cache | `.claude/context/questions/question-source-embed-scope.md` | content-hash cache so a single-source update / provider switch doesn't force a full-table rebuild. (The docs-watching half is a ready-now fix above, not an open question.) |
 | Version-pinning UX for installs | [tagged-releases memory] | `marketplace.json` version per release vs `@<tag>`/`@<sha>`; confirm vs Claude Code docs |
 | Transformers-with-loaded-model as a first-class mode | [DAEMON_LIFECYCLE.md](DAEMON_LIFECYCLE.md) | already half-true (in-process pipeline stays warm); needs blessing + RAM-cost docs |
 
