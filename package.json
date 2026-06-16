@@ -1,6 +1,6 @@
 {
   "name": "claude-contextus",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Context-aware knowledge system: markdown-based pattern storage with automatic semantic retrieval for Claude Code",
   "main": "dist/scripts/query-hook.js",
   "type": "module",
