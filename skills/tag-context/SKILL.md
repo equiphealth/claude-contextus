@@ -1,6 +1,5 @@
 ---
 name: tag-context
-aliases: [ctx-tag]
 description: Find tagless context files and backfill sensible tags from their content (you propose, user approves). Tags are stored-but-inert until v2 CAE consumes them.
 ---
 
