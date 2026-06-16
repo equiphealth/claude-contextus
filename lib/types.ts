@@ -1,221 +1,70 @@
 /**
- * Type definitions for claude-contextus
+ * Shared type definitions for claude-contextus.
+ *
+ * NOTE: The authoritative runtime config interface is in lib/config.ts
+ * (ContextusConfig). The types here are for the daemon HTTP API and
+ * embedding pipeline interfaces that don't belong in a single module.
  */
 
-/**
- * Context frontmatter structure
- */
-export interface ContextFrontmatter {
-  name: string;
-  description: string;
-  type: 'reference' | 'decision' | 'project' | 'gotcha' | 'tradeoff' | 'arch' | 'api' | 'phase' | 'schema' | 'security' | 'perf' | 'implementation';
-  category?: string;
-  tags?: string[];
-  [key: string]: unknown;
+/** LanceDB table stats (from introspection). */
+export interface CorpusStats {
+  chunks: number;
+  byType: Record<string, number>;
+  withHits: number;
+  totalHits: number;
+  topHits: { id: string; hits: number }[];
 }
 
-/**
- * Loaded context pattern object
- */
-export interface Context {
-  /** Relative path from context dir (used as ID) */
+/** A single row in the LanceDB corpus table. */
+export interface ContextRow {
   id: string;
-  /** Absolute file path */
-  path: string;
-  /** Relative path from context dir */
-  relativePath: string;
-  /** Context name from frontmatter */
-  name: string;
-  /** Description from frontmatter */
-  description: string;
-  /** Type from frontmatter */
-  type: string;
-  /** Category extracted from path */
-  category: string;
-  /** Markdown content (without frontmatter) */
-  content: string;
-  /** Parsed frontmatter */
-  frontmatter: ContextFrontmatter;
-  /** File modification time (milliseconds since epoch) */
-  mtime: number;
-  /** File size in bytes */
-  size: number;
-}
-
-/**
- * Context with embedding
- */
-export interface EmbeddedContext extends Context {
-  /** Embedding vector */
-  embedding: number[];
-}
-
-/**
- * Context query result
- */
-export interface ContextMatch {
-  /** Context ID */
-  id: string;
-  /** Context content */
+  filename: string;
   document: string;
-  /** Context metadata */
-  metadata: Record<string, unknown>;
-  /** Distance score (lower = more similar) */
-  distance: number;
-  /** Similarity score (higher = more similar, 0-1) */
-  similarity: number;
+  type: string;
+  tags: string[];
+  source: string;
+  heading: string;
+  chunkIndex: number;
+  contentHash: string;
+  embeddedAt: string;
+  vector: number[];
 }
 
-/**
- * Changes detected in context files
- */
-export interface ContextChanges {
-  /** Whether rebuild is needed */
-  needsRebuild: boolean;
-  /** Modified contexts */
-  changed: Context[];
-  /** New contexts */
-  added: Context[];
-  /** Removed context IDs */
-  removed: string[];
-  /** Total current contexts */
-  total: number;
-}
-
-/**
- * Context validation result
- */
-export interface ValidationResult {
-  /** Whether context is valid */
-  valid: boolean;
-  /** Validation error messages */
-  errors: string[];
-}
-
-/**
- * ChromaDB collection stats
- */
-export interface CollectionStats {
-  /** Collection name */
-  name: string;
-  /** Number of documents */
-  count: number;
-  /** Collection metadata */
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Knowledge source configuration
- */
-export interface SourceConfig {
-  /** Source type */
-  type: 'context' | 'doc';
-  /** Scope: project or user (global) */
-  scope: 'project' | 'user';
-  /** Path to source directory (can use ~/ for user home) */
-  path: string;
-  /** Whether this source is enabled */
-  enabled: boolean;
-  /** Index file name (e.g., CONTEXT.md, DOCS.md) */
-  indexFile?: string;
-  /** File patterns to include (glob) */
-  include?: string[];
-  /** File patterns to exclude (glob) */
-  exclude?: string[];
-}
-
-/**
- * Plugin configuration
- */
-export interface ContextusConfig {
-  /** Whether plugin is enabled */
-  enabled: boolean;
-  /** Knowledge sources (contexts, docs, both project and user-level) */
-  sources: {
-    projectContext: SourceConfig;
-    projectDocs: SourceConfig;
-    userContext: SourceConfig;
-    userDocs: SourceConfig;
-    /** Additional custom sources (e.g., parent repo, sibling projects) */
-    custom?: SourceConfig[];
-  };
-  /** ChromaDB settings */
-  chroma: {
-    /** Storage mode */
-    mode: 'file' | 'server';
-    /** Path to ChromaDB directory (file mode, uses {project-name} placeholder) */
-    path?: string;
-    /** Server host (server mode) */
-    host?: string;
-    /** Server port (server mode) */
-    port?: number;
-    /** Collection name pattern (server mode, uses {project-name} placeholder) */
-    collection?: string;
-    /** Optional project ID override for name collisions */
-    projectId?: string;
-  };
-  /** Embedding settings */
-  embedding: {
-    /** Model name */
-    model: string;
-    /** Batch size for embedding */
-    batchSize: number;
-  };
-  /** Retrieval settings */
-  retrieval: {
-    /** Number of results to return (total across all sources) */
-    topK: number;
-    /** Minimum similarity threshold (0-1) */
-    similarityThreshold: number;
-    /** Maximum tokens to inject */
-    maxTokens: number;
-    /** How to merge results from multiple sources */
-    mergeStrategy: 'interleaved' | 'prioritize-context' | 'prioritize-docs';
-  };
-  /** Auto-rebuild embeddings on file changes */
-  autoRebuild: boolean;
-  /** Context capture mode. Governs ONLY the `propose:` (new-pattern) footer —
-   *  orthogonal to retrieval.provenanceFooter (the `used:` display toggle). */
-  contextCapture: {
-    /** Enable context capture prompts */
-    enabled: boolean;
-    /**
-     * Capture mode:
-     *  - 'propose' (default): surface a `Context: propose:` footer; the user
-     *    invokes /create-context to actually write the file.
-     *  - 'silent': suppress the propose footer entirely.
-     *  - 'auto': write the context file without asking. **Deferred to v2, and
-     *    the recommended default is NOT to use it** — auto-capturing un-vetted
-     *    patterns is worse than manual capture of good ones; gate on the CAE
-     *    first. When auto IS on, the `propose:` footer is moot (nothing to ask)
-     *    and should suppress itself or downgrade to a terse "created:" receipt.
-     *    Orthogonal in code to retrieval.provenanceFooter (the `used:` toggle),
-     *    but coupled in sensible defaults: auto ⇒ no propose footer.
-     */
-    mode: 'propose' | 'silent' | 'auto';
-  };
-}
-
-/**
- * Query hook input (from UserPromptSubmit)
- */
+/** Query hook input (from UserPromptSubmit). */
 export interface QueryHookInput {
-  /** User prompt */
   prompt: string;
-  /** Optional context from previous turns */
   context?: string;
-  /** Project directory */
   cwd?: string;
 }
 
-/**
- * Query hook output
- */
+/** Query hook output (returned to Claude Code). */
 export interface QueryHookOutput {
-  /** Whether to continue normal processing */
   continue: boolean;
-  /** Output to inject into context */
   hookSpecificOutput?: {
     additionalContext: string;
   };
+}
+
+/** Daemon /health response. */
+export interface HealthResponse {
+  status: 'ok' | 'degraded' | 'error';
+  uptime: number;
+  modelLoaded: boolean;
+  embeddingModel: string;
+}
+
+/** Daemon /query request body. */
+export interface QueryRequest {
+  project: string;
+  prompt: string;
+  cwd?: string;
+}
+
+/** Knowledge source configuration (from plugin.json config.sources). */
+export interface SourceConfig {
+  type?: string;
+  path?: string;
+  enabled?: boolean;
+  indexFile?: string;
+  exclude?: string[];
 }

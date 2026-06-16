@@ -36,7 +36,7 @@
     "rag",
     "semantic-search",
     "embeddings",
-    "chroma",
+    "lancedb",
     "claude-code"
   ],
   "author": "Anthony Dawson",
