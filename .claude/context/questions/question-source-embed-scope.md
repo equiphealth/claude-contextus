@@ -1,6 +1,6 @@
 ---
 name: source-embed-scope
-description: TOP MISS — docs/ dir is not watched, so doc edits serve stale retrieval silently until a full embed. Broader: auto-embed only covers .claude/context/. Scope (user* vs project*) is SETTLED, not the question.
+description: "TOP MISS — docs/ dir is not watched, so doc edits serve stale retrieval silently until a full embed. Broader — auto-embed only covers .claude/context/. Scope (user* vs project*) is SETTLED, not the question."
 metadata:
   type: question
   tags:
