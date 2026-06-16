@@ -32,6 +32,7 @@
 import path from 'path';
 import {
   ensureDaemonRunning,
+  ensureDepsInstalled,
   waitForModel,
   getHealth,
   getVerbosity,
@@ -82,6 +83,15 @@ async function main() {
   let warmOk = false;
 
   try {
+    // Packaged install only: a marketplace clone has no node_modules. Kick off a
+    // detached dep-install into ${CLAUDE_PLUGIN_DATA} BEFORE spawning the daemon.
+    // No-op in dev / --plugin-dir. If it starts an install, the daemon this session
+    // may degrade to no-injection; deps are ready next session (graceful).
+    if (ensureDepsInstalled()) {
+      lines.push(
+        'contextus: installing dependencies (first launch only) — context injection will start once it finishes, likely next session.'
+      );
+    }
     const wasRunning = await ensureDaemonRunning();
     // If we spawned one, wait (bounded) for warm. Either way fetch /health so the
     // decision logic can see modelLoaded + warmupError (the silent-failure signal).

@@ -68,6 +68,80 @@ export function formatUptime(seconds) {
   return `${s}s`;
 }
 
+/**
+ * Dependency bootstrap for the PACKAGED plugin (marketplace install).
+ *
+ * A marketplace clone ships source + committed dist/ but NO node_modules — Claude
+ * Code runs no install lifecycle (PACKAGING.md). The native deps (@lancedb / @xenova)
+ * must be installed on the target machine into the PERSISTENT ${CLAUDE_PLUGIN_DATA}
+ * dir (which survives plugin updates, unlike the ephemeral ${CLAUDE_PLUGIN_ROOT}),
+ * and the daemon spawned with NODE_PATH pointing there.
+ *
+ * Guards (this is a strict NO-OP in dev / `--plugin-dir`):
+ *   - Only acts when BOTH $CLAUDE_PLUGIN_ROOT and $CLAUDE_PLUGIN_DATA are set
+ *     (i.e. a real packaged launch), AND the repo has no local node_modules.
+ *   - Idempotent: skips when the installed package.json matches the plugin's
+ *     (the documented `diff package.json` pattern) — so it installs once, then
+ *     only re-runs after a dependency change.
+ *
+ * The install runs DETACHED in the background (a native lancedb build easily
+ * exceeds the 20s SessionStart timeout). The daemon spawn this session may find
+ * deps missing and degrade to no-injection; the NEXT session finds them ready.
+ * This matches the existing graceful-degradation posture.
+ *
+ * NOTE: this path can only be exercised under a real marketplace install — it is
+ * NOT reachable from a `--plugin-dir` dogfood session (node_modules present), so it
+ * is unverified locally by design. See PACKAGING.md.
+ */
+const PLUGIN_DATA = process.env.CLAUDE_PLUGIN_DATA || null;
+
+/** node_modules dir the daemon should load from: managed data dir if packaged, else repo. */
+export function depsNodeModules() {
+  if (PLUGIN_DATA && !fs.existsSync(path.join(REPO_ROOT, 'node_modules'))) {
+    return path.join(PLUGIN_DATA, 'node_modules');
+  }
+  return path.join(REPO_ROOT, 'node_modules');
+}
+
+/** True when we're a packaged launch that needs deps installed into PLUGIN_DATA. */
+function needsDepBootstrap() {
+  if (!PLUGIN_DATA) return false; // dev / --plugin-dir → no-op
+  if (fs.existsSync(path.join(REPO_ROOT, 'node_modules'))) return false; // repo has deps
+  // Idempotency: installed package.json matches the plugin's → already bootstrapped.
+  try {
+    const src = fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8');
+    const installed = fs.readFileSync(path.join(PLUGIN_DATA, 'package.json'), 'utf8');
+    if (src === installed && fs.existsSync(path.join(PLUGIN_DATA, 'node_modules'))) return false;
+  } catch {
+    /* no installed package.json yet → needs install */
+  }
+  return true;
+}
+
+/**
+ * Ensure packaged deps are installed into ${CLAUDE_PLUGIN_DATA}. Fires a DETACHED
+ * `npm install` (copying the plugin's package.json first) and returns immediately
+ * with `true` if it kicked off an install, `false` if nothing to do. Never throws.
+ */
+export function ensureDepsInstalled() {
+  if (!needsDepBootstrap()) return false;
+  try {
+    fs.mkdirSync(PLUGIN_DATA, { recursive: true });
+    fs.copyFileSync(path.join(REPO_ROOT, 'package.json'), path.join(PLUGIN_DATA, 'package.json'));
+    // --omit=dev: runtime deps only (tsx/eslint/etc. not needed — we run dist/ JS).
+    const child = spawn('npm', ['install', '--omit=dev', '--no-audit', '--no-fund'], {
+      cwd: PLUGIN_DATA,
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false; // best-effort; daemon will degrade to no-injection until deps land
+  }
+}
+
 /** GET /health with a short timeout. Returns the parsed body or null on failure. */
 export async function getHealth(timeoutMs = 1000) {
   try {
@@ -97,11 +171,15 @@ function resolveLaunch(jsPath, tsPath) {
 /** Spawn a detached daemon process that outlives the hook. */
 function spawnDetached(jsPath, tsPath) {
   const { cmd, args } = resolveLaunch(jsPath, tsPath);
+  // Packaged launches load native deps from ${CLAUDE_PLUGIN_DATA}/node_modules via
+  // NODE_PATH (the repo has none). In dev this resolves to the repo's own
+  // node_modules — a harmless explicit no-op (Node already searches it).
+  const env = { ...process.env, NODE_PATH: depsNodeModules() };
   const child = spawn(cmd, args, {
     cwd: REPO_ROOT,
     detached: true,
     stdio: 'ignore',
-    env: process.env,
+    env,
   });
   child.unref();
 }
