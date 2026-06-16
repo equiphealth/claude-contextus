@@ -73,8 +73,29 @@ slug→prefix rename, type inference, and tag handling are unit-tested
 safety (dry-run, idempotency, repoint, verify-before-embed) live in
 `scripts/migrate-memory.ts`.
 
+## Docs Frontmatter Migration
+
+Gated by `config.docs.requireFrontmatter` in plugin.json (set during `/contextus-setup`).
+When that's `true` and you run with `--docs`, scans `docs/` for files missing frontmatter
+and attempts to add it. Same schema as context files:
+
+```bash
+$TSX $MIG --docs              # dry-run: show what frontmatter would be added
+$TSX $MIG --docs --apply      # write frontmatter into docs files
+```
+
+For each doc without frontmatter, it:
+1. Derives `name` from the filename slug
+2. Extracts `description` from the first paragraph or heading
+3. Infers `type` from content (most docs → `reference` or `arch`)
+4. Suggests `tags` from headings and key terms (never fabricates — skips if unsure)
+
+Docs with existing frontmatter are left untouched (idempotent).
+
 ## Related
 
 - `/create-context` — author a new context file directly
+- `/create-doc` — create docs with proper frontmatter from the start
+- `/audit-context` — validate frontmatter on both context and docs
 - `/rebuild-embeddings` — full corpus re-embed
 - `docs/CATEGORIES_AND_TAGS.md` — the category/tag vocabulary the targets use
