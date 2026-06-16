@@ -60,6 +60,10 @@ Think of it as a context system that reads your mind — captures what you learn
 
 ## Installation
 
+> ⚠️ **Untested as of 2026-06-15.** The marketplace flow below is wired up but has
+> **not** been verified on a real clean-machine install — use `--plugin-dir` for now.
+> Tracked as a smoke-test before this is the recommended path.
+
 **[v1.1 — GitHub marketplace]** Add the marketplace, then install:
 
 ```text
@@ -271,16 +275,18 @@ pnpm test             # 137 tests
 pnpm lint
 ```
 
-Engine scripts run via tsx **from the target project**, not from this repo (cwd picks
-the corpus) — `pnpm --prefix` is wrong, it embeds the contextus repo's own corpus:
+Working on contextus's *own* corpus (e.g. dogfooding it on this repo), the package
+scripts are fine:
 
 ```bash
-cd <target-project>
-~/src/claude-contextus/node_modules/.bin/tsx \
-  ~/src/claude-contextus/scripts/embed-contexts.ts        # build/refresh the corpus
-~/src/claude-contextus/node_modules/.bin/tsx \
-  ~/src/claude-contextus/scripts/search.ts "your query"   # replay retrieval (scores + floor)
+pnpm embed                                  # build/refresh this repo's corpus
+pnpm query "your query"                     # replay retrieval (scores + floor)
 ```
+
+> **Targeting a *different* project?** Don't use `pnpm --prefix` — it sets cwd to the
+> contextus repo and embeds the wrong corpus. Run the repo-local tsx by path with the
+> target project as cwd instead: `cd <target> && ~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/embed-contexts.ts`.
+> The skills (`/contextus-setup`, `/migrate-memory`, …) handle this for you.
 
 ## Examples
 
