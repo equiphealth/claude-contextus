@@ -47,4 +47,4 @@ Adopted production-tested rules from `~/src/my-equip-mobile/automation/` before 
 
 June 12, 2026 — before daemon implementation, while code is still scaffolding.
 
-124 violations in existing placeholder code (mostly `any` types in chroma-client). Will resolve during implementation.
+124 violations in early placeholder code (resolved during the ChromaDB→LanceDB migration).
