@@ -41,6 +41,14 @@ During first-run, the user is asked:
    - `false` → docs embed as-is (type=unknown, no tags), audit skips them,
      `/create-doc` still adds frontmatter (you invoked it, you want it)
 
+2. **Exclude patterns** — "Are there directories in `docs/` (or `.claude/context/`)
+   you want to exclude from embedding? e.g. `prompts`, `archive`, `drafts`"
+
+   Sets `config.sources.projectDocs.exclude` (string[], default `[]`):
+   - Globs relative to the source directory (e.g. `prompts/**`)
+   - Merged with built-in defaults (`**/CONTEXT.md`, `**/DOCS.md`, `**/README.md`)
+   - Also asks for context excludes if user has subdirs they want skipped
+
 The CLAUDE.md stanza tells a fresh Claude instance that context is injected here
 and that new patterns can be proposed via the awareness footer — making the
 capture loop legible instead of mysterious.
