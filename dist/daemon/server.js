@@ -200,7 +200,7 @@ async function handleQuery(body, res) {
         }
         return sendJson(res, 200, { continue: true });
     }
-    const { block, included, tokens } = formatInjection(kept, cfg.retrieval.maxTokens);
+    const { block, included, tokens } = formatInjection(kept, cfg.retrieval.maxTokens, cwd);
     const injectedNames = included.map((r) => r.filename || r.id);
     // Learn from this injection (best-effort, off the response path):
     //  - bump hit_count so the re-ranker favors patterns that actually surface

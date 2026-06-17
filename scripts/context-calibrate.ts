@@ -91,9 +91,7 @@ async function runFloorMode(args: Args): Promise<void> {
   const cfg = loadProjectConfig(project, process.cwd());
   let outcome;
   try {
-    outcome = await runFloorReplay({ project, limit: args.limit }, (msg) =>
-      console.error(msg)
-    );
+    outcome = await runFloorReplay({ project, limit: args.limit }, (msg) => console.error(msg));
   } catch (err) {
     if (err instanceof ReplayError) {
       console.error(err.message);

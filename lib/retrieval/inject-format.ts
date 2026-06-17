@@ -15,7 +15,12 @@
  */
 
 import type { RankedResult } from './reranker.js';
-import { loadTemplate, renderTemplate, type PatternVars, type TemplateContext } from './template.js';
+import {
+  loadTemplate,
+  renderTemplate,
+  type PatternVars,
+  type TemplateContext,
+} from './template.js';
 
 /**
  * Bracketed header — kept terse (it's paid on every injection). Two jobs in five
@@ -92,7 +97,11 @@ export interface FormatResult {
  * using the legacy renderChunk estimate, then render all admitted chunks
  * through the template.
  */
-export function formatInjection(kept: RankedResult[], maxTokens: number, cwd?: string): FormatResult {
+export function formatInjection(
+  kept: RankedResult[],
+  maxTokens: number,
+  cwd?: string
+): FormatResult {
   if (kept.length === 0) {
     return { block: '', included: [], budgetDropped: [], tokens: 0 };
   }

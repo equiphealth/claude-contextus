@@ -60,7 +60,9 @@ export async function loadSource(src) {
     // Anchor each exclude with a bare-basename variant so root-level indexes drop.
     const ignore = src.exclude.flatMap((g) => (g.startsWith('**/') ? [g, g.slice(3)] : [g]));
     const rel = await glob('**/*.md', { cwd: src.dir, ignore });
-    return rel.sort().map((f) => ({ context: loadContext(path.join(src.dir, f), src.dir), source: src.name }));
+    return rel
+        .sort()
+        .map((f) => ({ context: loadContext(path.join(src.dir, f), src.dir), source: src.name }));
 }
 /**
  * Load all enabled sources. Dedups by source-qualified id (a file can't appear

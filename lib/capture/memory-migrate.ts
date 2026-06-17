@@ -107,12 +107,15 @@ export function reclassifyFeedback(file: MemoryFile): { type: string; note: stri
   const hay = `${file.filename} ${name} ${desc} ${file.body.slice(0, 200)}`.toLowerCase();
 
   // Pitfall language → gotcha (something bites you if you don't know it).
-  const GOTCHA = /quirk|pitfall|footgun|gotcha|crash|instabilit|flak|timeout|inconsistent|unstable|do ?n['o]t await|returns? false|can return|expects? .*not|distinguish|troubleshoot/;
+  const GOTCHA =
+    /quirk|pitfall|footgun|gotcha|crash|instabilit|flak|timeout|inconsistent|unstable|do ?n['o]t await|returns? false|can return|expects? .*not|distinguish|troubleshoot/;
   // AI-process / workflow meta → reference (not domain knowledge to act on).
-  const REFERENCE = /proactive|claude-?mem|memory file|document(ing|ation) (investigation|belongs)|search .*before|ai assistant|ai docs/;
+  const REFERENCE =
+    /proactive|claude-?mem|memory file|document(ing|ation) (investigation|belongs)|search .*before|ai assistant|ai docs/;
 
   if (GOTCHA.test(hay)) return { type: 'gotcha', note: `feedback→gotcha (pitfall language)` };
-  if (REFERENCE.test(hay)) return { type: 'reference', note: `feedback→reference (AI-process meta)` };
+  if (REFERENCE.test(hay))
+    return { type: 'reference', note: `feedback→reference (AI-process meta)` };
   return { type: 'decision', note: `feedback→decision (resolved convention)` };
 }
 
@@ -239,7 +242,9 @@ export function renderContextIndex(items: MigrationPlanItem[]): string {
   }
 
   // Anything with an unrecognized type still gets listed, never dropped.
-  const others = items.filter((it) => !known.has(it.type)).sort((a, b) => a.slug.localeCompare(b.slug));
+  const others = items
+    .filter((it) => !known.has(it.type))
+    .sort((a, b) => a.slug.localeCompare(b.slug));
   if (others.length) {
     out.push('', '## Other', '');
     for (const it of others) out.push(line(it));

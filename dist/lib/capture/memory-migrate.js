@@ -189,7 +189,9 @@ export function renderContextIndex(items) {
             out.push(line(it));
     }
     // Anything with an unrecognized type still gets listed, never dropped.
-    const others = items.filter((it) => !known.has(it.type)).sort((a, b) => a.slug.localeCompare(b.slug));
+    const others = items
+        .filter((it) => !known.has(it.type))
+        .sort((a, b) => a.slug.localeCompare(b.slug));
     if (others.length) {
         out.push('', '## Other', '');
         for (const it of others)

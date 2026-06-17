@@ -69,7 +69,9 @@ async function main(): Promise<void> {
   );
   if (mismatches.length > 0) {
     const badPaths = new Set(mismatches.map((m) => m.relPath));
-    console.error(`\n⚠ Skipping ${mismatches.length} file(s) with prefix/type mismatch (fix the filename prefix or metadata.type):`);
+    console.error(
+      `\n⚠ Skipping ${mismatches.length} file(s) with prefix/type mismatch (fix the filename prefix or metadata.type):`
+    );
     for (const m of mismatches) {
       console.error(`    ${m.relPath}: prefix '${m.prefix}-' but type '${m.type}'`);
     }
