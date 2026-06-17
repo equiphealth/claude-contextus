@@ -49,7 +49,8 @@ jobs:
           mkdir -p _package
           cp -r dist/ _package/dist/
           cp -r scripts/ _package/scripts/
-          cp plugin.json _package/
+          # Plugin manifests
+          cp plugin.jsonc _package/
           cp package.json _package/
           cp pnpm-lock.yaml _package/
           cp -r skills/ _package/skills/
