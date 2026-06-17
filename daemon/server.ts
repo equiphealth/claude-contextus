@@ -45,11 +45,13 @@ import { buildIntrospection } from '../lib/introspect.js';
 import {
   logRetrieval,
   logNoInject,
+  logParanoid,
   logError,
   logInfo,
   promptHash,
   type DroppedChunkLog,
 } from '../lib/logger.js';
+import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 
 const PORT = 37800;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -208,10 +210,21 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       latencyMs: Date.now() - started,
       floorDropped,
     });
+    if (cfg.logging.paranoid) {
+      logParanoid({
+        project: projectLabel,
+        promptHash: hash,
+        prompt,
+        injection: '',
+        retrieved: [],
+        similarityScores: [Number(bestScore.toFixed(4))],
+        latencyMs: Date.now() - started,
+      });
+    }
     return sendJson(res, 200, { continue: true });
   }
 
-  const { block, included, tokens } = formatInjection(kept, cfg.retrieval.maxTokens);
+  const { block, included, tokens } = formatInjection(kept, cfg.retrieval.maxTokens, cwd);
   const injectedNames = included.map((r) => r.filename || r.id);
 
   // Learn from this injection (best-effort, off the response path):
@@ -250,6 +263,18 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     latencyMs: Date.now() - started,
     floorDropped,
   });
+
+  if (cfg.logging.paranoid) {
+    logParanoid({
+      project: projectLabel,
+      promptHash: hash,
+      prompt,
+      injection: block,
+      retrieved: injectedNames,
+      similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
+      latencyMs: Date.now() - started,
+    });
+  }
 
   // Append a TRUTHFUL provenance-footer instruction scoped to exactly these files
   // (renderFooterInstruction). Co-located with the real injected set so Claude
@@ -454,6 +479,9 @@ function cleanupRuntimeFiles(): void {
 }
 
 async function startDaemon(): Promise<void> {
+  // Rotate stale logs before any writes happen (synchronous, cheap for fresh logs).
+  rotateLogsOnStartup();
+
   // Bind first so a second daemon racing for the port fails fast (EADDRINUSE)
   // instead of double-loading the model.
   server.on('error', (err: NodeJS.ErrnoException) => {

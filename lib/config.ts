@@ -128,12 +128,32 @@ export interface CalibrationConfig {
   model: { provider: 'anthropic' | 'ollama'; model?: string; endpoint?: string };
 }
 
+export interface RetentionConfig {
+  /** Days to keep active (uncompressed) standard log files. Default: 30. */
+  activeDays: number;
+  /** Months to keep compressed archives before deletion. Default: 6. */
+  archiveMonths: number;
+  /** Days to keep paranoid.jsonl before deletion (no archive, privacy). Default: 7. */
+  paranoidDays: number;
+}
+
+export interface LoggingConfig {
+  /**
+   * Log the full round-trip: user prompt text + complete injection payload.
+   * Written to ~/.contextus/logs/paranoid.jsonl. ON by default.
+   */
+  paranoid: boolean;
+  /** Retention settings for log rotation (runs on daemon startup). */
+  retention: RetentionConfig;
+}
+
 export interface ContextusConfig {
   embedding: EmbeddingConfig;
   storage: StorageConfig;
   retrieval: RetrievalConfig;
   notifications: NotificationsConfig;
   calibration: CalibrationConfig;
+  logging: LoggingConfig;
 }
 
 /** Hard defaults — embedding locked to Transformers.js + nomic. */
@@ -170,6 +190,14 @@ const DEFAULTS: ContextusConfig = {
   calibration: {
     targetSamples: 100, // LOGGING.md default sample budget per campaign
     model: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+  },
+  logging: {
+    paranoid: true,
+    retention: {
+      activeDays: 30,
+      archiveMonths: 6,
+      paranoidDays: 7,
+    },
   },
 };
 
@@ -216,6 +244,11 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
   if (c.retrieval) Object.assign(merged.retrieval, c.retrieval);
   if (c.notifications) Object.assign(merged.notifications, c.notifications);
   if (c.calibration) Object.assign(merged.calibration, c.calibration);
+  if (c.logging) {
+    const { retention: retOverride, ...lRest } = c.logging;
+    Object.assign(merged.logging, lRest);
+    if (retOverride) Object.assign(merged.logging.retention, retOverride);
+  }
 }
 
 /** Read a JSON file's `config` object (or the whole file if no `config` key). [] on miss. */

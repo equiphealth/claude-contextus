@@ -8,7 +8,8 @@ Dual-format logging for analytics + human readability.
 ~/.contextus/logs/
 ├── usage.jsonl          # Structured retrieval + capture events
 ├── daemon.log           # Human-readable daemon activity
-├── errors.jsonl         # Structured error events  
+├── errors.jsonl         # Structured error events
+├── paranoid.jsonl       # Full prompt + injection text (opt-in, privacy-sensitive)
 └── archive/
     ├── usage-2026-05.jsonl.gz
     └── daemon-2026-05.log.gz
@@ -152,6 +153,32 @@ Parse response, map numbers back to pattern slugs, log event.
 }
 ```
 
+## paranoid.jsonl (Opt-in Full Capture)
+
+Logs the complete round-trip: user prompt text AND the full injection payload. Only written when `logging.paranoid: true` in the project config. **Privacy-sensitive** — contains raw prompt text.
+
+```json
+{
+  "type": "paranoid",
+  "timestamp": "2026-06-17T14:23:42.156Z",
+  "project": "automation",
+  "prompt_hash": "a3f5c9d2",
+  "prompt": "How should I set up the schedule screen tests?",
+  "injection": "[contextus — automation/testing]\n\n# WDIO Session Handling\n...",
+  "retrieved": ["wdio-session-handling", "schedule-screen-setup"],
+  "similarity_scores": [0.87, 0.81],
+  "latency_ms": 163
+}
+```
+
+**Enable**: Set `logging.paranoid: true` in `.claude/contextus.json` or plugin.json config.
+
+**View**: `contextus watch --paranoid` (formatted) or `cat ~/.contextus/logs/paranoid.jsonl | jq .`
+
+**No-inject entries** have `injection: ""` and `retrieved: []` — useful for seeing what prompts get no context.
+
+**Rotation**: Same as other logs (30 days active, compress monthly). Consider shorter retention given sensitivity.
+
 ## errors.jsonl (JSONL Format)
 
 One line per error/warning. Structured for alerting + analysis.
@@ -236,19 +263,39 @@ Recent Activity (last 24 hours)
 
 ## Log Rotation
 
-Automatic rotation via simple script (called by daemon on startup):
+Implemented in `lib/log-rotation.ts`, called once at daemon startup (before the server listens).
 
-```bash
-# Compress logs older than 30 days
-find ~/.contextus/logs/ -name "*.jsonl" -mtime +30 -exec gzip {} \;
-find ~/.contextus/logs/ -name "*.log" -mtime +30 -exec gzip {} \;
+**Standard logs** (daemon.log, usage.jsonl, errors.jsonl):
+- Rotated when mtime > `logging.retention.activeDays` (default: 30)
+- Compressed to `archive/<name>-<YYYY-MM>.ext.gz` via Node's `zlib.gzipSync`
+- Original deleted after archival
 
-# Move to archive
-mv ~/.contextus/logs/*.gz ~/.contextus/logs/archive/
+**Paranoid log** (paranoid.jsonl):
+- Rotated when mtime > `logging.retention.paranoidDays` (default: 7)
+- **Deleted outright** — never archived (privacy-sensitive, contains prompt text)
 
-# Delete archives older than 6 months
-find ~/.contextus/logs/archive/ -name "*.gz" -mtime +180 -delete
+**Archive pruning**:
+- `.gz` files in `archive/` older than `logging.retention.archiveMonths` (default: 6) are deleted
+
+**Config** (all optional, in `logging.retention`):
+```json
+{
+  "logging": {
+    "paranoid": true,
+    "retention": {
+      "activeDays": 30,
+      "archiveMonths": 6,
+      "paranoidDays": 7
+    }
+  }
+}
 ```
+
+**Design choices**:
+- Runs on startup only (no timers, no cron)
+- Synchronous (pre-server, no concurrent writes)
+- Idempotent (won't re-archive existing archives)
+- All errors swallowed (rotation failure never prevents daemon startup)
 
 ## Implementation Notes
 
