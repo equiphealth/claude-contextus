@@ -42,7 +42,8 @@ const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
  * prior timeout/crash. Uses a lockfile to prevent concurrent tsc invocations
  * from parallel session starts (harmless but wasteful).
  *
- * Returns true if it ran a build, false if skipped.
+ * Returns { built: true } on success, { built: false, reason: string } on
+ * skip/failure. The caller uses `reason` to surface a warning to the user.
  */
 const DIST_SENTINEL_FILES = [
   DAEMON_JS,
@@ -50,38 +51,46 @@ const DIST_SENTINEL_FILES = [
   path.join(REPO_ROOT, 'dist', 'lib', 'retrieval', 'inject-format.js'),
 ];
 const BUILD_LOCK = path.join(RUNTIME_DIR, 'build.lock');
+const BUILD_TIMEOUT_MS = 60000; // 60s — cold npx + full type-check on slow machines
 
 export function ensureDistBuilt() {
-  if (isDevMode()) return false;
-  if (DIST_SENTINEL_FILES.every((f) => fs.existsSync(f))) return false;
+  if (isDevMode()) return { built: false, reason: 'dev-mode' };
+  if (DIST_SENTINEL_FILES.every((f) => fs.existsSync(f))) return { built: false, reason: 'exists' };
   // Lockfile guard: skip if another session is already building.
-  // Stale lock cleanup: if the lock is older than 60s, the builder likely crashed.
+  // Stale lock cleanup: if the lock is older than 90s, the builder likely crashed.
   try {
     const lockStat = fs.statSync(BUILD_LOCK);
-    if (Date.now() - lockStat.mtimeMs > 60000) fs.unlinkSync(BUILD_LOCK);
-  } catch { /* no lock file — fine */ }
+    if (Date.now() - lockStat.mtimeMs > 90000) fs.unlinkSync(BUILD_LOCK);
+  } catch {
+    /* no lock file — fine */
+  }
   try {
     fs.mkdirSync(RUNTIME_DIR, { recursive: true });
     const lockFd = fs.openSync(BUILD_LOCK, 'wx'); // fails if file exists
     fs.closeSync(lockFd);
   } catch {
-    // Lock exists — another session is building. Poll for completion (max 30s),
+    // Lock exists — another session is building. Poll for completion (max 60s),
     // then fall back to tsx if dist/ still isn't ready.
-    const deadline = Date.now() + 30000;
+    const deadline = Date.now() + BUILD_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      if (DIST_SENTINEL_FILES.every((f) => fs.existsSync(f))) return false;
-      // Busy-wait with Atomics to avoid spawning sleep processes.
+      if (DIST_SENTINEL_FILES.every((f) => fs.existsSync(f)))
+        return { built: false, reason: 'exists' };
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
     }
-    return false;
+    return { built: false, reason: 'lock-timeout' };
   }
   try {
-    execSync('npx tsc', { cwd: REPO_ROOT, stdio: 'ignore', timeout: 30000 });
-    return true;
-  } catch {
-    return false; // build failed — resolveLaunch() will fall back to tsx
+    execSync('npx tsc', { cwd: REPO_ROOT, stdio: 'ignore', timeout: BUILD_TIMEOUT_MS });
+    return { built: true };
+  } catch (err) {
+    const reason = err?.killed ? 'build-timeout' : 'build-failed';
+    return { built: false, reason };
   } finally {
-    try { fs.unlinkSync(BUILD_LOCK); } catch { /* best-effort */ }
+    try {
+      fs.unlinkSync(BUILD_LOCK);
+    } catch {
+      /* best-effort */
+    }
   }
 }
 

@@ -95,8 +95,21 @@ async function main() {
     }
     // Install-from-main: dist/ is not committed, so build it on first run.
     // No-op in dev mode (tsx runs source) or if dist/ already exists.
-    if (ensureDistBuilt()) {
+    const buildResult = ensureDistBuilt();
+    if (buildResult.built) {
       lines.push('contextus: built dist/ from source (first run only).');
+    } else if (buildResult.reason === 'build-failed') {
+      lines.push(
+        'contextus: dist/ build failed — falling back to tsx (slower startup). Check that TypeScript compiles: npx tsc'
+      );
+    } else if (buildResult.reason === 'build-timeout') {
+      lines.push(
+        'contextus: dist/ build timed out — falling back to tsx. Try running `pnpm build` manually.'
+      );
+    } else if (buildResult.reason === 'lock-timeout') {
+      lines.push(
+        "contextus: waited for another session to build dist/ but it didn't finish — falling back to tsx."
+      );
     }
     const wasRunning = await ensureDaemonRunning();
     // If we spawned one, wait (bounded) for warm. Either way fetch /health so the

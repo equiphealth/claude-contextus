@@ -63,9 +63,10 @@ jobs:
           cp -r hooks/ _package/hooks/
           # Templates
           cp -r templates/ _package/templates/
-          # Daemon source (needed for dev-mode tsx fallback)
+          # TypeScript source — included so isDevMode() tsx fallback works when
+          # dist/ is absent or incomplete. Production runs dist/ JS; source is
+          # only loaded if the build failed or the user forces CONTEXTUS_DEV=1.
           cp -r daemon/ _package/daemon/
-          # Lib source (needed for dev-mode tsx fallback)
           cp -r lib/ _package/lib/
           # Create tarball
           tar -czf claude-contextus-plugin.tar.gz -C _package .
