@@ -114,8 +114,10 @@ async function main() {
     const wasRunning = await ensureDaemonRunning();
     // If we spawned one, wait (bounded) for warm. Either way fetch /health so the
     // decision logic can see modelLoaded + warmupError (the silent-failure signal).
+    // probe=true on existing daemons: verify the provider is still reachable (a
+    // cheap embed) so we don't report "all good" when Ollama has since died.
     const warmModel = wasRunning ? false : await waitForModel({ attempts: 30, intervalMs: 500 });
-    const health = await getHealth(1000);
+    const health = await getHealth(2000, { probe: wasRunning });
     const status = resolveDaemonStatus({ wasRunning, warmModel, health, verbosity });
     warmOk = status.warmOk;
     if (status.message) lines.push(status.message);

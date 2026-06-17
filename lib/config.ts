@@ -528,7 +528,8 @@ export function findPluginConfig(): Record<string, unknown> {
   const pluginPath = findPluginJson();
   if (!pluginPath) return {};
   try {
-    const raw = JSON.parse(fs.readFileSync(pluginPath, 'utf-8'));
+    const text = fs.readFileSync(pluginPath, 'utf-8');
+    const raw = JSON.parse(stripJsonComments(text));
     return (raw.config ?? {}) as Record<string, unknown>;
   } catch {
     return {};

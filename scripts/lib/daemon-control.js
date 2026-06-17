@@ -202,10 +202,12 @@ export function ensureDepsInstalled() {
   }
 }
 
-/** GET /health with a short timeout. Returns the parsed body or null on failure. */
-export async function getHealth(timeoutMs = 1000) {
+/** GET /health with a short timeout. Returns the parsed body or null on failure.
+ *  probe=true → ask the daemon to verify the provider is actually reachable. */
+export async function getHealth(timeoutMs = 1000, { probe = false } = {}) {
   try {
-    const res = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    const qs = probe ? '?probe=true' : '';
+    const res = await fetch(`${BASE_URL}/health${qs}`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     return await res.json();
   } catch {
