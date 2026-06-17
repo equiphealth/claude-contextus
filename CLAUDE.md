@@ -1,182 +1,111 @@
 # claude-contextus
 
-**Proactive context delivery system for Claude Code**
-
-Stop searching for context — let it find you. Automatic semantic retrieval of project patterns from `.claude/context/` with zero-query injection.
+**Proactive context delivery for Claude Code** — automatic semantic retrieval from `.claude/context/`, injected on every prompt without querying.
 
 ## Project Status
 
-**Phase**: Design complete, ready for implementation  
-**Next**: POC implementation (daemon + basic retrieval)
+**Version**: 0.3.0  
+**State**: Running in production (dogfooding across multiple repos)  
+**Current work**: See `docs/dev/V2_ROADMAP.md` for backlog
 
-## Key Design Decisions
+## Architecture (30-second version)
 
-All major architectural decisions are documented in:
-- `docs/dev/DESIGN.md` — Complete system architecture (16 settled decisions)
-- `docs/dev/DESIGN_QUESTIONS.md` — Implementation decisions with recommendations
-- `docs/dev/LOGGING.md` — Dual-format logging schema (analytics + human-readable)
-- `.claude/memory/` — Critical design decisions and feedback
+```
+UserPromptSubmit hook → daemon /query → embed prompt → vector search → rerank → inject
+                                                      ↕ (adaptive)
+                                               LLM expansion (ollama → bedrock fallback)
+```
 
-**Core principles** (do not re-litigate):
-1. **Proactive delivery over search** — Context injected automatically, not on-demand
-2. **Quality over vanity metrics** — Calibration evaluates actual usage, not token savings
-3. **Capture modes are permanent tradeoffs** — `propose`/`auto`/`silent` are choices, not a ramp
-4. **Injection floor is critical** — Not every prompt should receive context
-5. **Haiku for evaluation** — Proven reliable, 10× cheaper than Sonnet
-6. **User message prepend** — Front-loads context for better attention
-7. **File-based session state** — `~/.contextus/.session-state.json`
-8. **Auto-start daemon with recovery** — 3 retries, exponential backoff
+- **Daemon** (`daemon/server.ts`) — HTTP server on localhost, auto-started by SessionStart hook
+- **Embedding** — nomic-embed-text via Ollama (768-dim), stored in LanceDB per-project
+- **Retrieval** — similarity search + injection floor (0.45) + provenance footer
+- **Expansion** — multi-vector query expansion when initial scores are weak (adaptive/always/off)
+- **Calibration** — floor replay works (`/context-calibrate --floor`); post-prompt usage evaluation (Stop hook) not yet implemented
+- **Config** — 3-tier merge: `plugin.jsonc` → `~/.contextus/data/<project>/config.json` → `.claude/contextus.jsonc`
 
-## What Makes This Different from claude-mem
+## Config
 
-| Feature | contextus | claude-mem |
-|---------|-----------|------------|
-| **Purpose** | Inject curated patterns | Track activity history |
-| **Source** | Hand-written `.claude/context/` | Auto-generated observations |
-| **Retrieval** | **Automatic** (every prompt) | **Manual** (`/mem-search`) |
-| **UX** | Proactive, ambient | Reactive, explicit |
-| **Storage** | `~/.contextus/data/` (file-based) | Server-based |
+All config files are **JSONC** (comments supported). Config hot-reloads on every query — no daemon restart needed for config changes.
 
-**They complement each other**: contextus = normative patterns, claude-mem = observational history
+- `plugin.jsonc` — Runtime defaults (ships with contextus)
+- `.claude/contextus.jsonc` — Per-project overrides (git-committed, highest precedence)
+- `examples/contextus.jsonc` — Annotated reference with every option explained
 
-## Implementation Priorities
-
-**v1 (beach implementation)**:
-- ✅ Daemon architecture documented
-- ✅ Metrics framework redesigned
-- ✅ Evaluation infrastructure specified
-- 🚧 Core daemon (embedding + retrieval)
-- 🚧 UserPromptSubmit hook (inject context)
-- 🚧 Stop hook + eval worker
-- 🚧 Session state storage
-
-**v2** (after POC validation):
-- Pattern compression
-- Dedup checking (LLM-based)
-- Per-category thresholds
-- Advanced re-ranking
-
-**v3** (future):
-- Hybrid semantic + keyword search
-- Context versioning
-- Collaborative corpus sharing
-
-## Quick Reference
-
-**Key Files**:
-- `docs/dev/DESIGN.md` — Architecture
-- `docs/dev/DESIGN_QUESTIONS.md` — Open questions with recommendations
-- `docs/dev/opus_feedback.txt` — External design review (critical metrics critique)
-- `hooks/stop-evaluation.js` — Calibration evaluation hook
-- `daemon/eval-worker.js` — Background quality measurement
-- `skills/context-calibrate/` — Quality measurement and optimization
-
-**Commands** (once implemented):
-- `/context-status` — Health dashboard
-- `/context-calibrate --start` — Begin quality evaluation (100 samples)
-- `/context-calibrate --report` — View calibration results
-- `/context-doctor` — Troubleshoot issues
-
-**Design Validation Needed** (during POC):
-- Does user message prepend make thinking reference context clearly?
-- Is 3k token budget sufficient? (measure average pattern length)
-- Is 0.7 similarity threshold appropriate? (model-dependent)
-- Does Haiku handle evaluation quality well? (compare vs Sonnet on 20 samples)
+Provider connections (ollama, bedrock, anthropic) are defined once in `providers {}` and referenced by all features.
 
 ## Working with This Codebase
 
-**Documentation hierarchy**:
-1. **CLAUDE.md** (this file) — Project overview and quick reference
-2. **docs/dev/DESIGN.md** — Authoritative architecture spec
-3. **docs/dev/DESIGN_QUESTIONS.md** — Implementation decisions
-4. **`.claude/memory/`** — Design decisions and feedback (searchable)
-5. **Commit messages** — Design decision records
+**Key directories**:
+- `daemon/` — HTTP server (query, notify, reconcile, health endpoints)
+- `lib/` — Core logic (config, embedding, retrieval, calibration, logging)
+- `scripts/` — Hook scripts (plain JS, no build step) + CLI tools (TS, run via tsx)
+- `hooks/` — Hook registration (`hooks.json`)
+- `skills/` — 26 plugin skills (`/ctx-*` aliases for the primary ones)
+- `prompts/` — Externalized prompt templates (editable without code changes)
+- `.claude/context/` — This project's own context patterns (dogfood corpus)
+- `docs/dev/` — Design docs, logging schema, roadmap
+
+**Commands**:
+```bash
+pnpm test              # unit tests (node:test)
+pnpm test:types        # tsc --noEmit
+pnpm format            # prettier --write
+pnpm embed             # rebuild corpus (usually handled by daemon auto-rebuild)
+pnpm daemon            # start daemon manually (normally auto-started by hooks)
+```
 
 **When implementing**:
-- Read DESIGN.md for architectural constraints
-- Check DESIGN_QUESTIONS.md for implementation guidance
-- Validate assumptions marked "🔍 Validate" in DESIGN_QUESTIONS.md
-- Use `/create-memory` to capture learnings
-- Use `/investigation-complete` after solving problems
+- Type-check with `npx tsc --noEmit` before committing
+- Pre-commit hook checks prettier (install: `pnpm prepare`)
+- Target ~80% test coverage — exports + edge cases + failures, skip internal-helper obsession
+- JSONC everywhere — use `//` comments, no trailing commas
 
 **When documenting discoveries**:
-- Design decisions → `.claude/memory/decision_*.md`
-- Implementation patterns → `.claude/context/` (once contextus is working!)
+- Durable patterns → `.claude/context/<category>/` (auto-embedded)
 - Comprehensive guides → `docs/`
 
-## Critical Context
+## Core Principles (do not re-litigate)
 
-**Opus's Design Review** (docs/dev/opus_feedback.txt):
+1. **Proactive delivery over search** — Context injected automatically, not on-demand
+2. **Quality over vanity metrics** — Calibration evaluates actual usage, not token savings
+3. **Config hot-reload** — Edit a file, next query picks it up. No restarts.
+4. **Injection floor is critical** — Not every prompt should receive context (0.45 default)
+5. **Graceful degradation** — Daemon down? Hook returns `continue: true`. Expansion fails? Results still return. Never block a prompt.
+6. **File-based everything** — Session state, configs, logs. No external services.
+7. **Transparency** — Log what was dropped, what was skipped, what fired. `contextus watch` for live tail.
 
-The most important feedback: "Tokens saved" is a vanity metric. It measures against wrong baseline (full-file injection vs inject-nothing). Real quality = did Claude **use** the retrieved patterns?
+## Skills (primary)
 
-**Our response**: Shifted entire metrics framework:
-- Demoted "tokens saved" to efficiency metric
-- Added calibration evaluation (explicit quality ratings)
-- Stop hook + thinking blocks make evaluation tractable
-- Haiku evaluates as critical/helpful/mentioned/unused
+| Skill | Alias | Purpose |
+|-------|-------|---------|
+| `/context-status` | `/ctx-status` | Health dashboard |
+| `/context-calibrate` | `/ctx-calibrate` | Floor calibration works; usage-eval campaigns not yet |
+| `/context-doctor` | `/ctx-doctor` | Troubleshoot issues (not yet implemented) |
+| `/create-context` | `/ctx-create` | Capture a new pattern |
+| `/context-search` | — | Search the corpus |
+| `/contextus-watch` | `/ctx-watch` | Live daemon activity stream |
+| `/migrate-memory` | `/ctx-migrate` | Convert .claude/memory/ → context |
+| `/tag-context` | `/ctx-tag` | Add/manage tags on patterns |
+| `/audit-context` | — | Review for duplicates/staleness |
+| `/rebuild-embeddings` | — | Force full re-embed |
 
-**Why this matters**: We were optimizing a pipeline around a number that couldn't tell us if the system worked.
+## Expansion Pipeline
 
-**Related memories**: [[opus-metrics-critique]], [[evaluation-architecture]], [[ollama-model-quality]]
+Multi-vector query expansion generates alternate phrasings when initial search scores poorly:
+- **Adaptive** (default): fires when best_score < 0.55
+- **Always**: every query (+100-200ms latency)
+- **Off**: disabled
 
-## Team Context
-
-**Claude's Role**: Treat this as senior-level technical collaboration
-- Approach problems with deep knowledge of AI systems, RAG architectures, memory/context systems, and vector databases
-- Discuss semantic search internals, embedding model trade-offs, and retrieval optimization patterns directly
-- Focus on implementation details, architectural trade-offs, and practical design constraints
-- Value working code over theoretical perfection — POC first, polish later
-- Direct technical communication, skip the basics
-
-**Hardware**: Developers have M4 Pro 48GB (excellent for local inference)
-- Makes Ollama viable for evaluation (privacy, zero cost)
-- But validate quality against Haiku baseline first
-- Llama 8B showed poor semantic eval quality in vector-inspector
-
-**Workflow preferences**:
-- File-based everything (session state, configs, logs)
-- Auto-start with recovery (manual start is friction)
-- Transparency over automation (log dropped patterns, show what was skipped)
-- Direct technical communication (no hand-holding, no over-explaining)
-
-## Skills Available
-
-Global skills (work in all projects):
-- `/create-memory` — Document design decisions with validation
-- `/create-doc` — Comprehensive documentation in `docs/`
-- `/audit-memory` — Review memories for duplicates and staleness
-- `/memory-reminder` — Prompts to document discoveries
-- `/investigation-complete` — Post-debugging checklist
-- `/work-complete` — Unified completion workflow
-- `/refactor-symbol` — TypeScript LSP integration
-- `/lint` — Intelligent linting with auto-fix
-
-Project-specific skills:
-- `/context-status` — System health dashboard (once implemented)
-- `/context-calibrate` — Quality measurement (once implemented)
-- `/context-doctor` — Troubleshooting (once implemented)
-
-## Known Issues / Open Questions
-
-See `docs/dev/DESIGN_QUESTIONS.md` for complete list.
-
-**High priority validations during POC**:
-1. Does thinking explicitly reference injected context? (validates injection format)
-2. What's the actual similarity score distribution? (validates 0.7 threshold)
-3. Can Haiku reliably evaluate quality? (compare vs Sonnet on sample)
-4. Do we hit 3k token budget often? (measure pattern lengths)
+Provider chain: ollama (qwen2.5:3b, ~100-400ms) → bedrock fallback (Haiku, ~2s) on fast failures. Shared time budget — slow timeouts don't fall back.
 
 ## Related Projects
 
-- **claude-mem** — Session memory and observations (different purpose, complementary)
-- **vector-inspector** — Embedding visualization tool (user's previous project, informed Ollama quality assessment)
+- **claude-mem** — Session memory/observations (complementary: contextus = normative patterns, claude-mem = observational history)
+- **vector-inspector** — Embedding visualization (informed Ollama quality assessment)
 
----
+## Hardware Context
 
-**Ready to implement!** Design is solid, open questions are "validate during POC" not "decide before starting."
-
-Beach coding starts tomorrow 🏖️
+M4 Pro 48GB — makes local Ollama viable for both embedding and expansion. Bedrock (Haiku) for fallback/calibration via AWS default credential chain.
 
 <!-- contextus:start -->
 ## Context (claude-contextus)
