@@ -94,13 +94,10 @@ function renderBlock(block: string, vars: PatternVars): string {
   let result = block;
 
   // {{#variable}}...{{/variable}} conditionals
-  result = result.replace(
-    /\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,
-    (_, key, content) => {
-      const val = vars[key as keyof PatternVars];
-      return val ? renderVars(content, vars) : '';
-    }
-  );
+  result = result.replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, key, content) => {
+    const val = vars[key as keyof PatternVars];
+    return val ? renderVars(content, vars) : '';
+  });
 
   // Variable substitution
   result = renderVars(result, vars);

@@ -137,7 +137,9 @@ function formatDaemonLine(line, opts) {
         color = c.magenta;
         icon = '◆';
     }
-    else if (message.includes('embed') || message.includes('Embed') || message.includes('Reconcile')) {
+    else if (message.includes('embed') ||
+        message.includes('Embed') ||
+        message.includes('Reconcile')) {
         color = c.cyan;
         icon = '↻';
     }
@@ -206,7 +208,8 @@ function formatParanoidLine(line, opts) {
         }
         else {
             const preview = entry.injection.length > 300
-                ? entry.injection.slice(0, 300) + `\n${c.dim}… (${entry.injection.length} chars, use -v for full)${c.reset}`
+                ? entry.injection.slice(0, 300) +
+                    `\n${c.dim}… (${entry.injection.length} chars, use -v for full)${c.reset}`
                 : entry.injection;
             out += `\n${preview}\n`;
         }

@@ -123,9 +123,7 @@ ${c.dim}Examples:${c.reset}
 
 function formatDaemonLine(line: string, opts: WatchOpts): string | null {
   // Format: [2026-06-16 13:34:09.258] INFO Retrieved 2 patterns (scores=0.41/0.38, ...)
-  const match = line.match(
-    /^\[([^\]]+)\]\s+(INFO|WARN|ERROR)\s+(.+?)(?:\s+\((.+)\))?$/
-  );
+  const match = line.match(/^\[([^\]]+)\]\s+(INFO|WARN|ERROR)\s+(.+?)(?:\s+\((.+)\))?$/);
   if (!match) return opts.verbose ? `${c.dim}${line}${c.reset}` : null;
 
   const [, timestamp, level, message, kvRaw] = match;
@@ -155,7 +153,11 @@ function formatDaemonLine(line: string, opts: WatchOpts): string | null {
   } else if (message.startsWith('Calibration')) {
     color = c.magenta;
     icon = '◆';
-  } else if (message.includes('embed') || message.includes('Embed') || message.includes('Reconcile')) {
+  } else if (
+    message.includes('embed') ||
+    message.includes('Embed') ||
+    message.includes('Reconcile')
+  ) {
     color = c.cyan;
     icon = '↻';
   } else {
@@ -228,9 +230,10 @@ function formatParanoidLine(line: string, opts: WatchOpts): string | null {
 
   // Prompt
   out += `\n${c.bold}${c.cyan}PROMPT:${c.reset}\n`;
-  const promptPreview = entry.prompt.length > 500
-    ? entry.prompt.slice(0, 500) + `${c.dim}… (${entry.prompt.length} chars)${c.reset}`
-    : entry.prompt;
+  const promptPreview =
+    entry.prompt.length > 500
+      ? entry.prompt.slice(0, 500) + `${c.dim}… (${entry.prompt.length} chars)${c.reset}`
+      : entry.prompt;
   out += `${promptPreview}\n`;
 
   // Injection
@@ -240,9 +243,11 @@ function formatParanoidLine(line: string, opts: WatchOpts): string | null {
     if (opts.verbose) {
       out += `\n${entry.injection}\n`;
     } else {
-      const preview = entry.injection.length > 300
-        ? entry.injection.slice(0, 300) + `\n${c.dim}… (${entry.injection.length} chars, use -v for full)${c.reset}`
-        : entry.injection;
+      const preview =
+        entry.injection.length > 300
+          ? entry.injection.slice(0, 300) +
+            `\n${c.dim}… (${entry.injection.length} chars, use -v for full)${c.reset}`
+          : entry.injection;
       out += `\n${preview}\n`;
     }
   } else {
@@ -267,7 +272,9 @@ async function replayHistory(file: string, sinceMs: number, opts: WatchOpts): Pr
       try {
         const entry = JSON.parse(line);
         if (new Date(entry.timestamp) < cutoff) continue;
-      } catch { continue; }
+      } catch {
+        continue;
+      }
     } else {
       const tsMatch = line.match(/^\[([^\]]+)\]/);
       if (tsMatch) {

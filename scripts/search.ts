@@ -42,7 +42,9 @@ async function main(): Promise<void> {
   // the daemon's /query → applyFloor), NOT similarityThreshold (a post-rank filter).
   // Reporting similarityThreshold here made injectable hits look dead. Show the floor.
   const floor = cfg.retrieval.injectionFloor;
-  console.log(`query:  "${query}"  (provider=${provider}, k=${k}, injectionFloor=${floor}${type ? `, type=${type}` : ''})`);
+  console.log(
+    `query:  "${query}"  (provider=${provider}, k=${k}, injectionFloor=${floor}${type ? `, type=${type}` : ''})`
+  );
 
   const vec = await embedQuery(query);
   const results = await search(vec, k, type ? `type = '${type}'` : undefined);
@@ -54,7 +56,8 @@ async function main(): Promise<void> {
 
   console.log('');
   for (const [i, r] of results.entries()) {
-    const floorFlag = r.similarity < floor ? `  ⚠ below ${floor} floor (won't inject)` : '  ✓ injects';
+    const floorFlag =
+      r.similarity < floor ? `  ⚠ below ${floor} floor (won't inject)` : '  ✓ injects';
     const snippet = r.document.replace(/\s+/g, ' ').slice(0, 100);
     console.log(`${i + 1}. ${r.similarity.toFixed(4)}  [${r.type}]  ${r.id}${floorFlag}`);
     console.log(`     ${snippet}…`);

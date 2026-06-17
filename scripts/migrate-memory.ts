@@ -113,7 +113,9 @@ async function main(): Promise<void> {
 
   const plan = planMigration(memFiles);
   console.log(`migrate-memory ${APPLY ? '(APPLY)' : '(dry-run — pass --apply to write)'}`);
-  console.log(`  project: ${PROJECT_ROOT}${PROJECT_ROOT === REPO_ROOT ? ' (contextus itself — pass --project to target another)' : ''}`);
+  console.log(
+    `  project: ${PROJECT_ROOT}${PROJECT_ROOT === REPO_ROOT ? ' (contextus itself — pass --project to target another)' : ''}`
+  );
   console.log(`  source:  ${MEMORY_DIR} (${memFiles.length} files)`);
   console.log(`  target:  ${CONTEXT_DIR}\n`);
 
