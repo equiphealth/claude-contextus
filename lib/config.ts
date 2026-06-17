@@ -219,7 +219,7 @@ const DEFAULTS: ContextusConfig = {
   expansion: {
     mode: 'adaptive',
     provider: 'ollama',
-    ollamaModel: 'qwen2.5:0.5b',
+    ollamaModel: 'qwen2.5:3b',
     anthropicModel: 'claude-haiku-4-5-20251001',
     ollamaEndpoint: 'http://localhost:11434',
     expansionThreshold: 0.55,

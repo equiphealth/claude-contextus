@@ -1,0 +1,64 @@
+{
+  "_note": "Project-level contextus config override — demonstrates all available options (tier 3, highest precedence). See docs/dev/DESIGN.md for the 3-tier merge: global plugin.json → ~/.contextus/config.json → ./.claude/contextus.json",
+  "embedding": {
+    "provider": "ollama",
+    "model": "nomic-ai/nomic-embed-text-v1.5",
+    "ollamaModel": "nomic-embed-text",
+    "ollamaEndpoint": "http://localhost:11434",
+    "dimensions": 768,
+    "batchSize": 32,
+    "transformers": {
+      "localModelPath": "",
+      "cacheDir": "",
+      "remoteHost": "https://huggingface.co/",
+      "allowRemoteModels": true
+    }
+  },
+  "lancedb": {
+    "mode": "file",
+    "path": "~/.contextus/data/{project-name}"
+  },
+  "retrieval": {
+    "topK": 5,
+    "similarityThreshold": 0.7,
+    "injectionFloor": 0.45,
+    "maxTokens": 3000,
+    "mergeStrategy": "interleaved",
+    "provenanceFooter": true
+  },
+  "expansion": {
+    "_note": "Multi-vector query expansion: generates alternate phrasings when initial search scores poorly. Dramatically improves synonym/paraphrase recall.",
+    "mode": "adaptive",
+    "provider": "ollama",
+    "ollamaModel": "qwen2.5:3b",
+    "anthropicModel": "claude-haiku-4-5-20251001",
+    "ollamaEndpoint": "http://localhost:11434",
+    "expansionThreshold": 0.55,
+    "maxVariants": 3,
+    "temperature": 0.7,
+    "timeoutMs": 5000
+  },
+  "autoRebuild": true,
+  "contextCapture": {
+    "enabled": true,
+    "mode": "propose"
+  },
+  "calibration": {
+    "targetSamples": 100,
+    "model": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001"
+    }
+  },
+  "notifications": {
+    "verbosity": "verbose"
+  },
+  "logging": {
+    "paranoid": true,
+    "retention": {
+      "activeDays": 30,
+      "archiveMonths": 6,
+      "paranoidDays": 7
+    }
+  }
+}

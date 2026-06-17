@@ -88,7 +88,7 @@ test('parseVariants: handles numbered output from LLM (numbers get kept but line
 
 test('buildPrompt: substitutes count and query', () => {
   const result = buildPrompt('How do I configure embeddings?', 3);
-  assert.match(result, /generate 3 SHORT/);
+  assert.match(result, /into 3 alternative/);
   assert.match(result, /How do I configure embeddings\?/);
 });
 
@@ -102,7 +102,7 @@ test('buildPrompt: handles special regex chars in query', () => {
 const baseCfg: ExpansionConfig = {
   mode: 'adaptive',
   provider: 'ollama',
-  ollamaModel: 'qwen2.5:0.5b',
+  ollamaModel: 'qwen2.5:3b',
   anthropicModel: 'claude-haiku-4-5-20251001',
   ollamaEndpoint: 'http://localhost:99999', // unreachable
   expansionThreshold: 0.55,
@@ -157,7 +157,7 @@ test('expandQuery: parses ollama response correctly', async () => {
     const cfg = { ...baseCfg, ollamaEndpoint: 'http://localhost:11434' };
     const result = await expandQuery('How do I configure embeddings?', cfg);
     assert.equal(result.variants.length, 3);
-    assert.equal(result.provider, 'ollama/qwen2.5:0.5b');
+    assert.equal(result.provider, 'ollama/qwen2.5:3b');
     assert.ok(result.latencyMs >= 0);
   } finally {
     globalThis.fetch = originalFetch;

@@ -25,21 +25,29 @@ export interface ExpandedQueries {
   provider: string;
 }
 
-const EXPANSION_PROMPT = `You are a search query expander. Given a user's question, generate {{count}} SHORT alternative phrasings that would help find relevant documentation. Each variant should use DIFFERENT vocabulary/synonyms while preserving the intent.
+const EXPANSION_PROMPT = `TASK: Rephrase the query below into {{count}} alternative search queries. Do NOT answer the query. Do NOT explain anything. Output ONLY the rephrased queries, one per line.
 
-Rules:
-- Each variant must be under 30 words
-- Use different terminology (e.g., "embedding model" → "vector encoder", "config" → "settings")
-- Focus on the core intent, drop conversational filler
-- Output ONLY the variants, one per line, no numbering or bullets
+RULES:
+- Each rephrasing must be a SHORT question or phrase (under 20 words)
+- Use DIFFERENT words/synonyms (e.g. "embedding model" → "vector encoder", "config" → "settings")
+- Preserve the original intent — just change the wording
+- No numbering, no bullets, no preamble, no explanation
 
-User query: {{query}}`;
+EXAMPLE:
+Query: How do I configure the database connection?
+Output:
+database connection settings
+set up db config
+where to change database URL
 
-function buildPrompt(query: string, count: number): string {
+Query: {{query}}
+Output:`;
+
+export function buildPrompt(query: string, count: number): string {
   return EXPANSION_PROMPT.replace('{{count}}', String(count)).replace('{{query}}', query);
 }
 
-function parseVariants(raw: string, maxVariants: number): string[] {
+export function parseVariants(raw: string, maxVariants: number): string[] {
   return raw
     .split('\n')
     .map((l) => l.trim())
