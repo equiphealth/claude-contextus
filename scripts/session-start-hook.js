@@ -33,6 +33,7 @@ import path from 'path';
 import {
   ensureDaemonRunning,
   ensureDepsInstalled,
+  ensureDistBuilt,
   waitForModel,
   getHealth,
   getVerbosity,
@@ -92,6 +93,11 @@ async function main() {
         'contextus: installing dependencies (first launch only) — context injection will start once it finishes, likely next session.'
       );
     }
+    // Install-from-main: dist/ is not committed, so build it on first run.
+    // No-op in dev mode (tsx runs source) or if dist/ already exists.
+    if (ensureDistBuilt()) {
+      lines.push('contextus: built dist/ from source (first run only).');
+    }
     const wasRunning = await ensureDaemonRunning();
     // If we spawned one, wait (bounded) for warm. Either way fetch /health so the
     // decision logic can see modelLoaded + warmupError (the silent-failure signal).
@@ -136,7 +142,7 @@ async function main() {
 
     // Surface quarantined files (bad prefix/type — can't embed). Honest + actionable:
     // these used to either abort the whole embed or loop as a phantom "new" forever.
-    const quarantined = (plan && Array.isArray(plan.quarantined)) ? plan.quarantined : [];
+    const quarantined = plan && Array.isArray(plan.quarantined) ? plan.quarantined : [];
     if (quarantined.length > 0) {
       const shown = quarantined.slice(0, 3).join(', ');
       const more = quarantined.length > 3 ? ` (+${quarantined.length - 3} more)` : '';

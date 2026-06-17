@@ -14,7 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +35,26 @@ const EVAL_WORKER_JS = path.join(REPO_ROOT, 'dist', 'daemon', 'eval-worker.js');
 const EVAL_WORKER_TS = path.join(REPO_ROOT, 'daemon', 'eval-worker.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
+
+/**
+ * Build dist/ if missing (install-from-main users). The daemon's production
+ * path needs `dist/daemon/server.js` — if absent (fresh clone, dist/ not
+ * committed), compile it with `npx tsc`. Runs SYNCHRONOUSLY because the
+ * daemon spawn depends on it; fast on warm tsc (~1-2s). No-op if dist/
+ * already exists or if we're in dev mode (tsx runs source directly).
+ *
+ * Returns true if it ran a build, false if skipped.
+ */
+export function ensureDistBuilt() {
+  if (isDevMode()) return false;
+  if (fs.existsSync(DAEMON_JS)) return false;
+  try {
+    execSync('npx tsc', { cwd: REPO_ROOT, stdio: 'ignore', timeout: 30000 });
+    return true;
+  } catch {
+    return false; // build failed — daemon-control will fall back to tsx via resolveLaunch
+  }
+}
 
 /** Valid notification verbosity levels (least → most chatty). */
 export const VERBOSITY_LEVELS = ['silent', 'normal', 'verbose'];
@@ -71,7 +91,7 @@ export function formatUptime(seconds) {
 /**
  * Dependency bootstrap for the PACKAGED plugin (marketplace install).
  *
- * A marketplace clone ships source + committed dist/ but NO node_modules — Claude
+ * A marketplace clone ships source but NO node_modules or dist/ — Claude
  * Code runs no install lifecycle (PACKAGING.md). The native deps (@lancedb / @xenova)
  * must be installed on the target machine into the PERSISTENT ${CLAUDE_PLUGIN_DATA}
  * dir (which survives plugin updates, unlike the ephemeral ${CLAUDE_PLUGIN_ROOT}),
