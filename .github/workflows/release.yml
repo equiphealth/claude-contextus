@@ -2,15 +2,13 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
     branches: [main]
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build-and-release:
     name: Build & Release
     runs-on: ubuntu-latest
 
@@ -49,38 +47,41 @@ jobs:
       - name: Package plugin
         run: |
           mkdir -p _package
-          # Runtime JS (built)
           cp -r dist/ _package/dist/
-          # Hook scripts (plain JS, run directly by Claude Code)
           cp -r scripts/ _package/scripts/
-          # Plugin manifests
           cp plugin.json _package/
           cp package.json _package/
           cp pnpm-lock.yaml _package/
-          # Skills (discovered by Claude Code from skills/ dir)
           cp -r skills/ _package/skills/
-          # Hooks config
           cp -r hooks/ _package/hooks/
-          # Templates
           cp -r templates/ _package/templates/
           # TypeScript source — included so isDevMode() tsx fallback works when
           # dist/ is absent or incomplete. Production runs dist/ JS; source is
           # only loaded if the build failed or the user forces CONTEXTUS_DEV=1.
           cp -r daemon/ _package/daemon/
           cp -r lib/ _package/lib/
-          # Create tarball
           tar -czf claude-contextus-plugin.tar.gz -C _package .
           echo "✓ Package created: $(du -h claude-contextus-plugin.tar.gz | cut -f1)"
 
-      # Tagged releases: create a GitHub Release with the tarball
-      - name: Extract version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Read version from package.json
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG=v$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Check if version tag already exists
+        id: tag_check
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.VERSION }}" >/dev/null 2>&1; then
+            echo "EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Versioned release: only when package.json version is new (PR bumped it)
       - name: Generate changelog
-        if: startsWith(github.ref, 'refs/tags/v')
-        id: changelog
+        if: steps.tag_check.outputs.EXISTS == 'false'
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -z "$PREV_TAG" ]; then
@@ -96,10 +97,11 @@ jobs:
           **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...v${{ steps.version.outputs.VERSION }}
           EOF
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Create versioned release
+        if: steps.tag_check.outputs.EXISTS == 'false'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
           name: Release v${{ steps.version.outputs.VERSION }}
           body_path: CHANGELOG.txt
           draft: false
@@ -109,9 +111,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Main branch pushes: update the "latest" pre-release
+      # Latest pre-release: always updated on every main push
       - name: Update latest release
-        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
@@ -121,6 +122,7 @@ jobs:
 
             **Install**: Download `claude-contextus-plugin.tar.gz` and extract to your plugin directory.
 
+            **Version**: ${{ steps.version.outputs.VERSION }}
             **Commit**: ${{ github.sha }}
             **Built**: ${{ github.event.head_commit.timestamp }}
           draft: false
