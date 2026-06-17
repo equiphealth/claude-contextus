@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.0] - 2026-06-17
+
+### Added
+- **Unified provider registry**: Connection details (ollama endpoint, bedrock region, anthropic) defined once in `providers {}`, referenced by all features (embedding, expansion, calibration)
+- **AWS Bedrock as first-class LLM provider**: Expansion fallback + calibration judge via `@aws-sdk/client-bedrock-runtime` (default credential chain)
+- **Shared-budget fallback**: If primary expansion provider fails fast (<500ms), automatically retries with fallback provider using remaining time budget. Slow timeouts degrade gracefully without fallback.
+- **JSONC config support**: All config files now use `.jsonc` with real `//` comments. Parser strips comments transparently; `_note` fields no longer needed.
+- **Config hot-reload**: Mtime-based cache invalidation — edit config files and next query picks up changes without daemon restart.
+- **Externalized awareness prompt**: Capture prompt text lives in `prompts/awareness-footer.txt`, editable without code changes. Broadened scope beyond patterns/decisions/gotchas.
+- **Expansion observability in watch**: Expansion events get dedicated icons (`⚡` fired, `⊘` skipped), array values formatted with numbered entries.
+- **Annotated sample config**: `examples/contextus.jsonc` as copy-and-trim starting point.
+
+### Changed
+- Expansion default model bumped from `qwen2.5:0.5b` to `qwen2.5:3b` (0.5b ignored structured generation instructions)
+- Expansion prompt hardened with explicit TASK/RULES/EXAMPLE format and "Do NOT answer the query"
+- Config files renamed: `plugin.json` → `plugin.jsonc`, `.claude/contextus.json` → `.jsonc`, `examples/` → `.jsonc`
+- Log array formatting: arrays now show `[1] item | [2] item` instead of ambiguous comma-separation
+
+### Fixed
+- Config cache was infinite (never re-read files after first load) — now validates mtime on every access
+- `parseKV` in watch.ts split comma-separated array values into broken key-value pairs
+
 ## [0.2.0] - 2026-06-16
 
 ### Added

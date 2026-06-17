@@ -34,7 +34,9 @@ const DAEMON_TS = path.join(REPO_ROOT, 'daemon', 'server.ts');
 const EVAL_WORKER_JS = path.join(REPO_ROOT, 'dist', 'daemon', 'eval-worker.js');
 const EVAL_WORKER_TS = path.join(REPO_ROOT, 'daemon', 'eval-worker.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
-const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
+import { stripJsonComments } from './parse-jsonc.js';
+const PLUGIN_JSONC = path.join(REPO_ROOT, 'plugin.jsonc');
+const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC) ? PLUGIN_JSONC : path.join(REPO_ROOT, 'plugin.json');
 
 /**
  * Build dist/ if missing or incomplete (install-from-main users). Checks a few
@@ -109,7 +111,7 @@ export function getVerbosity() {
   const env = process.env.CONTEXTUS_VERBOSITY;
   if (env && VERBOSITY_LEVELS.includes(env)) return env;
   try {
-    const cfg = JSON.parse(fs.readFileSync(PLUGIN_JSON, 'utf8'));
+    const cfg = JSON.parse(stripJsonComments(fs.readFileSync(PLUGIN_JSON, 'utf8')));
     const v = cfg?.config?.notifications?.verbosity;
     if (VERBOSITY_LEVELS.includes(v)) return v;
   } catch {

@@ -150,6 +150,12 @@ function formatDaemonLine(line: string, opts: WatchOpts): string | null {
   } else if (message.startsWith('No retrieval')) {
     color = c.dim;
     icon = '○';
+  } else if (message.startsWith('Expansion fired')) {
+    color = c.cyan;
+    icon = '⚡';
+  } else if (message.startsWith('Expansion skipped')) {
+    color = c.dim;
+    icon = '⊘';
   } else if (message.startsWith('Calibration')) {
     color = c.magenta;
     icon = '◆';

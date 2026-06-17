@@ -283,8 +283,44 @@ const DEFAULTS: ContextusConfig = {
 };
 
 let _config: ContextusConfig | null = null;
+let _configMtime = 0;
 /** Per-project merged configs, keyed by project name. */
-const _projectConfig = new Map<string, ContextusConfig>();
+const _projectConfig = new Map<string, { config: ContextusConfig; mtimes: Map<string, number> }>();
+
+/** Get file mtime in ms, or 0 if missing. */
+function fileMtime(filePath: string): number {
+  try { return fs.statSync(filePath).mtimeMs; } catch { return 0; }
+}
+
+/** Strip line and block comments from JSONC text (respects quoted strings). */
+export function stripJsonComments(text: string): string {
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    // String literal — pass through unchanged
+    if (text[i] === '"') {
+      result += '"';
+      i++;
+      while (i < text.length && text[i] !== '"') {
+        if (text[i] === '\\') { result += text[i++]; }
+        result += text[i++];
+      }
+      if (i < text.length) result += text[i++]; // closing quote
+    // Line comment
+    } else if (text[i] === '/' && text[i + 1] === '/') {
+      i += 2;
+      while (i < text.length && text[i] !== '\n') i++;
+    // Block comment
+    } else if (text[i] === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i += 2; // skip */
+    } else {
+      result += text[i++];
+    }
+  }
+  return result;
+}
 
 /**
  * Locate plugin.json across all three layouts. The `..`-from-lib assumption broke
@@ -299,12 +335,19 @@ function findPluginJson(): string | null {
     ? path.join(process.env.CLAUDE_PLUGIN_ROOT, 'plugin.json')
     : null;
   if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+  // Also check .jsonc variant from env
+  const fromEnvC = process.env.CLAUDE_PLUGIN_ROOT
+    ? path.join(process.env.CLAUDE_PLUGIN_ROOT, 'plugin.jsonc')
+    : null;
+  if (fromEnvC && fs.existsSync(fromEnvC)) return fromEnvC;
 
-  // Walk up from __dirname until we find a plugin.json (handles lib/ and dist/lib/).
+  // Walk up from __dirname until we find plugin.json[c] (handles lib/ and dist/lib/).
   let dir = __dirname;
   for (let i = 0; i < 5; i++) {
-    const candidate = path.join(dir, 'plugin.json');
+    const candidate = path.join(dir, 'plugin.jsonc');
     if (fs.existsSync(candidate)) return candidate;
+    const candidateJson = path.join(dir, 'plugin.json');
+    if (fs.existsSync(candidateJson)) return candidateJson;
     const parent = path.dirname(dir);
     if (parent === dir) break; // hit filesystem root
     dir = parent;
@@ -344,11 +387,12 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
   }
 }
 
-/** Read a JSON file's `config` object (or the whole file if no `config` key). [] on miss. */
+/** Read a JSON/JSONC config file's `config` object (or the whole file if no `config` key). */
 function readConfigFile(filePath: string): Record<string, any> | null {
   try {
     if (!fs.existsSync(filePath)) return null;
-    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const text = fs.readFileSync(filePath, 'utf-8');
+    const raw = JSON.parse(stripJsonComments(text));
     // plugin.json nests under `config`; override files may be flat OR nested.
     return (raw.config ?? raw) as Record<string, any>;
   } catch {
@@ -363,14 +407,16 @@ function readConfigFile(filePath: string): Record<string, any> | null {
  * defaults keep using this unchanged.
  */
 export function loadConfig(): ContextusConfig {
-  if (_config) return _config;
-  const merged: ContextusConfig = structuredClone(DEFAULTS);
   const pluginPath = findPluginJson();
+  const currentMtime = pluginPath ? fileMtime(pluginPath) : 0;
+  if (_config && currentMtime === _configMtime) return _config;
+  const merged: ContextusConfig = structuredClone(DEFAULTS);
   if (pluginPath) {
     const c = readConfigFile(pluginPath);
     if (c) mergeConfigInto(merged, c);
   }
   _config = merged;
+  _configMtime = currentMtime;
   return merged;
 }
 
@@ -394,21 +440,36 @@ export function projectLocalConfigPath(project: string): string {
  */
 export function loadProjectConfig(project?: string, cwd?: string): ContextusConfig {
   if (!project) return loadConfig();
+
+  // Mtime-based cache: re-read only when a source file has been modified.
+  const pluginPath = findPluginJson() ?? '';
+  const localPath = projectLocalConfigPath(project);
+  const repoPathC = cwd ? path.join(cwd, '.claude', 'contextus.jsonc') : '';
+  const repoPath = (repoPathC && fs.existsSync(repoPathC)) ? repoPathC : (cwd ? path.join(cwd, '.claude', 'contextus.json') : '');
   const cached = _projectConfig.get(project);
-  if (cached) return cached;
+  if (cached) {
+    const stale = [pluginPath, localPath, repoPath].some(
+      (p) => p && fileMtime(p) !== (cached.mtimes.get(p) ?? 0)
+    );
+    if (!stale) return cached.config;
+  }
 
   // Tier 1: start from the global merged config (defaults + plugin.json).
   const merged: ContextusConfig = structuredClone(loadConfig());
   // Tier 2: machine-local override beside the corpus.
-  const local = readConfigFile(projectLocalConfigPath(project));
+  const local = readConfigFile(localPath);
   if (local) mergeConfigInto(merged, local);
   // Tier 3: git-committed repo override wins.
-  if (cwd) {
-    const repo = readConfigFile(path.join(cwd, '.claude', 'contextus.json'));
+  if (repoPath) {
+    const repo = readConfigFile(repoPath);
     if (repo) mergeConfigInto(merged, repo);
   }
 
-  _projectConfig.set(project, merged);
+  const mtimes = new Map<string, number>();
+  for (const p of [pluginPath, localPath, repoPath]) {
+    if (p) mtimes.set(p, fileMtime(p));
+  }
+  _projectConfig.set(project, { config: merged, mtimes });
   return merged;
 }
 

@@ -1,7 +1,11 @@
 {
-  "_role_note": "RUNTIME CONFIG, not the plugin manifest. The code reads this file's `config` block via findPluginJson() (config.ts). The Claude Code plugin MANIFEST is .claude-plugin/plugin.json (name: 'contextus' — the marketplace install id). Two files on purpose: this is the tunable runtime config, that is the install descriptor. Keep `version` in sync with the manifest.",
+  // RUNTIME CONFIG, not the plugin manifest. The code reads this file's `config` block
+  // via findPluginJson() (config.ts). The Claude Code plugin MANIFEST is
+  // .claude-plugin/plugin.json (name: 'contextus' — the marketplace install id).
+  // Two files on purpose: this is the tunable runtime config, that is the install descriptor.
+  // Keep `version` in sync with the manifest.
   "name": "contextus",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
   "repository": "github:anthonypdawson/claude-contextus",
@@ -60,14 +64,18 @@
       "path": "~/.contextus/data/{project-name}"
     },
     "embedding": {
-      "_provider_note": "DESIGN.md default is 'transformers' (in-process ONNX). Deployed as 'ollama' because the corporate Cloudflare Gateway blocks Hugging Face model downloads — Ollama runs the same nomic model locally over localhost. Both emit 768-dim. See BUILD_LOG Phase 1.",
+      // DESIGN.md default is 'transformers' (in-process ONNX). Deployed as 'ollama'
+      // because the corporate Cloudflare Gateway blocks Hugging Face model downloads —
+      // Ollama runs the same nomic model locally over localhost.
       "provider": "ollama",
       "model": "nomic-ai/nomic-embed-text-v1.5",
       "ollamaModel": "nomic-embed-text",
       "dimensions": 768,
       "batchSize": 32,
-      "_transformers_note": "Used when provider='transformers'. To run on an HF-blocked network: `pnpm fetch-model --out ./models` on an unblocked machine, then set localModelPath to that dir. Or set remoteHost to an internal HF mirror. allowRemoteModels:false forces strict offline.",
       "transformers": {
+        // Used when provider='transformers'. To run on an HF-blocked network:
+        // `pnpm fetch-model --out ./models` on an unblocked machine, then set
+        // localModelPath to that dir. Or set remoteHost to an internal HF mirror.
         "localModelPath": "",
         "cacheDir": "",
         "remoteHost": "https://huggingface.co/",
@@ -76,15 +84,16 @@
     },
     "retrieval": {
       "topK": 5,
-      "_similarityThreshold_note": "UNVALIDATED ranking filter (applied after re-rank, not the gate) — calibrate in Phase 5.",
-      "similarityThreshold": 0.7,
-      "_injectionFloor_note": "Gate on raw similarity — 'inject anything at all?'. SEPARATE from similarityThreshold. Calibrated to 0.45 in Phase 6 via `/context-calibrate --floor --apply` against the chunked 54-file / 721-chunk corpus (replay of ~300 real prompts → ~31% injection, the ~35% coverage target). #1↔#2 separation is weak (0.020), so no absolute floor cleanly separates signal from noise — this is a cold-start value; refine with a usage-eval campaign (`/context-calibrate --start`). The v2 top-K/relative-separation gate supersedes absolute floors.",
+      "similarityThreshold": 0.7,  // Post-ranking filter — calibrate in Phase 5
+      // Gate on raw similarity — 'inject anything at all?'. SEPARATE from similarityThreshold.
+      // Calibrated to 0.45 via /context-calibrate --floor against 721-chunk corpus.
       "injectionFloor": 0.45,
       "maxTokens": 3000,
       "mergeStrategy": "interleaved"
     },
     "expansion": {
-      "_note": "Multi-vector query expansion: generate alternate phrasings when the initial search scores poorly. Dramatically improves synonym/paraphrase recall. adaptive=expand only below threshold, always=every query, off=disabled.",
+      // Multi-vector query expansion: generate alternate phrasings when the initial
+      // search scores poorly. adaptive=expand only below threshold, always=every query.
       "mode": "adaptive",
       "provider": "ollama",
       "model": "qwen2.5:3b",
@@ -101,17 +110,21 @@
       "mode": "propose"
     },
     "calibration": {
-      "_note": "Quality evaluation (LOGGING.md calibration_eval). targetSamples=evaluations per campaign before auto-disable. Provider judges whether injected patterns were USED (bedrock Haiku default — proven reliable, uses AWS creds). The MUTABLE campaign state (live counter, enabled flip) lives in ~/.contextus/calibration-state.json, NOT here.",
+      // Quality evaluation (LOGGING.md calibration_eval). Provider judges whether
+      // injected patterns were USED (bedrock Haiku — proven reliable, uses AWS creds).
+      // MUTABLE campaign state lives in ~/.contextus/calibration-state.json, NOT here.
       "targetSamples": 100,
       "provider": "bedrock",
       "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     },
     "notifications": {
-      "_verbosity_note": "SessionStart daemon-state messages (user-facing systemMessage). silent=never | normal=fresh spawn/warming/failure only | verbose=also heartbeat with uptime when an existing daemon is found. Override per-session with CONTEXTUS_VERBOSITY env.",
+      // SessionStart daemon-state messages (user-facing systemMessage).
+      // silent=never | normal=fresh spawn/warming/failure | verbose=also heartbeat
       "verbosity": "verbose"
     },
     "logging": {
-      "_paranoid_note": "Logs full prompt text + complete injection payload to ~/.contextus/logs/paranoid.jsonl. OFF by default (privacy). View with: contextus watch --paranoid",
+      // Logs full prompt + injection to ~/.contextus/logs/paranoid.jsonl.
+      // OFF by default (privacy). View with: contextus watch --paranoid
       "paranoid": true
     }
   },

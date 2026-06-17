@@ -53,11 +53,16 @@ export function promptHash(prompt: string): string {
 }
 
 /** `[2026-06-14 14:23:42.156] LEVEL message (k=v, …)` for daemon.log. */
+function formatValue(v: unknown): string {
+  if (Array.isArray(v)) return v.map((item, i) => `[${i + 1}] ${item}`).join(' | ');
+  return String(v);
+}
+
 function humanLine(level: string, message: string, kv?: Record<string, unknown>): string {
   const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
   const pairs = kv
     ? Object.entries(kv)
-        .map(([k, v]) => `${k}=${v}`)
+        .map(([k, v]) => `${k}=${formatValue(v)}`)
         .join(', ')
     : '';
   const suffix = pairs ? ` (${pairs})` : '';

@@ -1,0 +1,92 @@
+Suggested prompt:
+Context awareness: if this exchange surfaced anything NEW and reusable
+(decisions, gotchas, workflows, project state, user preferences, implementation
+details, reference info, etc.), end with: "Context: propose: <topic-name>".
+Omit only for truly trivial replies.
+
+
+Claude log:
+
+> No I mean - you can't say "I'll be more proactive about offering to save new context" because you can't really be more proactive. It's all based on the prompt contextus injects
+
+  Thought for 9s
+
+Ah! Right — I can't "decide" to be more proactive. My behavior is entirely controlled by the hook injection. When I said "my threshold was too high," that's wrong — I don't have a threshold. The hook prompt does.
+
+If I'm under-proposing context, the fix is in the hook's wording, not my "trying harder." The injected text from dev/DESIGN ADDENDUM.md shows you've already tackled this once (revising from "substantial responses" to "ANY new detail").
+
+So the real question is: Is the current hook prompt working? This session I:
+- Reviewed a PR (architectural analysis, test gaps, recommendations)
+- Created .claude/contextus.json template
+- Discussed config self-documentation pattern
+
+I only proposed context once (the self-documenting config), and even that was because you explicitly suggested it. The PR review workflow, the "add config → update template" sequence, and the integration test pattern all went uncaptured until you prompted me.
+
+That suggests the hook prompt might still need tuning, or the NOVELTY CHECK is too aggressive. What does the current hook text say?
+
+Context: used: dev/DESIGN ADDENDUM.md (0.47)
+
+[mem-value: injection=Y search=N reexplain=N]
+
+✻ Cooked for 16s
+
+❯ I don't know - you should know right?  Also is there anything context worthy from this session
+
+  Thought for 14s
+
+Looking at the system reminders, the current hook prompt says:
+
+Context awareness: if this exchange surfaced a NEW, reusable pattern/decision/gotcha,
+end your response with a footer line: "Context: propose: <topic-name>" (and invoke
+/create-context to capture it). Omit the footer for brief/trivial replies.
+NOVELTY CHECK — contextus already has patterns on: [8+ existing patterns].
+Only propose if your insight is genuinely not covered by those.
+
+The problem: That NOVELTY CHECK with "Only propose if genuinely not covered" is acting like a hard filter. I see 8 patterns listed and interpret it as "probably already covered."
+
+From this session, what's worth capturing:
+
+1. PR review workflow — The systematic review structure I gave: code quality → test coverage → config design → commit progression → what's missing before merge. Reusable template for reviewing feature PRs.
+2. Footer workflow mechanics — I misunderstood the capture flow. Proper sequence is: propose via footer → skill invokes (manual or auto) → skill handles dedup/create. I bypassed it by directly invoking Skill then using Write.
+3. Integration tests for daemon features — Unit tests passing ≠ daemon wiring works. Need HTTP endpoint integration tests for anything that touches the daemon (like expansion).
+
+None of those are covered by the existing patterns listed. The NOVELTY CHECK is useful (prevents duplicates), but "Only propose if genuinely not covered" makes me too conservative.
+
+Context: propose: pr-review-workflow
+Context: propose: integration-test-requirements
+
+[mem-value: injection=Y search=N reexplain=N]
+
+✻ Sautéed for 20s
+
+❯ Also it shouldn't just be pattern/decision/gotcha it can also be general information about the project or even about me
+
+  Thought for 12s
+
+You're absolutely right. The hook says "pattern/decision/gotcha" but the actual system supports much more:
+
+From the category types I can see:
+- project- — project conventions, state, what's being worked on
+- implementation- — how things are built
+- reference- — where things are, how they work
+- arch-, schema-, api- — technical docs
+- Plus user preferences, feedback, etc.
+
+From this session that's capturable beyond patterns:
+
+1. Project state: PR #2 is adding multi-vector expansion, tests passing, needs integration validation
+2. User preference: This repo's .claude/contextus.json should demonstrate all options as a reference template (not just minimal overrides)
+3. Feedback about Claude behavior: I under-propose context and had to be prompted
+4. Process/workflow: PR review structure (architecture → tests → config → commits → remaining work)
+
+The hook wording is artificially narrow. Should be more like:
+
+Context awareness: if this exchange surfaced anything NEW and reusable — patterns,
+decisions, gotchas, project state, user preferences, workflows, or general information —
+end with: "Context: propose: <topic-name>". Omit only for truly trivial replies.
+
+That would capture the full range of what contextus is designed to handle.
+
+Context: propose: capture-scope-too-narrow
+
+[mem-value: injection=Y search=N reexplain=N]

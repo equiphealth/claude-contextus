@@ -27,9 +27,13 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { BASE_URL } from './lib/daemon-control.js';
+import { stripJsonComments } from './lib/parse-jsonc.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PLUGIN_JSON = path.resolve(__dirname, '..', 'plugin.json');
+const PLUGIN_JSONC = path.resolve(__dirname, '..', 'plugin.jsonc');
+const PLUGIN_JSON_FALLBACK = path.resolve(__dirname, '..', 'plugin.json');
+const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC) ? PLUGIN_JSONC : PLUGIN_JSON_FALLBACK;
+const PROMPT_FILE = path.resolve(__dirname, '..', 'prompts', 'awareness-footer.txt');
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -49,10 +53,11 @@ function projectName(cwd) {
   return cwd ? path.basename(cwd) : path.basename(process.cwd());
 }
 
-/** Read contextCapture.mode from plugin.json (plain JS can't import config.ts). */
+/** Read contextCapture.mode from plugin config (plain JS can't import config.ts). */
 function captureMode() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(PLUGIN_JSON, 'utf8'));
+    const text = fs.readFileSync(PLUGIN_JSON, 'utf8');
+    const cfg = JSON.parse(stripJsonComments(text));
     return cfg?.config?.contextCapture?.mode ?? 'propose';
   } catch {
     return 'propose';
@@ -73,6 +78,22 @@ async function recentPatterns(project) {
   }
 }
 
+/** Load the base prompt from external file (editable without code changes). */
+function loadPromptTemplate() {
+  try {
+    return fs.readFileSync(PROMPT_FILE, 'utf8').trim();
+  } catch {
+    // Fallback if file is missing (e.g. running from dist without prompts/)
+    return (
+      'Context awareness: if this exchange surfaced anything NEW and reusable ' +
+      '(decisions, gotchas, workflows, project state, user preferences, implementation ' +
+      'details, reference info, etc.), end your response with a footer line: ' +
+      '"Context: propose: <topic-name>". If the proposal is accepted, use the ' +
+      '/create-context skill to capture it. Omit the footer for truly trivial replies.'
+    );
+  }
+}
+
 /** Build the footer instruction, folding in the novelty signal if we have one. */
 function buildFooter(recent) {
   // NOTE: this hook handles ONLY the `propose:` (capture) footer. The `used:`
@@ -80,10 +101,7 @@ function buildFooter(recent) {
   // (renderFooterInstruction), which is the only place that KNOWS what was injected
   // — instructing Claude to recite `used:` from here induced hallucinated filenames
   // + scores (observed 2026-06-15). Keep these separate: propose here, used there.
-  const base =
-    'Context awareness: if this exchange surfaced a NEW, reusable pattern/decision/gotcha, ' +
-    'end your response with a footer line: "Context: propose: <topic-name>" (and invoke ' +
-    '/create-context to capture it). Omit the footer for brief/trivial replies.';
+  const base = loadPromptTemplate();
   if (recent.length === 0) return base;
   const list = recent.slice(-8).join(', ');
   return (
