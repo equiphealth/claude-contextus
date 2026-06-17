@@ -106,9 +106,27 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(payload);
 }
 
-/** GET /health — liveness + readiness (modelLoaded is what session-start polls). */
-function handleHealth(res: http.ServerResponse): void {
+/** GET /health — liveness + readiness (modelLoaded is what session-start polls).
+ *  ?probe=true → verify the provider is actually reachable (cheap embed). */
+async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const cfg = loadConfig();
+
+  // Liveness probe: if model appears warm, verify the provider is still up.
+  const url = new URL(req.url ?? '/', BASE_URL);
+  if (url.searchParams.get('probe') === 'true' && modelLoaded) {
+    try {
+      await embedQuery('health');
+    } catch (err) {
+      modelLoaded = false;
+      warmupError = err instanceof Error ? err.message : String(err);
+      logError('warn', 'embedder', 'Health probe failed — provider down, triggering re-warmup', {
+        message: warmupError
+      });
+      if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
+      attemptWarmup();
+    }
+  }
+
   const expansionRate =
     stats.queries > 0 ? Number(((stats.expansionFired / stats.queries) * 100).toFixed(1)) : 0;
   sendJson(res, 200, {
@@ -488,8 +506,8 @@ const server = http.createServer((req, res) => {
   const url = req.url ?? '/';
   const method = req.method ?? 'GET';
 
-  if (method === 'GET' && url === '/health') {
-    return handleHealth(res);
+  if (method === 'GET' && (url === '/health' || url.startsWith('/health?'))) {
+    return handleHealth(req, res);
   }
 
   // GET /novelty?project=foo — recently-injected pattern names for the awareness
