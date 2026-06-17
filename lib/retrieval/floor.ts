@@ -49,6 +49,6 @@ export function applyFloor(ranked: RankedResult[], floor: number): FloorResult {
     kept,
     dropped,
     bestScore: ranked.length > 0 ? Math.max(...ranked.map((r) => r.similarity)) : 0,
-    noInject: kept.length === 0,
+    noInject: kept.length === 0
   };
 }

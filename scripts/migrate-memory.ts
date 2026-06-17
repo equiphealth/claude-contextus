@@ -39,7 +39,7 @@ import {
   planMigration,
   renderContextIndex,
   type MemoryFile,
-  type MigrationPlanItem,
+  type MigrationPlanItem
 } from '../lib/capture/memory-migrate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,7 +80,7 @@ async function loadMemoryFiles(): Promise<MemoryFile[]> {
     return {
       filename: path.basename(abs),
       data: data as Record<string, unknown>,
-      body: content,
+      body: content
     };
   });
 }

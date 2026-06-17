@@ -155,7 +155,9 @@ test('idempotent: double rotation does not duplicate archives', () => {
   const archives = fs.readdirSync(path.join(dir, 'archive'));
   // Same month → same archive name → idempotent (first content preserved)
   assert.equal(archives.length, 1);
-  const content = zlib.gunzipSync(fs.readFileSync(path.join(dir, 'archive', archives[0]))).toString();
+  const content = zlib
+    .gunzipSync(fs.readFileSync(path.join(dir, 'archive', archives[0])))
+    .toString();
   assert.equal(content, 'first run');
 });
 

@@ -34,7 +34,7 @@ export const SOURCE_WEIGHTS: Record<string, number> = {
   // legacy source labels (pre-rename)
   projectMemory: 1.0,
   parentMemory: 0.7,
-  userMemory: 0.8,
+  userMemory: 0.8
 };
 
 /** Type priority (DESIGN.md §"Re-ranking" typeBoosts). Actionable patterns rank
@@ -54,7 +54,7 @@ export const TYPE_BOOSTS: Record<string, number> = {
   perf: 1.05,
   arch: 0.95,
   phase: 0.8,
-  implementation: 1.0,
+  implementation: 1.0
 };
 
 /** A re-ranked result carries its final composite score alongside the original. */

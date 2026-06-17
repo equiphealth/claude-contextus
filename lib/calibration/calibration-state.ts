@@ -42,7 +42,7 @@ function defaults(): CalibrationState {
         provider: c.provider,
         model: c.model,
         endpoint: cfg.providers.ollama.endpoint,
-        region: cfg.providers.bedrock.region,
+        region: cfg.providers.bedrock.region
       }
     : DEFAULT_EVAL_MODEL;
   return {
@@ -51,7 +51,7 @@ function defaults(): CalibrationState {
     sampleCount: 0,
     startedAt: null,
     completedAt: null,
-    model,
+    model
   };
 }
 
@@ -83,7 +83,7 @@ export function startCalibration(
     model: opts.model ?? base.model,
     sampleCount: 0,
     startedAt: new Date().toISOString(),
-    completedAt: null,
+    completedAt: null
   };
   writeState(state);
   return state;

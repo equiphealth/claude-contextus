@@ -84,7 +84,7 @@
     },
     "retrieval": {
       "topK": 5,
-      "similarityThreshold": 0.7,  // Post-ranking filter — calibrate in Phase 5
+      "similarityThreshold": 0.7, // Post-ranking filter — calibrate in Phase 5
       // Gate on raw similarity — 'inject anything at all?'. SEPARATE from similarityThreshold.
       // Calibrated to 0.45 via /context-calibrate --floor against 721-chunk corpus.
       "injectionFloor": 0.45,

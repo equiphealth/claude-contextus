@@ -5,7 +5,7 @@ import {
   parseVariants,
   buildPrompt,
   expandQuery,
-  type ExpandedQueries,
+  type ExpandedQueries
 } from '../lib/retrieval/expand.js';
 import type { ExpansionConfig } from '../lib/config.js';
 
@@ -39,12 +39,13 @@ test('shouldExpand: adaptive with custom threshold', () => {
 // --- parseVariants ---
 
 test('parseVariants: splits lines and trims', () => {
-  const raw = '  How to configure settings  \nWhat are the options for setup\n  Where is the config file  ';
+  const raw =
+    '  How to configure settings  \nWhat are the options for setup\n  Where is the config file  ';
   const result = parseVariants(raw, 3);
   assert.deepEqual(result, [
     'How to configure settings',
     'What are the options for setup',
-    'Where is the config file',
+    'Where is the config file'
   ]);
 });
 
@@ -79,7 +80,8 @@ test('parseVariants: skips empty lines', () => {
 });
 
 test('parseVariants: handles numbered output from LLM (numbers get kept but line passes)', () => {
-  const raw = '1. What is the embedding config\n2. How to set up vector search\n3. Where are settings stored';
+  const raw =
+    '1. What is the embedding config\n2. How to set up vector search\n3. Where are settings stored';
   const result = parseVariants(raw, 3);
   assert.equal(result.length, 3);
 });
@@ -110,13 +112,13 @@ const baseCfg: ExpansionConfig = {
   expansionThreshold: 0.55,
   maxVariants: 3,
   temperature: 0.7,
-  timeoutMs: 500,
+  timeoutMs: 500
 };
 
 const baseProviders: ProvidersConfig = {
   ollama: { endpoint: 'http://localhost:99999' }, // unreachable
   bedrock: { region: 'us-east-1' },
-  anthropic: {},
+  anthropic: {}
 };
 
 test('expandQuery: returns empty variants on network failure (ollama)', async () => {
@@ -126,7 +128,13 @@ test('expandQuery: returns empty variants on network failure (ollama)', async ()
 });
 
 test('expandQuery: returns empty variants on network failure (anthropic)', async () => {
-  const cfg = { ...baseCfg, provider: 'anthropic' as const, model: 'claude-haiku-4-5-20251001', fallbackProvider: undefined, fallbackModel: undefined };
+  const cfg = {
+    ...baseCfg,
+    provider: 'anthropic' as const,
+    model: 'claude-haiku-4-5-20251001',
+    fallbackProvider: undefined,
+    fallbackModel: undefined
+  };
   const result = await expandQuery('test query', cfg, baseProviders);
   assert.deepEqual(result.variants, []);
   assert.equal(result.provider, 'anthropic');
@@ -136,7 +144,13 @@ test('expandQuery: returns empty variants when anthropic key missing', async () 
   const origKey = process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
   try {
-    const cfg = { ...baseCfg, provider: 'anthropic' as const, model: 'claude-haiku-4-5-20251001', fallbackProvider: undefined, fallbackModel: undefined };
+    const cfg = {
+      ...baseCfg,
+      provider: 'anthropic' as const,
+      model: 'claude-haiku-4-5-20251001',
+      fallbackProvider: undefined,
+      fallbackModel: undefined
+    };
     const result = await expandQuery('test query', cfg, baseProviders);
     assert.deepEqual(result.variants, []);
   } finally {
@@ -148,13 +162,14 @@ test('expandQuery: returns empty variants when anthropic key missing', async () 
 
 test('expandQuery: parses ollama response correctly', async () => {
   const mockResponse = {
-    response: 'How to set up vector search\nWhere are embedding settings\nConfigure the retrieval system',
+    response:
+      'How to set up vector search\nWhere are embedding settings\nConfigure the retrieval system'
   };
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => ({
     ok: true,
-    json: async () => mockResponse,
+    json: async () => mockResponse
   })) as unknown as typeof fetch;
 
   try {
@@ -170,7 +185,11 @@ test('expandQuery: parses ollama response correctly', async () => {
 
 test('expandQuery: parses anthropic response correctly', async () => {
   const mockResponse = {
-    content: [{ text: 'How to set up vector search\nWhere are embedding settings\nConfigure the retrieval system' }],
+    content: [
+      {
+        text: 'How to set up vector search\nWhere are embedding settings\nConfigure the retrieval system'
+      }
+    ]
   };
 
   const originalFetch = globalThis.fetch;
@@ -178,7 +197,7 @@ test('expandQuery: parses anthropic response correctly', async () => {
   process.env.ANTHROPIC_API_KEY = 'test-key';
   globalThis.fetch = (async () => ({
     ok: true,
-    json: async () => mockResponse,
+    json: async () => mockResponse
   })) as unknown as typeof fetch;
 
   try {
@@ -197,7 +216,7 @@ test('expandQuery: handles non-ok HTTP response gracefully', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => ({
     ok: false,
-    status: 500,
+    status: 500
   })) as unknown as typeof fetch;
 
   try {
@@ -213,7 +232,7 @@ test('expandQuery: handles garbage LLM output gracefully', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => ({
     ok: true,
-    json: async () => ({ response: 'a\nb\nc\nd\ne' }),
+    json: async () => ({ response: 'a\nb\nc\nd\ne' })
   })) as unknown as typeof fetch;
 
   try {
@@ -241,8 +260,12 @@ test('expandQuery: falls back to anthropic when ollama fails fast', async () => 
     return {
       ok: true,
       json: async () => ({
-        content: [{ text: 'What vector encoder is the default\nWhich embedding model ships by default\nDefault vector model configuration' }],
-      }),
+        content: [
+          {
+            text: 'What vector encoder is the default\nWhich embedding model ships by default\nDefault vector model configuration'
+          }
+        ]
+      })
     };
   }) as unknown as typeof fetch;
 
@@ -299,13 +322,13 @@ describe('union dedup logic', () => {
   test('keeps highest similarity when same id appears in multiple searches', () => {
     const original: SearchResult[] = [
       { id: 'chunk-1', similarity: 0.5, filename: 'a.md' },
-      { id: 'chunk-2', similarity: 0.4, filename: 'b.md' },
+      { id: 'chunk-2', similarity: 0.4, filename: 'b.md' }
     ];
     const variants: SearchResult[][] = [
       [
         { id: 'chunk-1', similarity: 0.7, filename: 'a.md' }, // higher
-        { id: 'chunk-3', similarity: 0.6, filename: 'c.md' }, // new
-      ],
+        { id: 'chunk-3', similarity: 0.6, filename: 'c.md' } // new
+      ]
     ];
     const result = unionDedup(original, variants);
     assert.equal(result.length, 3);
@@ -325,7 +348,7 @@ describe('union dedup logic', () => {
     const variants: SearchResult[][] = [
       [{ id: 'chunk-2', similarity: 0.6, filename: 'b.md' }],
       [{ id: 'chunk-3', similarity: 0.5, filename: 'c.md' }],
-      [{ id: 'chunk-2', similarity: 0.65, filename: 'b.md' }], // upgrade chunk-2
+      [{ id: 'chunk-2', similarity: 0.65, filename: 'b.md' }] // upgrade chunk-2
     ];
     const result = unionDedup(original, variants);
     assert.equal(result.length, 3);
@@ -336,8 +359,8 @@ describe('union dedup logic', () => {
     const variants: SearchResult[][] = [
       [
         { id: 'chunk-1', similarity: 0.6, filename: 'a.md' },
-        { id: 'chunk-2', similarity: 0.5, filename: 'b.md' },
-      ],
+        { id: 'chunk-2', similarity: 0.5, filename: 'b.md' }
+      ]
     ];
     const result = unionDedup([], variants);
     assert.equal(result.length, 2);
@@ -355,11 +378,7 @@ describe('union dedup logic', () => {
 
 describe('initialBest computation', () => {
   test('picks max similarity from results', () => {
-    const raw = [
-      { similarity: 0.3 },
-      { similarity: 0.6 },
-      { similarity: 0.45 },
-    ];
+    const raw = [{ similarity: 0.3 }, { similarity: 0.6 }, { similarity: 0.45 }];
     const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
     assert.equal(initialBest, 0.6);
   });

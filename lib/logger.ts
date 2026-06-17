@@ -98,7 +98,7 @@ export function logRetrieval(e: RetrievalLog): void {
     tokens_injected: e.tokensInjected,
     latency_ms: e.latencyMs,
     similarity_scores: e.similarityScores,
-    floor_dropped: e.floorDropped,
+    floor_dropped: e.floorDropped
   };
   appendSafe(USAGE_PATH, JSON.stringify(record) + '\n');
   appendSafe(
@@ -107,7 +107,7 @@ export function logRetrieval(e: RetrievalLog): void {
       scores: e.similarityScores.map((s) => s.toFixed(2)).join('/') || '—',
       latency: `${e.latencyMs}ms`,
       dropped: e.floorDropped.length,
-      project: e.project,
+      project: e.project
     })
   );
 }
@@ -134,7 +134,7 @@ export function logNoInject(e: NoInjectLog): void {
     latency_ms: e.latencyMs,
     reason: 'below_floor',
     best_match_score: e.bestScore,
-    floor_dropped: e.floorDropped,
+    floor_dropped: e.floorDropped
   };
   appendSafe(USAGE_PATH, JSON.stringify(record) + '\n');
   appendSafe(
@@ -142,7 +142,7 @@ export function logNoInject(e: NoInjectLog): void {
     humanLine('INFO', 'No retrieval', {
       reason: 'below_floor',
       best: e.bestScore.toFixed(4),
-      project: e.project,
+      project: e.project
     })
   );
 }
@@ -177,7 +177,7 @@ export function logCalibrationEval(e: CalibrationEvalLog): void {
     retrieved: e.retrieved,
     evaluations: e.evaluations,
     weighted_score: Number(e.weightedScore.toFixed(4)),
-    evaluation_latency_ms: e.evaluationLatencyMs,
+    evaluation_latency_ms: e.evaluationLatencyMs
   };
   appendSafe(USAGE_PATH, JSON.stringify(record) + '\n');
   appendSafe(
@@ -186,7 +186,7 @@ export function logCalibrationEval(e: CalibrationEvalLog): void {
       score: e.weightedScore.toFixed(2),
       rated: e.evaluations.length,
       of: e.retrieved.length,
-      project: e.project,
+      project: e.project
     })
   );
 }
@@ -203,7 +203,7 @@ export function logError(
     timestamp: new Date().toISOString(),
     component,
     error: message,
-    context: context ?? {},
+    context: context ?? {}
   };
   appendSafe(ERRORS_PATH, JSON.stringify(record) + '\n');
   appendSafe(DAEMON_LOG_PATH, humanLine(level.toUpperCase(), message, { component, ...context }));
@@ -240,7 +240,7 @@ export function logParanoid(e: ParanoidLog): void {
     injection: e.injection,
     retrieved: e.retrieved,
     similarity_scores: e.similarityScores,
-    latency_ms: e.latencyMs,
+    latency_ms: e.latencyMs
   };
   appendSafe(PARANOID_PATH, JSON.stringify(record) + '\n');
 }

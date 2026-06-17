@@ -19,7 +19,7 @@ import {
   loadTemplate,
   renderTemplate,
   type PatternVars,
-  type TemplateContext,
+  type TemplateContext
 } from './template.js';
 
 /**
@@ -137,7 +137,7 @@ function renderWithTemplate(template: string, included: RankedResult[]): string 
     similarity: r.similarity.toFixed(2),
     hits: r.hit_count,
     type: r.type || '',
-    source: r.source || '',
+    source: r.source || ''
   }));
 
   const ctx: TemplateContext = { count: included.length, patterns };

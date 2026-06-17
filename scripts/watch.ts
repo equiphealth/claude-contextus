@@ -33,7 +33,7 @@ const c = {
   red: '\x1b[31m',
   cyan: '\x1b[36m',
   magenta: '\x1b[35m',
-  bold: '\x1b[1m',
+  bold: '\x1b[1m'
 };
 
 // --- Args ---

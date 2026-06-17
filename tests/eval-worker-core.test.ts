@@ -24,10 +24,10 @@ function job(overrides: Partial<EvalJob> = {}): EvalJob {
     response: 'Add retry logic with structured logging.',
     patterns: [
       { id: 'logger-helper.md', snippet: 'log retries' },
-      { id: 'unrelated.md', snippet: 'something else' },
+      { id: 'unrelated.md', snippet: 'something else' }
     ],
     enqueuedAt: new Date('2026-06-14T00:00:00.000Z').toISOString(),
-    ...overrides,
+    ...overrides
   };
 }
 
@@ -61,12 +61,7 @@ test('processJob: model error propagates (caller rejects)', async () => {
 
 test('processJob: latency derived from enqueuedAt; bad timestamp → 0', async () => {
   const caller = async () => '1:helpful';
-  const res = await processJob(
-    job({ enqueuedAt: 'not-a-date' }),
-    MODEL,
-    caller,
-    () => 999_999
-  );
+  const res = await processJob(job({ enqueuedAt: 'not-a-date' }), MODEL, caller, () => 999_999);
   // helpful (0.7) of 2 → 0.35
   assert.ok(Math.abs(res.weightedScore - 0.35) < 1e-9);
 });

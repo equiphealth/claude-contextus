@@ -11,17 +11,22 @@ import {
   parseEvalResponse,
   weightedScore,
   RATING_WEIGHTS,
-  type InjectedPattern,
+  type InjectedPattern
 } from '../lib/calibration/eval-calibration.js';
 
 const PATTERNS: InjectedPattern[] = [
   { id: 'logger-helper.md', snippet: 'log retry attempts' },
   { id: 'test-data-setup.md', snippet: 'fixtures isolate state' },
-  { id: 'appium-timeout.md', snippet: 'bump implicit wait' },
+  { id: 'appium-timeout.md', snippet: 'bump implicit wait' }
 ];
 
 test('buildEvalPrompt: numbers patterns and includes thinking + response', () => {
-  const p = buildEvalPrompt('how to retry?', 'I will use logger-helper', 'add retry logic', PATTERNS);
+  const p = buildEvalPrompt(
+    'how to retry?',
+    'I will use logger-helper',
+    'add retry logic',
+    PATTERNS
+  );
   assert.match(p, /1\. logger-helper\.md/);
   assert.match(p, /3\. appium-timeout\.md/);
   assert.match(p, /Claude's thinking: I will use logger-helper/);
@@ -38,7 +43,7 @@ test('parse: canonical "n:rating" comma list maps to pattern ids', () => {
   assert.deepEqual(out, [
     { pattern: 'logger-helper.md', rating: 'critical' },
     { pattern: 'test-data-setup.md', rating: 'helpful' },
-    { pattern: 'appium-timeout.md', rating: 'unused' },
+    { pattern: 'appium-timeout.md', rating: 'unused' }
   ]);
 });
 
@@ -50,7 +55,7 @@ test('parse: tolerates prose, varied spacing, and case', () => {
   assert.deepEqual(out, [
     { pattern: 'logger-helper.md', rating: 'critical' },
     { pattern: 'test-data-setup.md', rating: 'mentioned' },
-    { pattern: 'appium-timeout.md', rating: 'unused' },
+    { pattern: 'appium-timeout.md', rating: 'unused' }
   ]);
 });
 
@@ -73,7 +78,7 @@ test('weightedScore: LOGGING.md formula over total RETRIEVED, not rated', () => 
   // 1 critical (1.0) + 1 helpful (0.7) over 3 retrieved = 1.7/3
   const ratings = [
     { pattern: 'logger-helper.md', rating: 'critical' as const },
-    { pattern: 'test-data-setup.md', rating: 'helpful' as const },
+    { pattern: 'test-data-setup.md', rating: 'helpful' as const }
   ];
   assert.ok(Math.abs(weightedScore(ratings, 3) - 1.7 / 3) < 1e-9);
 });

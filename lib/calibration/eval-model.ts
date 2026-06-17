@@ -22,7 +22,7 @@ export interface EvalModelConfig {
 
 export const DEFAULT_EVAL_MODEL: EvalModelConfig = {
   provider: 'bedrock',
-  model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+  model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 };
 
 /** Injected so tests run the worker end-to-end without a network call. */
@@ -37,14 +37,14 @@ async function callAnthropic(prompt: string, cfg: EvalModelConfig): Promise<stri
     headers: {
       'content-type': 'application/json',
       'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
       model: cfg.model ?? DEFAULT_EVAL_MODEL.model,
       max_tokens: 256,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: prompt }]
     }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(30_000)
   });
   if (!res.ok) {
     throw new Error(`anthropic eval failed: ${res.status} ${await res.text().catch(() => '')}`);
@@ -60,7 +60,7 @@ async function callOllama(prompt: string, cfg: EvalModelConfig): Promise<string>
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model: cfg.model ?? 'llama3.1:8b', prompt, stream: false }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(30_000)
   });
   if (!res.ok) throw new Error(`ollama eval failed: ${res.status}`);
   const data = (await res.json()) as { response?: string };
@@ -75,13 +75,13 @@ async function callBedrock(prompt: string, cfg: EvalModelConfig): Promise<string
   const body = JSON.stringify({
     anthropic_version: 'bedrock-2023-05-31',
     max_tokens: 256,
-    messages: [{ role: 'user', content: prompt }],
+    messages: [{ role: 'user', content: prompt }]
   });
   const command = new InvokeModelCommand({
     modelId: cfg.model ?? DEFAULT_EVAL_MODEL.model,
     contentType: 'application/json',
     accept: 'application/json',
-    body: new TextEncoder().encode(body),
+    body: new TextEncoder().encode(body)
   });
   const response = await client.send(command, { requestTimeout: 30_000 });
   const result = JSON.parse(new TextDecoder().decode(response.body)) as {

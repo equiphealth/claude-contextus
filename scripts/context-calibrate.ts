@@ -34,7 +34,7 @@ import {
   buildChanges,
   renderDiff,
   hasRealChanges,
-  applyChanges,
+  applyChanges
 } from '../lib/calibration/config-write.js';
 import { readState, startCalibration, writeState } from '../lib/calibration/calibration-state.js';
 import { RATING_WEIGHTS } from '../lib/calibration/eval-calibration.js';
@@ -60,7 +60,7 @@ function parseArgs(argv: string[]): Args {
     start: false,
     status: false,
     report: false,
-    stop: false,
+    stop: false
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -208,7 +208,7 @@ function runReport(): void {
         critical: 0,
         helpful: 0,
         mentioned: 0,
-        unused: 0,
+        unused: 0
       };
       if (r.rating in tally) tally[r.rating]++;
       byPattern.set(r.pattern, tally);

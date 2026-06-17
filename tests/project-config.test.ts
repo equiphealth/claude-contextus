@@ -17,7 +17,7 @@ import {
   loadConfig,
   loadProjectConfig,
   projectLocalConfigPath,
-  resetConfigCache,
+  resetConfigCache
 } from '../lib/config.js';
 
 const PROJ = 'test-proj-cfg-zzz'; // unique, unlikely to collide with a real corpus

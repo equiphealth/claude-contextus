@@ -5,12 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  rerank,
-  freshnessDecay,
-  hitCountBoost,
-  TYPE_BOOSTS,
-} from '../lib/retrieval/reranker.js';
+import { rerank, freshnessDecay, hitCountBoost, TYPE_BOOSTS } from '../lib/retrieval/reranker.js';
 import type { SearchResult } from '../lib/storage/lance-client.js';
 
 /** Build a minimal SearchResult with sane defaults. */
@@ -30,7 +25,7 @@ function row(overrides: Partial<SearchResult>): SearchResult {
     updated_at: '',
     distance: 0,
     similarity: 0.5,
-    ...overrides,
+    ...overrides
   };
 }
 
@@ -71,7 +66,7 @@ test('rerank: typeBoost changes ORDER (gotcha outranks equal-similarity phase)',
   const out = rerank(
     [
       row({ id: 'phase', type: 'phase', similarity: 0.5 }),
-      row({ id: 'gotcha', type: 'gotcha', similarity: 0.5 }),
+      row({ id: 'gotcha', type: 'gotcha', similarity: 0.5 })
     ],
     FIXED_NOW
   );
@@ -80,10 +75,7 @@ test('rerank: typeBoost changes ORDER (gotcha outranks equal-similarity phase)',
 });
 
 test('rerank: returns a new sorted array (descending finalScore)', () => {
-  const input = [
-    row({ id: 'low', similarity: 0.2 }),
-    row({ id: 'high', similarity: 0.9 }),
-  ];
+  const input = [row({ id: 'low', similarity: 0.2 }), row({ id: 'high', similarity: 0.9 })];
   const out = rerank(input, FIXED_NOW);
   assert.deepEqual(
     out.map((r) => r.id),

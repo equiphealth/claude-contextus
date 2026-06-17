@@ -226,7 +226,7 @@ const DEFAULTS: ContextusConfig = {
   providers: {
     ollama: { endpoint: 'http://localhost:11434' },
     bedrock: { region: 'us-east-1' },
-    anthropic: {},
+    anthropic: {}
   },
   embedding: {
     provider: 'transformers',
@@ -238,12 +238,12 @@ const DEFAULTS: ContextusConfig = {
       localModelPath: '',
       cacheDir: '',
       remoteHost: 'https://huggingface.co/',
-      allowRemoteModels: true,
-    },
+      allowRemoteModels: true
+    }
   },
   storage: {
     mode: 'file',
-    path: '~/.contextus/data/{project-name}',
+    path: '~/.contextus/data/{project-name}'
   },
   retrieval: {
     topK: 5,
@@ -251,7 +251,7 @@ const DEFAULTS: ContextusConfig = {
     injectionFloor: 0.35, // UNVALIDATED permissive gate — calibrate in Phase 5
     maxTokens: 3000,
     mergeStrategy: 'interleaved',
-    provenanceFooter: true, // show "Context: used:" by default; opt-out per project
+    provenanceFooter: true // show "Context: used:" by default; opt-out per project
   },
   expansion: {
     mode: 'adaptive',
@@ -262,24 +262,24 @@ const DEFAULTS: ContextusConfig = {
     expansionThreshold: 0.55,
     maxVariants: 3,
     temperature: 0.7,
-    timeoutMs: 5000,
+    timeoutMs: 5000
   },
   notifications: {
-    verbosity: 'normal', // code default; deployed plugin.json sets 'verbose'
+    verbosity: 'normal' // code default; deployed plugin.json sets 'verbose'
   },
   calibration: {
     targetSamples: 100,
     provider: 'bedrock',
-    model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
   },
   logging: {
     paranoid: true,
     retention: {
       activeDays: 30,
       archiveMonths: 6,
-      paranoidDays: 7,
-    },
-  },
+      paranoidDays: 7
+    }
+  }
 };
 
 let _config: ContextusConfig | null = null;

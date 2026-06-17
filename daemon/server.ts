@@ -50,7 +50,7 @@ import {
   logError,
   logInfo,
   promptHash,
-  type DroppedChunkLog,
+  type DroppedChunkLog
 } from '../lib/logger.js';
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 
@@ -125,8 +125,8 @@ function handleHealth(res: http.ServerResponse): void {
       queries: stats.queries,
       fired: stats.expansionFired,
       skipped: stats.expansionSkipped,
-      fireRate: `${expansionRate}%`,
-    },
+      fireRate: `${expansionRate}%`
+    }
   });
 }
 
@@ -178,7 +178,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       project: projectLabel,
       corpus: meta.embeddingModel,
       daemon: activeModel,
-      fix: 're-embed the corpus with the active model (pnpm run embed) or restore the build-time model',
+      fix: 're-embed the corpus with the active model (pnpm run embed) or restore the build-time model'
     });
     // Degrade gracefully — a mismatched space yields garbage similarities.
     return sendJson(res, 200, { continue: true });
@@ -188,7 +188,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       project: projectLabel,
       corpus: meta.dimensions,
       daemon: cfg.embedding.dimensions,
-      fix: 're-embed the corpus (pnpm run embed) so stored vectors match config.embedding.dimensions',
+      fix: 're-embed the corpus (pnpm run embed) so stored vectors match config.embedding.dimensions'
     });
     return sendJson(res, 200, { continue: true });
   }
@@ -239,7 +239,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         provider: expanded.provider,
         latencyMs: expanded.latencyMs,
         resultsBefore: originalCount,
-        resultsAfter: raw.length,
+        resultsAfter: raw.length
       });
     }
   } else if (cfg.expansion.mode !== 'off') {
@@ -247,7 +247,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     logInfo('Expansion skipped', {
       project: projectLabel,
       initialBest: Number(initialBest.toFixed(4)),
-      threshold: cfg.expansion.expansionThreshold,
+      threshold: cfg.expansion.expansionThreshold
     });
   }
 
@@ -261,7 +261,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
 
   const floorDropped: DroppedChunkLog[] = dropped.map((d) => ({
     pattern: d.filename || d.id,
-    similarity: Number(d.similarity.toFixed(4)),
+    similarity: Number(d.similarity.toFixed(4))
   }));
 
   if (noInject) {
@@ -270,7 +270,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       promptHash: hash,
       bestScore: Number(bestScore.toFixed(4)),
       latencyMs: Date.now() - started,
-      floorDropped,
+      floorDropped
     });
     if (cfg.logging.paranoid) {
       logParanoid({
@@ -280,7 +280,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         injection: '',
         retrieved: [],
         similarityScores: [Number(bestScore.toFixed(4))],
-        latencyMs: Date.now() - started,
+        latencyMs: Date.now() - started
       });
     }
     return sendJson(res, 200, { continue: true });
@@ -297,7 +297,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     project
   ).catch((err) =>
     logError('warn', 'daemon', 'hit-count update failed', {
-      message: err instanceof Error ? err.message : String(err),
+      message: err instanceof Error ? err.message : String(err)
     })
   );
   recordInjection(projectLabel, injectedNames);
@@ -310,9 +310,9 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       promptHash: hash,
       patterns: included.map((r) => ({
         id: r.filename || r.id,
-        snippet: r.document.replace(/\s+/g, ' ').slice(0, 160),
+        snippet: r.document.replace(/\s+/g, ' ').slice(0, 160)
       })),
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -323,7 +323,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
     tokensInjected: tokens,
     latencyMs: Date.now() - started,
-    floorDropped,
+    floorDropped
   });
 
   if (cfg.logging.paranoid) {
@@ -334,7 +334,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       injection: block,
       retrieved: injectedNames,
       similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
-      latencyMs: Date.now() - started,
+      latencyMs: Date.now() - started
     });
   }
 
@@ -350,8 +350,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: block + footer,
-    },
+      additionalContext: block + footer
+    }
   });
 }
 
@@ -427,7 +427,7 @@ async function handleReconcile(
     const diskFiles: DiskFile[] = contexts.map((c) => ({
       id: c.id,
       absPath: c.absPath,
-      content: c.content,
+      content: c.content
     }));
     const plan = planReconcile(diskFiles, hashes, exists);
     return sendJson(res, 200, {
@@ -435,7 +435,7 @@ async function handleReconcile(
       newCount: plan.toEmbedNew.length,
       changedCount: plan.toEmbedChanged.length,
       removeCount: plan.toRemove.length,
-      quarantined, // relPaths of files that can't embed (bad prefix/type) — surface these
+      quarantined // relPaths of files that can't embed (bad prefix/type) — surface these
     });
   }
 
@@ -457,14 +457,14 @@ async function handleReconcile(
           project: projectLabel,
           state: r.state,
           embedded: r.embedded,
-          removed: r.removed,
+          removed: r.removed
         });
       }
     })
     .catch((err) =>
       logError('error', 'daemon', 'Reconcile failed', {
         project: projectLabel,
-        message: err instanceof Error ? err.message : String(err),
+        message: err instanceof Error ? err.message : String(err)
       })
     )
     .finally(() => reconcilingProjects.delete(projectLabel));
@@ -493,12 +493,12 @@ const server = http.createServer((req, res) => {
       version: DAEMON_VERSION,
       uptimeSeconds: process.uptime(),
       modelLoaded,
-      project,
+      project
     })
       .then((info) => sendJson(res, 200, info))
       .catch((err) => {
         logError('error', 'daemon', '/introspect failed', {
-          message: err instanceof Error ? err.message : String(err),
+          message: err instanceof Error ? err.message : String(err)
         });
         sendJson(res, 500, { error: 'introspect failed' });
       });
@@ -514,7 +514,7 @@ const server = http.createServer((req, res) => {
       })
       .catch((err) => {
         logError('error', 'daemon', `${url} handler failed`, {
-          message: err instanceof Error ? err.message : String(err),
+          message: err instanceof Error ? err.message : String(err)
         });
         // Never break the prompt — degrade to continue.
         sendJson(res, 200, { continue: true });
@@ -562,7 +562,7 @@ async function startDaemon(): Promise<void> {
     logInfo('Daemon started', {
       pid: process.pid,
       port: PORT,
-      provider: cfg.embedding.provider,
+      provider: cfg.embedding.provider
     });
     // Warm the model AFTER the socket is listening so /health is reachable and
     // reports modelLoaded:false while loading (session-start polls for true).
@@ -572,14 +572,14 @@ async function startDaemon(): Promise<void> {
         warmupError = null;
         logInfo('Model warm', {
           model:
-            cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
+            cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model
         });
       })
       .catch((err) => {
         // Record WHY so /health can tell session-start "down" vs "still loading".
         warmupError = err instanceof Error ? err.message : String(err);
         logError('error', 'embedder', 'Model warmup failed', {
-          message: warmupError,
+          message: warmupError
         });
         // Leave modelLoaded:false — health stays not-ready, queries degrade.
       });
@@ -598,7 +598,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 
 startDaemon().catch((err) => {
   logError('error', 'daemon', 'Failed to start', {
-    message: err instanceof Error ? err.message : String(err),
+    message: err instanceof Error ? err.message : String(err)
   });
   process.exit(1);
 });

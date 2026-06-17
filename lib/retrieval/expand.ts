@@ -62,14 +62,14 @@ async function expandViaOllama(query: string, ctx: ProviderContext): Promise<Exp
     model: ctx.model,
     prompt: buildPrompt(query, ctx.maxVariants),
     stream: false,
-    options: { temperature: ctx.temperature, num_predict: 150 },
+    options: { temperature: ctx.temperature, num_predict: 150 }
   };
 
   const res = await fetch(`${ctx.ollamaEndpoint}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(ctx.timeoutMs),
+    signal: AbortSignal.timeout(ctx.timeoutMs)
   });
 
   if (!res.ok) throw new Error(`Ollama expansion failed: ${res.status}`);
@@ -88,7 +88,7 @@ async function expandViaAnthropic(query: string, ctx: ProviderContext): Promise<
     model: ctx.model,
     max_tokens: 200,
     messages: [{ role: 'user', content: buildPrompt(query, ctx.maxVariants) }],
-    temperature: ctx.temperature,
+    temperature: ctx.temperature
   };
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -96,10 +96,10 @@ async function expandViaAnthropic(query: string, ctx: ProviderContext): Promise<
     headers: {
       'content-type': 'application/json',
       'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(ctx.timeoutMs),
+    signal: AbortSignal.timeout(ctx.timeoutMs)
   });
 
   if (!res.ok) throw new Error(`Anthropic expansion failed: ${res.status}`);
@@ -123,18 +123,18 @@ async function expandViaBedrock(query: string, ctx: ProviderContext): Promise<Ex
     anthropic_version: 'bedrock-2023-05-31',
     max_tokens: 200,
     messages: [{ role: 'user', content: buildPrompt(query, ctx.maxVariants) }],
-    temperature: ctx.temperature,
+    temperature: ctx.temperature
   });
 
   const command = new InvokeModelCommand({
     modelId: ctx.model,
     contentType: 'application/json',
     accept: 'application/json',
-    body: new TextEncoder().encode(body),
+    body: new TextEncoder().encode(body)
   });
 
   const response = await client.send(command, {
-    requestTimeout: ctx.timeoutMs,
+    requestTimeout: ctx.timeoutMs
   });
 
   const result = JSON.parse(new TextDecoder().decode(response.body)) as {
@@ -181,7 +181,7 @@ export async function expandQuery(
     bedrockRegion,
     timeoutMs: cfg.timeoutMs,
     temperature: cfg.temperature,
-    maxVariants: cfg.maxVariants,
+    maxVariants: cfg.maxVariants
   };
 
   try {
@@ -200,7 +200,7 @@ export async function expandQuery(
             bedrockRegion,
             timeoutMs: remaining,
             temperature: cfg.temperature,
-            maxVariants: cfg.maxVariants,
+            maxVariants: cfg.maxVariants
           };
           return await callProvider(query, fallbackCtx);
         } catch {

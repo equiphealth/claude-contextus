@@ -7,83 +7,83 @@
     // Shared connection settings. All features (embedding, expansion, calibration)
     // reference these instead of duplicating endpoints.
     "ollama": {
-      "endpoint": "http://localhost:11434"  // Ollama HTTP API. Change if different port or remote host.
+      "endpoint": "http://localhost:11434" // Ollama HTTP API. Change if different port or remote host.
     },
     "bedrock": {
-      "region": "us-east-1"  // AWS region for InvokeModel. Uses default credential chain.
+      "region": "us-east-1" // AWS region for InvokeModel. Uses default credential chain.
     },
-    "anthropic": {}  // Direct Anthropic API. Requires ANTHROPIC_API_KEY env var.
+    "anthropic": {} // Direct Anthropic API. Requires ANTHROPIC_API_KEY env var.
   },
 
   "embedding": {
     // Vector embedding for semantic search. The provider that BUILT the corpus must
     // match at query time — switching requires a full re-embed.
-    "provider": "ollama",                        // ollama | transformers (in-process ONNX)
-    "model": "nomic-ai/nomic-embed-text-v1.5",  // HuggingFace model ID (transformers provider)
-    "ollamaModel": "nomic-embed-text",           // Ollama model tag. Pull first: `ollama pull nomic-embed-text`
-    "dimensions": 768,                           // Must match model output dimensions
-    "batchSize": 32,                             // Chunks per batch. Higher = faster, more memory.
+    "provider": "ollama", // ollama | transformers (in-process ONNX)
+    "model": "nomic-ai/nomic-embed-text-v1.5", // HuggingFace model ID (transformers provider)
+    "ollamaModel": "nomic-embed-text", // Ollama model tag. Pull first: `ollama pull nomic-embed-text`
+    "dimensions": 768, // Must match model output dimensions
+    "batchSize": 32, // Chunks per batch. Higher = faster, more memory.
     "transformers": {
       // Only used when provider='transformers'. Ignored for ollama.
-      "localModelPath": "",       // Pre-downloaded model dir (air-gapped installs)
-      "cacheDir": "",             // Override transformers.js cache dir
-      "remoteHost": "https://huggingface.co/",  // Point at internal mirror if HF is blocked
-      "allowRemoteModels": true   // Set false for strict offline
+      "localModelPath": "", // Pre-downloaded model dir (air-gapped installs)
+      "cacheDir": "", // Override transformers.js cache dir
+      "remoteHost": "https://huggingface.co/", // Point at internal mirror if HF is blocked
+      "allowRemoteModels": true // Set false for strict offline
     }
   },
 
   "retrieval": {
     // Controls what gets injected into Claude's context.
-    "topK": 5,                      // Max context files per prompt (after dedup + floor)
-    "similarityThreshold": 0.7,     // Post-ranking quality filter (NOT the injection gate)
-    "injectionFloor": 0.45,         // Raw similarity gate: 'inject anything at all?'
-    "maxTokens": 3000,              // Token budget for injected context (approximate)
+    "topK": 5, // Max context files per prompt (after dedup + floor)
+    "similarityThreshold": 0.7, // Post-ranking quality filter (NOT the injection gate)
+    "injectionFloor": 0.45, // Raw similarity gate: 'inject anything at all?'
+    "maxTokens": 3000, // Token budget for injected context (approximate)
     "mergeStrategy": "interleaved", // interleaved | prioritize-context | prioritize-docs
-    "provenanceFooter": true        // Show 'Context: used: <file> (<score>)' footer
+    "provenanceFooter": true // Show 'Context: used: <file> (<score>)' footer
   },
 
   "expansion": {
     // Multi-vector query expansion: generates alternate phrasings when initial search
     // scores poorly. Dramatically improves synonym/paraphrase recall.
-    "mode": "adaptive",    // adaptive (expand when score < threshold) | always | off
-    "provider": "ollama",  // ollama | bedrock | anthropic
+    "mode": "adaptive", // adaptive (expand when score < threshold) | always | off
+    "provider": "ollama", // ollama | bedrock | anthropic
     "model": "qwen2.5:3b", // Primary provider model. Small/fast recommended for ollama.
     "fallbackProvider": "bedrock",
     "fallbackModel": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     // Fallback fires only on FAST failures (connection refused, DNS) with remaining
     // time budget. Slow timeouts do NOT fall back.
     "expansionThreshold": 0.55, // Adaptive fires when best initial score < this (0.0-1.0)
-    "maxVariants": 3,           // Alternative phrasings to generate (2-5 recommended)
-    "temperature": 0.7,         // LLM temperature (0.0-2.0). Higher = more diverse.
-    "timeoutMs": 5000           // Total expansion time budget (shared primary + fallback)
+    "maxVariants": 3, // Alternative phrasings to generate (2-5 recommended)
+    "temperature": 0.7, // LLM temperature (0.0-2.0). Higher = more diverse.
+    "timeoutMs": 5000 // Total expansion time budget (shared primary + fallback)
   },
 
   "calibration": {
     // Quality evaluation: judges whether injected patterns were actually USED by Claude.
     // Runs as a bounded campaign (N samples, then auto-disables).
-    "targetSamples": 100,  // Evaluations per campaign. Start with /context-calibrate --start.
+    "targetSamples": 100, // Evaluations per campaign. Start with /context-calibrate --start.
     "provider": "bedrock", // bedrock | anthropic | ollama
-    "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0"  // Judge model. Haiku recommended.
+    "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0" // Judge model. Haiku recommended.
   },
 
   "contextCapture": {
     // Pattern proposal system — how contextus suggests new patterns to capture.
     "enabled": true,
-    "mode": "propose"  // propose (suggest, user confirms) | auto (capture without asking) | silent
+    "mode": "propose" // propose (suggest, user confirms) | auto (capture without asking) | silent
   },
 
   "notifications": {
     // SessionStart daemon-state messages (user-facing).
-    "verbosity": "normal"  // silent | normal (spawn/failure only) | verbose (also heartbeat)
+    "verbosity": "normal" // silent | normal (spawn/failure only) | verbose (also heartbeat)
   },
 
   "logging": {
     // Daemon logging. All logs write to ~/.contextus/logs/.
-    "paranoid": false,  // Log full prompt + injection payload. Privacy-sensitive. Good for debugging.
+    "paranoid": false, // Log full prompt + injection payload. Privacy-sensitive. Good for debugging.
     "retention": {
-      "activeDays": 30,    // Days before standard logs rotate to archive/
-      "archiveMonths": 6,  // Months before archived .gz files are deleted
-      "paranoidDays": 7    // Days before paranoid.jsonl is DELETED (privacy, not archived)
+      "activeDays": 30, // Days before standard logs rotate to archive/
+      "archiveMonths": 6, // Months before archived .gz files are deleted
+      "paranoidDays": 7 // Days before paranoid.jsonl is DELETED (privacy, not archived)
     }
   }
 }

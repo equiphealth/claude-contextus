@@ -24,9 +24,10 @@
     "tag-context": "tsx scripts/tag-context.ts",
     "calibrate": "tsx scripts/context-calibrate.ts",
     "lint": "eslint lib scripts daemon --ext .ts",
-    "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\"",
-    "format:all": "prettier --write \"**/*.{ts,json}\"",
-    "type-check": "tsc --noEmit"
+    "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\" \"*.jsonc\"",
+    "format:all": "prettier --write \"**/*.{ts,json,jsonc}\"",
+    "type-check": "tsc --noEmit",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "keywords": [
     "claude",

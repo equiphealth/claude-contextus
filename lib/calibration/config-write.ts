@@ -64,7 +64,7 @@ export function buildChanges(
   return Object.entries(proposals).map(([key, proposed]) => ({
     key,
     current: readConfigValue(key, pluginPath),
-    proposed,
+    proposed
   }));
 }
 

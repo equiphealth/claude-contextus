@@ -139,7 +139,7 @@ export async function createTable(
       provider,
       embeddingModel: provider === 'ollama' ? ollamaModel : model,
       dimensions: rows[0].vector.length,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString()
     },
     opts.projectName
   );
@@ -190,7 +190,7 @@ export async function search(
   return rows.map((r) => ({
     ...r,
     distance: r._distance,
-    similarity: 1 - r._distance,
+    similarity: 1 - r._distance
   }));
 }
 
@@ -217,7 +217,7 @@ export async function incrementHits(ids: string[], projectName?: string): Promis
   const nowIso = new Date().toISOString();
   await table.update({
     where: `id IN (${inList})`,
-    valuesSql: { hit_count: 'hit_count + 1', last_hit: `'${nowIso}'` },
+    valuesSql: { hit_count: 'hit_count + 1', last_hit: `'${nowIso}'` }
   });
 }
 

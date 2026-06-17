@@ -183,7 +183,7 @@ export function recommendFloor(results: ReplayResult[]): FloorRecommendation {
       coverageAtFloor: 0,
       coverageCurve: [],
       rationale:
-        'No prompts produced retrievable results (empty corpus?). Falling back to the permissive 0.35 default — recalibrate once the corpus is populated.',
+        'No prompts produced retrievable results (empty corpus?). Falling back to the permissive 0.35 default — recalibrate once the corpus is populated.'
     };
   }
 
@@ -193,7 +193,7 @@ export function recommendFloor(results: ReplayResult[]): FloorRecommendation {
     p25: percentile(sorted, 25),
     p50: percentile(sorted, 50),
     p75: percentile(sorted, 75),
-    p90: percentile(sorted, 90),
+    p90: percentile(sorted, 90)
   };
 
   const separations = results
@@ -259,6 +259,6 @@ export function recommendFloor(results: ReplayResult[]): FloorRecommendation {
     recommendedFloor,
     coverageAtFloor,
     coverageCurve,
-    rationale,
+    rationale
   };
 }
