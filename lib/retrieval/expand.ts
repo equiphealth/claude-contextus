@@ -53,7 +53,7 @@ async function expandViaOllama(query: string, cfg: ExpansionConfig): Promise<Exp
     model: cfg.ollamaModel,
     prompt: buildPrompt(query, cfg.maxVariants),
     stream: false,
-    options: { temperature: 0.7, num_predict: 150 },
+    options: { temperature: cfg.temperature, num_predict: 150 },
   };
 
   const res = await fetch(`${cfg.ollamaEndpoint}/api/generate`, {
@@ -84,7 +84,7 @@ async function expandViaAnthropic(query: string, cfg: ExpansionConfig): Promise<
     model: cfg.anthropicModel,
     max_tokens: 200,
     messages: [{ role: 'user', content: buildPrompt(query, cfg.maxVariants) }],
-    temperature: 0.7,
+    temperature: cfg.temperature,
   };
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {

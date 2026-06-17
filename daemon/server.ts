@@ -207,6 +207,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         })
       );
       // Union: merge all results, dedupe by row id (keep highest similarity).
+      const originalCount = raw.length;
       const seen = new Map<string, (typeof raw)[0]>();
       for (const r of raw) seen.set(r.id, r);
       for (const results of variantSearches) {
@@ -223,7 +224,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         variants: expanded.variants.length,
         provider: expanded.provider,
         latencyMs: expanded.latencyMs,
-        resultsBefore: raw.length - (seen.size - raw.length), // approx original count
+        resultsBefore: originalCount,
         resultsAfter: raw.length,
       });
     }

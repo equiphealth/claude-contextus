@@ -126,6 +126,8 @@ export interface ExpansionConfig {
   expansionThreshold: number;
   /** Max query variants to generate (excluding original). Default 3. */
   maxVariants: number;
+  /** LLM temperature for variant generation. Higher = more diverse. Default 0.7. */
+  temperature: number;
 }
 
 /** SessionStart daemon-state message verbosity (user-facing systemMessage). */
@@ -220,6 +222,7 @@ const DEFAULTS: ContextusConfig = {
     ollamaEndpoint: 'http://localhost:11434',
     expansionThreshold: 0.55,
     maxVariants: 3,
+    temperature: 0.7,
   },
   notifications: {
     verbosity: 'normal', // code default; deployed plugin.json sets 'verbose'
