@@ -37,22 +37,51 @@ const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
 
 /**
- * Build dist/ if missing (install-from-main users). The daemon's production
- * path needs `dist/daemon/server.js` — if absent (fresh clone, dist/ not
- * committed), compile it with `npx tsc`. Runs SYNCHRONOUSLY because the
- * daemon spawn depends on it; fast on warm tsc (~1-2s). No-op if dist/
- * already exists or if we're in dev mode (tsx runs source directly).
+ * Build dist/ if missing or incomplete (install-from-main users). Checks a few
+ * critical files, not just the daemon entry — catches partial builds from a
+ * prior timeout/crash. Uses a lockfile to prevent concurrent tsc invocations
+ * from parallel session starts (harmless but wasteful).
  *
  * Returns true if it ran a build, false if skipped.
  */
+const DIST_SENTINEL_FILES = [
+  DAEMON_JS,
+  path.join(REPO_ROOT, 'dist', 'lib', 'config.js'),
+  path.join(REPO_ROOT, 'dist', 'lib', 'retrieval', 'inject-format.js'),
+];
+const BUILD_LOCK = path.join(RUNTIME_DIR, 'build.lock');
+
 export function ensureDistBuilt() {
   if (isDevMode()) return false;
-  if (fs.existsSync(DAEMON_JS)) return false;
+  if (DIST_SENTINEL_FILES.every((f) => fs.existsSync(f))) return false;
+  // Lockfile guard: skip if another session is already building.
+  // Stale lock cleanup: if the lock is older than 60s, the builder likely crashed.
+  try {
+    const lockStat = fs.statSync(BUILD_LOCK);
+    if (Date.now() - lockStat.mtimeMs > 60000) fs.unlinkSync(BUILD_LOCK);
+  } catch { /* no lock file — fine */ }
+  try {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    const lockFd = fs.openSync(BUILD_LOCK, 'wx'); // fails if file exists
+    fs.closeSync(lockFd);
+  } catch {
+    // Lock exists — another session is building. Poll for completion (max 30s),
+    // then fall back to tsx if dist/ still isn't ready.
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      if (DIST_SENTINEL_FILES.every((f) => fs.existsSync(f))) return false;
+      // Busy-wait with Atomics to avoid spawning sleep processes.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    }
+    return false;
+  }
   try {
     execSync('npx tsc', { cwd: REPO_ROOT, stdio: 'ignore', timeout: 30000 });
     return true;
   } catch {
-    return false; // build failed — daemon-control will fall back to tsx via resolveLaunch
+    return false; // build failed — resolveLaunch() will fall back to tsx
+  } finally {
+    try { fs.unlinkSync(BUILD_LOCK); } catch { /* best-effort */ }
   }
 }
 
