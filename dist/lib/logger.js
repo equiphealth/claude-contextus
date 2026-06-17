@@ -23,6 +23,7 @@ const LOG_DIR = expandHome('~/.contextus/logs');
 const USAGE_PATH = path.join(LOG_DIR, 'usage.jsonl');
 const DAEMON_LOG_PATH = path.join(LOG_DIR, 'daemon.log');
 const ERRORS_PATH = path.join(LOG_DIR, 'errors.jsonl');
+const PARANOID_PATH = path.join(LOG_DIR, 'paranoid.jsonl');
 let _dirReady = false;
 function ensureDir() {
     if (_dirReady)
@@ -140,5 +141,24 @@ export function logError(level, component, message, context) {
 /** Plain human-readable daemon lifecycle line (start/stop/notify). */
 export function logInfo(message, kv) {
     appendSafe(DAEMON_LOG_PATH, humanLine('INFO', message, kv));
+}
+/**
+ * Log the full prompt + injection payload to paranoid.jsonl. Only called when
+ * logging.paranoid is true. This captures everything sent to the LLM so you
+ * can debug retrieval quality without guessing what was in/out.
+ */
+export function logParanoid(e) {
+    const record = {
+        type: 'paranoid',
+        timestamp: new Date().toISOString(),
+        project: e.project,
+        prompt_hash: e.promptHash,
+        prompt: e.prompt,
+        injection: e.injection,
+        retrieved: e.retrieved,
+        similarity_scores: e.similarityScores,
+        latency_ms: e.latencyMs,
+    };
+    appendSafe(PARANOID_PATH, JSON.stringify(record) + '\n');
 }
 //# sourceMappingURL=logger.js.map
