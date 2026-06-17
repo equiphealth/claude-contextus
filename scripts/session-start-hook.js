@@ -33,6 +33,7 @@ import path from 'path';
 import {
   ensureDaemonRunning,
   ensureDepsInstalled,
+  ensureDistBuilt,
   waitForModel,
   getHealth,
   getVerbosity,
@@ -92,6 +93,24 @@ async function main() {
         'contextus: installing dependencies (first launch only) — context injection will start once it finishes, likely next session.'
       );
     }
+    // Install-from-main: dist/ is not committed, so build it on first run.
+    // No-op in dev mode (tsx runs source) or if dist/ already exists.
+    const buildResult = ensureDistBuilt();
+    if (buildResult.built) {
+      lines.push('contextus: built dist/ from source (first run only).');
+    } else if (buildResult.reason === 'build-failed') {
+      lines.push(
+        'contextus: dist/ build failed — falling back to tsx (slower startup). Check that TypeScript compiles: npx tsc'
+      );
+    } else if (buildResult.reason === 'build-timeout') {
+      lines.push(
+        'contextus: dist/ build timed out — falling back to tsx. Try running `pnpm build` manually.'
+      );
+    } else if (buildResult.reason === 'lock-timeout') {
+      lines.push(
+        "contextus: waited for another session to build dist/ but it didn't finish — falling back to tsx."
+      );
+    }
     const wasRunning = await ensureDaemonRunning();
     // If we spawned one, wait (bounded) for warm. Either way fetch /health so the
     // decision logic can see modelLoaded + warmupError (the silent-failure signal).
@@ -136,7 +155,7 @@ async function main() {
 
     // Surface quarantined files (bad prefix/type — can't embed). Honest + actionable:
     // these used to either abort the whole embed or loop as a phantom "new" forever.
-    const quarantined = (plan && Array.isArray(plan.quarantined)) ? plan.quarantined : [];
+    const quarantined = plan && Array.isArray(plan.quarantined) ? plan.quarantined : [];
     if (quarantined.length > 0) {
       const shown = quarantined.slice(0, 3).join(', ');
       const more = quarantined.length > 3 ? ` (+${quarantined.length - 3} more)` : '';

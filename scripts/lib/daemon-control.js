@@ -14,7 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +35,64 @@ const EVAL_WORKER_JS = path.join(REPO_ROOT, 'dist', 'daemon', 'eval-worker.js');
 const EVAL_WORKER_TS = path.join(REPO_ROOT, 'daemon', 'eval-worker.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
+
+/**
+ * Build dist/ if missing or incomplete (install-from-main users). Checks a few
+ * critical files, not just the daemon entry — catches partial builds from a
+ * prior timeout/crash. Uses a lockfile to prevent concurrent tsc invocations
+ * from parallel session starts (harmless but wasteful).
+ *
+ * Returns { built: true } on success, { built: false, reason: string } on
+ * skip/failure. The caller uses `reason` to surface a warning to the user.
+ */
+const DIST_SENTINEL_FILES = [
+  DAEMON_JS,
+  path.join(REPO_ROOT, 'dist', 'lib', 'config.js'),
+  path.join(REPO_ROOT, 'dist', 'lib', 'retrieval', 'inject-format.js'),
+];
+const BUILD_LOCK = path.join(RUNTIME_DIR, 'build.lock');
+const BUILD_TIMEOUT_MS = 60000; // 60s — cold npx + full type-check on slow machines
+
+export function ensureDistBuilt() {
+  if (isDevMode()) return { built: false, reason: 'dev-mode' };
+  if (DIST_SENTINEL_FILES.every((f) => fs.existsSync(f))) return { built: false, reason: 'exists' };
+  // Lockfile guard: skip if another session is already building.
+  // Stale lock cleanup: if the lock is older than 90s, the builder likely crashed.
+  try {
+    const lockStat = fs.statSync(BUILD_LOCK);
+    if (Date.now() - lockStat.mtimeMs > 90000) fs.unlinkSync(BUILD_LOCK);
+  } catch {
+    /* no lock file — fine */
+  }
+  try {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    const lockFd = fs.openSync(BUILD_LOCK, 'wx'); // fails if file exists
+    fs.closeSync(lockFd);
+  } catch {
+    // Lock exists — another session is building. Poll for completion (max 60s),
+    // then fall back to tsx if dist/ still isn't ready.
+    const deadline = Date.now() + BUILD_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (DIST_SENTINEL_FILES.every((f) => fs.existsSync(f)))
+        return { built: false, reason: 'exists' };
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    }
+    return { built: false, reason: 'lock-timeout' };
+  }
+  try {
+    execSync('npx tsc', { cwd: REPO_ROOT, stdio: 'ignore', timeout: BUILD_TIMEOUT_MS });
+    return { built: true };
+  } catch (err) {
+    const reason = err?.killed ? 'build-timeout' : 'build-failed';
+    return { built: false, reason };
+  } finally {
+    try {
+      fs.unlinkSync(BUILD_LOCK);
+    } catch {
+      /* best-effort */
+    }
+  }
+}
 
 /** Valid notification verbosity levels (least → most chatty). */
 export const VERBOSITY_LEVELS = ['silent', 'normal', 'verbose'];
@@ -71,7 +129,7 @@ export function formatUptime(seconds) {
 /**
  * Dependency bootstrap for the PACKAGED plugin (marketplace install).
  *
- * A marketplace clone ships source + committed dist/ but NO node_modules — Claude
+ * A marketplace clone ships source but NO node_modules or dist/ — Claude
  * Code runs no install lifecycle (PACKAGING.md). The native deps (@lancedb / @xenova)
  * must be installed on the target machine into the PERSISTENT ${CLAUDE_PLUGIN_DATA}
  * dir (which survives plugin updates, unlike the ephemeral ${CLAUDE_PLUGIN_ROOT}),
