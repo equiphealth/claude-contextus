@@ -7,7 +7,6 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "verify:dist": "npm run build && git diff --quiet -- dist || (echo 'ERROR: dist/ is stale — commit the rebuilt dist/ (run: npm run build)'; exit 1)",
     "embed": "tsx scripts/embed-contexts.ts",
     "rebuild": "tsx scripts/embed-contexts.ts --rebuild",
     "fetch-model": "tsx scripts/fetch-model.ts",

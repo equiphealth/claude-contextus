@@ -69,8 +69,9 @@ marketplace-install smoke test (unverifiable locally).**
       package.json diff), called first in `session-start-hook.js`. Strict no-op in
       dev / `--plugin-dir`.
 - [x] **Drop the `tsx` runtime requirement** — DONE via option (a): `tsconfig`
-      includes `daemon/**`, `dist/` is committed (runtime `.js` only), and the daemon
-      runs as `node dist/daemon/server.js`. tsx-on-`.ts` is now a dev-only fallback.
+      includes `daemon/**`, CI builds `dist/` at release time (no longer committed),
+      and the daemon runs as `node dist/daemon/server.js`. tsx-on-`.ts` is the
+      dev-mode fallback; install-from-main users get auto-built on first SessionStart.
 - [x] `daemon-control.js`: spawn with `NODE_PATH` / resolved `dist` paths instead of
       `REPO_ROOT/node_modules/.bin/tsx`. — DONE: `resolveLaunch()` prefers compiled
       JS; `depsNodeModules()` sets `NODE_PATH` to `${CLAUDE_PLUGIN_DATA}/node_modules`
@@ -101,8 +102,9 @@ After install, hooks must fire automatically (no enable step), the daemon must s
 via the SessionStart dep-install path (NOT repo-local tsx), and `/contextus-setup`
 must work first-try. quick-start.md's **[v1.1]** lines are the pass/fail checklist.
 
-**Guardrails added this round:** `npm run verify:dist` + a CI "Verify committed dist/
-is fresh" gate (a rebuild must produce no diff), and CI Node bumped 20 → 22 to match
+**Guardrails:** CI builds dist/ fresh on every push (never committed). Release workflow
+packages a complete plugin tarball as a GitHub Release artifact. Install-from-main users
+get `dist/` auto-built by `ensureDistBuilt()` in SessionStart. CI Node 22 matches
 `engines >=22` + `engine-strict`.
 
 **The one thing left:** push to GitHub and run the acceptance commands against the
@@ -113,8 +115,8 @@ design), so it needs a genuine clean-machine install to confirm.
 ### Smoke-test recipe (testing the install without trashing the dogfood loop)
 
 **What's "fresh" and what isn't.** A marketplace install git-clones the repo to
-Claude's plugin cache — so the *code* is fresh (no `node_modules`, committed `dist/`)
-and the dep-bootstrap path genuinely fires. But **state is NOT fresh**: `~/.contextus/`
+Claude's plugin cache — so the *code* is fresh (no `node_modules`, no `dist/`)
+and both the dep-bootstrap and build-on-first-run paths genuinely fire. But **state is NOT fresh**: `~/.contextus/`
 (corpora, daemon, port 37800) is hardcoded and SHARED by both install methods. So:
 
 - **The daemon is persistent + detached — it does NOT die when your last Claude session

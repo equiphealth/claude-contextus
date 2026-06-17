@@ -11,13 +11,7 @@ yarn.lock
 *.onnx_data
 
 # Build outputs
-#   dist/ IS committed (packaging decision, see docs/dev/PACKAGING.md) so a
-#   marketplace clone runs `node dist/...` with no build step. Ship runtime .js
-#   only — the type-decl + sourcemap artifacts churn every build and aren't needed
-#   at runtime.
-dist/**/*.d.ts
-dist/**/*.d.ts.map
-dist/**/*.js.map
+dist/
 build/
 *.tsbuildinfo
 

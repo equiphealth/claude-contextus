@@ -270,8 +270,7 @@ of choice:
 ```bash
 pnpm install          # builds native deps (@lancedb, @xenova/transformers)
 
-pnpm build            # compile to dist/ (committed; the daemon runs node dist/...)
-pnpm run verify:dist  # rebuild + assert committed dist/ is fresh (CI runs this)
+pnpm build            # compile to dist/ (auto-built on first run; not committed)
 pnpm test             # 137 tests
 pnpm lint
 ```
