@@ -106,9 +106,27 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(payload);
 }
 
-/** GET /health — liveness + readiness (modelLoaded is what session-start polls). */
-function handleHealth(res: http.ServerResponse): void {
+/** GET /health — liveness + readiness (modelLoaded is what session-start polls).
+ *  ?probe=true → verify the provider is actually reachable (cheap embed). */
+async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const cfg = loadConfig();
+
+  // Liveness probe: if model appears warm, verify the provider is still up.
+  const url = new URL(req.url ?? '/', BASE_URL);
+  if (url.searchParams.get('probe') === 'true' && modelLoaded) {
+    try {
+      await embedQuery('health');
+    } catch (err) {
+      modelLoaded = false;
+      warmupError = err instanceof Error ? err.message : String(err);
+      logError('warn', 'embedder', 'Health probe failed — provider down, triggering re-warmup', {
+        message: warmupError
+      });
+      if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
+      attemptWarmup();
+    }
+  }
+
   const expansionRate =
     stats.queries > 0 ? Number(((stats.expansionFired / stats.queries) * 100).toFixed(1)) : 0;
   sendJson(res, 200, {
@@ -193,7 +211,21 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     return sendJson(res, 200, { continue: true });
   }
 
-  const vec = await embedQuery(prompt);
+  let vec: number[];
+  try {
+    vec = await embedQuery(prompt);
+  } catch (err) {
+    // Provider dropped mid-session — mark down and trigger re-warmup so the
+    // daemon recovers automatically once the provider comes back.
+    modelLoaded = false;
+    warmupError = err instanceof Error ? err.message : String(err);
+    logError('warn', 'embedder', 'Embed failed mid-session — triggering re-warmup', {
+      message: warmupError
+    });
+    if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
+    attemptWarmup();
+    return sendJson(res, 200, { continue: true });
+  }
   // Over-fetch: files are now chunked, so a topK of chunks may all belong to a few
   // files. Pull a wider net (topK × CHUNK_FANOUT) so enough DISTINCT files survive
   // the collapse-by-file step below to fill topK.
@@ -474,8 +506,8 @@ const server = http.createServer((req, res) => {
   const url = req.url ?? '/';
   const method = req.method ?? 'GET';
 
-  if (method === 'GET' && url === '/health') {
-    return handleHealth(res);
+  if (method === 'GET' && (url === '/health' || url.startsWith('/health?'))) {
+    return handleHealth(req, res);
   }
 
   // GET /novelty?project=foo — recently-injected pattern names for the awareness
@@ -540,6 +572,46 @@ function cleanupRuntimeFiles(): void {
   }
 }
 
+const WARMUP_MAX_RETRIES = 5;
+const WARMUP_BASE_DELAY_MS = 10_000; // 10s, 20s, 40s, 80s, 160s
+let warmupRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function attemptWarmup(attempt = 0): void {
+  const cfg = loadConfig();
+  warmup()
+    .then(() => {
+      modelLoaded = true;
+      warmupError = null;
+      if (attempt > 0) {
+        logInfo('Model warm (recovered)', {
+          model:
+            cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
+          afterAttempt: attempt + 1
+        });
+      } else {
+        logInfo('Model warm', {
+          model:
+            cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model
+        });
+      }
+    })
+    .catch((err) => {
+      warmupError = err instanceof Error ? err.message : String(err);
+      logError('error', 'embedder', 'Model warmup failed', {
+        message: warmupError,
+        attempt: attempt + 1,
+        maxRetries: WARMUP_MAX_RETRIES
+      });
+      if (attempt < WARMUP_MAX_RETRIES) {
+        const delay = WARMUP_BASE_DELAY_MS * Math.pow(2, attempt);
+        logInfo('Warmup retry scheduled', { nextAttempt: attempt + 2, delayMs: delay });
+        warmupRetryTimer = setTimeout(() => attemptWarmup(attempt + 1), delay);
+      } else {
+        logError('warn', 'embedder', 'Warmup retries exhausted — restart daemon or provider', {});
+      }
+    });
+}
+
 async function startDaemon(): Promise<void> {
   // Rotate stale logs before any writes happen (synchronous, cheap for fresh logs).
   rotateLogsOnStartup();
@@ -566,28 +638,13 @@ async function startDaemon(): Promise<void> {
     });
     // Warm the model AFTER the socket is listening so /health is reachable and
     // reports modelLoaded:false while loading (session-start polls for true).
-    warmup()
-      .then(() => {
-        modelLoaded = true;
-        warmupError = null;
-        logInfo('Model warm', {
-          model:
-            cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model
-        });
-      })
-      .catch((err) => {
-        // Record WHY so /health can tell session-start "down" vs "still loading".
-        warmupError = err instanceof Error ? err.message : String(err);
-        logError('error', 'embedder', 'Model warmup failed', {
-          message: warmupError
-        });
-        // Leave modelLoaded:false — health stays not-ready, queries degrade.
-      });
+    attemptWarmup();
   });
 }
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
+    if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
     logInfo('Daemon stopping', { signal: sig, uptime: `${Math.round(process.uptime())}s` });
     cleanupRuntimeFiles();
     server.close(() => process.exit(0));
