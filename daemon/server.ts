@@ -64,6 +64,8 @@ const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
 
 /** Set true once the embedding model has warm-loaded; /health gates on it. */
 let modelLoaded = false;
+/** In-memory query stats (reset on daemon restart). */
+const stats = { queries: 0, expansionFired: 0, expansionSkipped: 0 };
 /**
  * Set when warmup() REJECTS (provider unreachable, model missing, dim mismatch).
  * Distinguishes a hard failure from "still loading" so session-start can tell the
@@ -107,17 +109,26 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 /** GET /health — liveness + readiness (modelLoaded is what session-start polls). */
 function handleHealth(res: http.ServerResponse): void {
   const cfg = loadConfig();
+  const expansionRate =
+    stats.queries > 0
+      ? Number(((stats.expansionFired / stats.queries) * 100).toFixed(1))
+      : 0;
   sendJson(res, 200, {
     status: 'ok',
     uptime: process.uptime(),
     modelLoaded,
-    // null while loading or once warm; a string once warmup has hard-failed.
-    // session-start uses this to alert "provider down" vs "still warming".
     warmupError,
-    lancedbConnected: true, // file-mode: connection is lazy + always available
+    lancedbConnected: true,
     embeddingModel:
       cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
     provider: cfg.embedding.provider,
+    expansion: {
+      mode: cfg.expansion.mode,
+      queries: stats.queries,
+      fired: stats.expansionFired,
+      skipped: stats.expansionSkipped,
+      fireRate: `${expansionRate}%`,
+    },
   });
 }
 
@@ -197,9 +208,11 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // always: every query, off: never). When it fires, generate variant phrasings,
   // embed each in parallel, search each, and union with the original results.
   const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
+  stats.queries++;
   if (shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)) {
     const expanded = await expandQuery(prompt, cfg.expansion);
     if (expanded.variants.length > 0) {
+      stats.expansionFired++;
       // Variants use a smaller fetch limit — the union provides breadth,
       // so each individual variant doesn't need the full CHUNK_FANOUT over-fetch.
       const variantLimit = cfg.retrieval.topK * 2;
@@ -224,13 +237,20 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       raw = Array.from(seen.values());
       logInfo('Expansion fired', {
         project: projectLabel,
-        variants: expanded.variants.length,
+        variants: expanded.variants,
         provider: expanded.provider,
         latencyMs: expanded.latencyMs,
         resultsBefore: originalCount,
         resultsAfter: raw.length,
       });
     }
+  } else if (cfg.expansion.mode !== 'off') {
+    stats.expansionSkipped++;
+    logInfo('Expansion skipped', {
+      project: projectLabel,
+      initialBest: Number(initialBest.toFixed(4)),
+      threshold: cfg.expansion.expansionThreshold,
+    });
   }
 
   const ranked = rerank(raw);
