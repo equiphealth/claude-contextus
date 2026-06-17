@@ -39,6 +39,7 @@ import {
 } from '../lib/retrieval/inject-format.js';
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
 import { keywordSearch, loadCorpusForKeyword } from '../lib/retrieval/keyword.js';
+import { fuseRRF, hybridKeywordSearch } from '../lib/retrieval/hybrid.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
@@ -216,20 +217,33 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     return sendJson(res, 200, { continue: true });
   }
 
-  // --- Embedding + vector search (with keyword fallback + auto-recovery) ---
-  // If embedding genuinely fails (provider down, not slow), fall back to keyword
-  // search so the user gets SOME context rather than complete silence. Also trigger
-  // auto-recovery so the daemon re-warms when the provider comes back.
+  // --- Embedding + vector search (with hybrid fusion + keyword fallback + auto-recovery) ---
+  // When hybrid='always': run keyword search in parallel with vector search, then
+  // fuse via RRF. When embedding genuinely fails (provider down), degrade to
+  // keyword-only (with auto-recovery trigger) so users get SOME context rather than complete silence.
   let raw: Awaited<ReturnType<typeof search>>;
   let usedKeywordFallback = false;
   try {
-    const vec = await embedQuery(prompt);
-    // Over-fetch: files are now chunked, so a topK of chunks may all belong to a few
-    // files. Pull a wider net (topK × CHUNK_FANOUT) so enough DISTINCT files survive
-    // the collapse-by-file step below to fill topK.
     const CHUNK_FANOUT = 4;
     const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
-    raw = await search(vec, fetchLimit, undefined, project);
+
+    if (cfg.retrieval.hybrid === 'always') {
+      // Hybrid mode: run vector + keyword in parallel, fuse with RRF
+      const [vec, corpus] = await Promise.all([embedQuery(prompt), loadCorpusForKeyword(project)]);
+      const [semanticResults, keywordResults] = await Promise.all([
+        search(vec, fetchLimit, undefined, project),
+        Promise.resolve(hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK))
+      ]);
+      if (keywordResults.length > 0) {
+        raw = fuseRRF(semanticResults, keywordResults, fetchLimit);
+      } else {
+        raw = semanticResults;
+      }
+    } else {
+      // Pure semantic search
+      const vec = await embedQuery(prompt);
+      raw = await search(vec, fetchLimit, undefined, project);
+    }
   } catch (embedErr) {
     // Provider dropped mid-session — mark down and trigger re-warmup so the
     // daemon recovers automatically once the provider comes back.
