@@ -37,13 +37,16 @@ export interface CalibrationState {
 function defaults(): CalibrationState {
   const cfg = loadConfig();
   const c = cfg.calibration;
+  const model: EvalModelConfig = c
+    ? { provider: c.provider, model: c.model, endpoint: cfg.providers.ollama.endpoint, region: cfg.providers.bedrock.region }
+    : DEFAULT_EVAL_MODEL;
   return {
     evaluateUsage: false,
     targetSamples: c?.targetSamples ?? 100,
     sampleCount: 0,
     startedAt: null,
     completedAt: null,
-    model: c?.model ?? DEFAULT_EVAL_MODEL,
+    model,
   };
 }
 

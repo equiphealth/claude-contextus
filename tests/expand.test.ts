@@ -99,27 +99,35 @@ test('buildPrompt: handles special regex chars in query', () => {
 
 // --- expandQuery (fallback/failure paths) ---
 
+import type { ProvidersConfig } from '../lib/config.js';
+
 const baseCfg: ExpansionConfig = {
   mode: 'adaptive',
   provider: 'ollama',
-  ollamaModel: 'qwen2.5:3b',
-  anthropicModel: 'claude-haiku-4-5-20251001',
-  ollamaEndpoint: 'http://localhost:99999', // unreachable
+  model: 'qwen2.5:3b',
+  fallbackProvider: 'anthropic',
+  fallbackModel: 'claude-haiku-4-5-20251001',
   expansionThreshold: 0.55,
   maxVariants: 3,
   temperature: 0.7,
   timeoutMs: 500,
 };
 
+const baseProviders: ProvidersConfig = {
+  ollama: { endpoint: 'http://localhost:99999' }, // unreachable
+  bedrock: { region: 'us-east-1' },
+  anthropic: {},
+};
+
 test('expandQuery: returns empty variants on network failure (ollama)', async () => {
-  const result = await expandQuery('test query', baseCfg);
+  const result = await expandQuery('test query', baseCfg, baseProviders);
   assert.deepEqual(result.variants, []);
   assert.equal(result.provider, 'ollama');
 });
 
 test('expandQuery: returns empty variants on network failure (anthropic)', async () => {
-  const cfg = { ...baseCfg, provider: 'anthropic' as const };
-  const result = await expandQuery('test query', cfg);
+  const cfg = { ...baseCfg, provider: 'anthropic' as const, model: 'claude-haiku-4-5-20251001', fallbackProvider: undefined, fallbackModel: undefined };
+  const result = await expandQuery('test query', cfg, baseProviders);
   assert.deepEqual(result.variants, []);
   assert.equal(result.provider, 'anthropic');
 });
@@ -128,12 +136,8 @@ test('expandQuery: returns empty variants when anthropic key missing', async () 
   const origKey = process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
   try {
-    const cfg = {
-      ...baseCfg,
-      provider: 'anthropic' as const,
-      ollamaEndpoint: 'http://localhost:11434',
-    };
-    const result = await expandQuery('test query', cfg);
+    const cfg = { ...baseCfg, provider: 'anthropic' as const, model: 'claude-haiku-4-5-20251001', fallbackProvider: undefined, fallbackModel: undefined };
+    const result = await expandQuery('test query', cfg, baseProviders);
     assert.deepEqual(result.variants, []);
   } finally {
     if (origKey) process.env.ANTHROPIC_API_KEY = origKey;
@@ -154,8 +158,8 @@ test('expandQuery: parses ollama response correctly', async () => {
   })) as unknown as typeof fetch;
 
   try {
-    const cfg = { ...baseCfg, ollamaEndpoint: 'http://localhost:11434' };
-    const result = await expandQuery('How do I configure embeddings?', cfg);
+    const providers = { ...baseProviders, ollama: { endpoint: 'http://localhost:11434' } };
+    const result = await expandQuery('How do I configure embeddings?', baseCfg, providers);
     assert.equal(result.variants.length, 3);
     assert.equal(result.provider, 'ollama/qwen2.5:3b');
     assert.ok(result.latencyMs >= 0);
@@ -178,8 +182,8 @@ test('expandQuery: parses anthropic response correctly', async () => {
   })) as unknown as typeof fetch;
 
   try {
-    const cfg = { ...baseCfg, provider: 'anthropic' as const };
-    const result = await expandQuery('How do I configure embeddings?', cfg);
+    const cfg = { ...baseCfg, provider: 'anthropic' as const, model: 'claude-haiku-4-5-20251001' };
+    const result = await expandQuery('How do I configure embeddings?', cfg, baseProviders);
     assert.equal(result.variants.length, 3);
     assert.equal(result.provider, 'anthropic/claude-haiku-4-5-20251001');
   } finally {
@@ -197,8 +201,8 @@ test('expandQuery: handles non-ok HTTP response gracefully', async () => {
   })) as unknown as typeof fetch;
 
   try {
-    const cfg = { ...baseCfg, ollamaEndpoint: 'http://localhost:11434' };
-    const result = await expandQuery('test', cfg);
+    const providers = { ...baseProviders, ollama: { endpoint: 'http://localhost:11434' } };
+    const result = await expandQuery('test', baseCfg, providers);
     assert.deepEqual(result.variants, []);
   } finally {
     globalThis.fetch = originalFetch;
@@ -213,8 +217,8 @@ test('expandQuery: handles garbage LLM output gracefully', async () => {
   })) as unknown as typeof fetch;
 
   try {
-    const cfg = { ...baseCfg, ollamaEndpoint: 'http://localhost:11434' };
-    const result = await expandQuery('test', cfg);
+    const providers = { ...baseProviders, ollama: { endpoint: 'http://localhost:11434' } };
+    const result = await expandQuery('test', baseCfg, providers);
     assert.deepEqual(result.variants, []);
   } finally {
     globalThis.fetch = originalFetch;
@@ -243,9 +247,9 @@ test('expandQuery: falls back to anthropic when ollama fails fast', async () => 
   }) as unknown as typeof fetch;
 
   try {
-    // timeoutMs must be > 500ms to allow fallback (remaining > 500 check)
-    const cfg = { ...baseCfg, ollamaEndpoint: 'http://localhost:11434', timeoutMs: 5000 };
-    const result = await expandQuery('What is the default vector model?', cfg);
+    const cfg = { ...baseCfg, timeoutMs: 5000 };
+    const providers = { ...baseProviders, ollama: { endpoint: 'http://localhost:11434' } };
+    const result = await expandQuery('What is the default vector model?', cfg, providers);
     assert.equal(callCount, 2, `expected 2 fetch calls, got ${callCount}`);
     assert.equal(result.provider, 'anthropic/claude-haiku-4-5-20251001');
     assert.equal(result.variants.length, 3);
@@ -256,22 +260,19 @@ test('expandQuery: falls back to anthropic when ollama fails fast', async () => 
   }
 });
 
-test('expandQuery: does not fall back when no ANTHROPIC_API_KEY', async () => {
+test('expandQuery: does not fall back when no fallback configured', async () => {
   const originalFetch = globalThis.fetch;
-  const origKey = process.env.ANTHROPIC_API_KEY;
-  delete process.env.ANTHROPIC_API_KEY;
   globalThis.fetch = (async () => {
     throw new Error('Connection refused');
   }) as unknown as typeof fetch;
 
   try {
-    const cfg = { ...baseCfg, ollamaEndpoint: 'http://localhost:11434' };
-    const result = await expandQuery('test query here', cfg);
+    const cfg = { ...baseCfg, fallbackProvider: undefined, fallbackModel: undefined };
+    const providers = { ...baseProviders, ollama: { endpoint: 'http://localhost:11434' } };
+    const result = await expandQuery('test query here', cfg, providers);
     assert.deepEqual(result.variants, []);
   } finally {
     globalThis.fetch = originalFetch;
-    if (origKey) process.env.ANTHROPIC_API_KEY = origKey;
-    else delete process.env.ANTHROPIC_API_KEY;
   }
 });
 

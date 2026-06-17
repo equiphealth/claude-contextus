@@ -14,6 +14,33 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// --- Provider registry (shared across all features) ---
+
+/** Provider types that can serve LLM generation (expansion, calibration). */
+export type LLMProviderType = 'ollama' | 'anthropic' | 'bedrock';
+/** Provider types that can serve embeddings. */
+export type EmbeddingProviderType = 'transformers' | 'ollama';
+
+export interface OllamaProviderConfig {
+  endpoint: string;
+}
+
+export interface BedrockProviderConfig {
+  region: string;
+}
+
+export interface AnthropicProviderConfig {
+  // Uses ANTHROPIC_API_KEY env var — no config needed
+}
+
+export interface ProvidersConfig {
+  ollama: OllamaProviderConfig;
+  bedrock: BedrockProviderConfig;
+  anthropic: AnthropicProviderConfig;
+}
+
+// --- Feature configs ---
+
 /** Where embeddings are computed. Both run nomic locally. */
 export type EmbeddingProvider = 'transformers' | 'ollama';
 
@@ -29,8 +56,11 @@ export interface EmbeddingConfig {
   model: string;
   /** Ollama model tag (used when provider === 'ollama'). */
   ollamaModel: string;
-  /** Ollama HTTP endpoint. */
-  ollamaEndpoint: string;
+  /**
+   * @deprecated Use `providers.ollama.endpoint` instead. Kept for backward
+   * compatibility — if set, overrides the shared provider endpoint.
+   */
+  ollamaEndpoint?: string;
   /** Vector dimensions the model emits. nomic → 768 (both providers) */
   dimensions: number;
   /** Embedding batch size */
@@ -111,14 +141,14 @@ export interface ExpansionConfig {
    * off      — disable expansion entirely
    */
   mode: ExpansionMode;
-  /** Provider for generating query variants. */
-  provider: 'ollama' | 'anthropic';
-  /** Ollama model for expansion (small/fast recommended). */
-  ollamaModel: string;
-  /** Anthropic model for expansion (Haiku recommended). */
-  anthropicModel: string;
-  /** Ollama endpoint (shared with embedding by default). */
-  ollamaEndpoint: string;
+  /** Primary provider for generating query variants. */
+  provider: LLMProviderType;
+  /** Model to use with the primary provider. */
+  model: string;
+  /** Fallback provider when primary fails fast. Null = no fallback. */
+  fallbackProvider?: LLMProviderType;
+  /** Model to use with the fallback provider. */
+  fallbackModel?: string;
   /**
    * Trigger threshold for adaptive mode. If first search's best_score < this,
    * expansion fires. Default 0.55 (direct matches hit 0.65, failures below 0.45).
@@ -155,8 +185,10 @@ export interface NotificationsConfig {
 export interface CalibrationConfig {
   /** evaluations to collect per campaign before auto-disabling */
   targetSamples: number;
-  /** which model judges usage (anthropic Haiku default, ollama opt-in) */
-  model: { provider: 'anthropic' | 'ollama'; model?: string; endpoint?: string };
+  /** which provider judges usage (resolved through providers registry) */
+  provider: LLMProviderType;
+  /** model for calibration evaluation */
+  model: string;
 }
 
 export interface RetentionConfig {
@@ -179,6 +211,7 @@ export interface LoggingConfig {
 }
 
 export interface ContextusConfig {
+  providers: ProvidersConfig;
   embedding: EmbeddingConfig;
   storage: StorageConfig;
   retrieval: RetrievalConfig;
@@ -190,11 +223,15 @@ export interface ContextusConfig {
 
 /** Hard defaults — embedding locked to Transformers.js + nomic. */
 const DEFAULTS: ContextusConfig = {
+  providers: {
+    ollama: { endpoint: 'http://localhost:11434' },
+    bedrock: { region: 'us-east-1' },
+    anthropic: {},
+  },
   embedding: {
     provider: 'transformers',
     model: 'nomic-ai/nomic-embed-text-v1.5',
     ollamaModel: 'nomic-embed-text',
-    ollamaEndpoint: 'http://localhost:11434',
     dimensions: 768,
     batchSize: 32,
     transformers: {
@@ -219,9 +256,9 @@ const DEFAULTS: ContextusConfig = {
   expansion: {
     mode: 'adaptive',
     provider: 'ollama',
-    ollamaModel: 'qwen2.5:3b',
-    anthropicModel: 'claude-haiku-4-5-20251001',
-    ollamaEndpoint: 'http://localhost:11434',
+    model: 'qwen2.5:3b',
+    fallbackProvider: 'bedrock',
+    fallbackModel: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     expansionThreshold: 0.55,
     maxVariants: 3,
     temperature: 0.7,
@@ -231,8 +268,9 @@ const DEFAULTS: ContextusConfig = {
     verbosity: 'normal', // code default; deployed plugin.json sets 'verbose'
   },
   calibration: {
-    targetSamples: 100, // LOGGING.md default sample budget per campaign
-    model: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    targetSamples: 100,
+    provider: 'bedrock',
+    model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
   },
   logging: {
     paranoid: true,
@@ -280,9 +318,12 @@ function clamp(n: number, min: number, max: number): number {
 
 /** Apply a raw `config` object (plugin.json or an override file) onto `merged`. */
 function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void {
+  if (c.providers) {
+    if (c.providers.ollama) Object.assign(merged.providers.ollama, c.providers.ollama);
+    if (c.providers.bedrock) Object.assign(merged.providers.bedrock, c.providers.bedrock);
+    if (c.providers.anthropic) Object.assign(merged.providers.anthropic, c.providers.anthropic);
+  }
   if (c.embedding) {
-    // Deep-merge the nested `transformers` object so a partial override
-    // (e.g. just localModelPath) doesn't wipe the other defaults.
     const { transformers: tOverride, ...eRest } = c.embedding;
     Object.assign(merged.embedding, eRest);
     if (tOverride) Object.assign(merged.embedding.transformers!, tOverride);
@@ -375,6 +416,15 @@ export function loadProjectConfig(project?: string, cwd?: string): ContextusConf
 export function resetConfigCache(): void {
   _config = null;
   _projectConfig.clear();
+}
+
+/**
+ * Resolve the ollama endpoint for a given config. Checks (in order):
+ *   1. embedding.ollamaEndpoint (deprecated, backward compat)
+ *   2. providers.ollama.endpoint
+ */
+export function resolveOllamaEndpoint(cfg: ContextusConfig): string {
+  return cfg.embedding.ollamaEndpoint || cfg.providers.ollama.endpoint;
 }
 
 /**

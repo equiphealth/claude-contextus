@@ -210,7 +210,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
   stats.queries++;
   if (shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)) {
-    const expanded = await expandQuery(prompt, cfg.expansion);
+    const expanded = await expandQuery(prompt, cfg.expansion, cfg.providers);
     if (expanded.variants.length > 0) {
       stats.expansionFired++;
       // Variants use a smaller fetch limit — the union provides breadth,

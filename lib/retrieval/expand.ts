@@ -2,27 +2,28 @@
  * Multi-vector query expansion — generate alternate phrasings of the user's
  * prompt so we search with multiple embedding vectors, not one.
  *
- * Why: nomic-embed-text uses mean-pooling over tokens, so synonyms and short
- * paraphrases can land far apart in the 768-dim space. A single vector misses
- * retrieval targets that a human would consider obvious matches. Measured: 3/7
- * paraphrased queries fail entirely (below floor) with a single vector.
- *
- * The fix: generate 2-3 short rephrasings via a fast LLM, embed each, search
- * each independently, then union + dedupe results. This turns one needle in
- * the haystack into 3-4 needles — dramatically improving recall without
- * changing the embedding model or corpus.
- *
- * Provider model: configurable (ollama small model or anthropic haiku). The
- * generation prompt asks for SHORT, DIVERSE rephrasings — not summaries,
- * not expansions, just different word choices for the same intent.
+ * Provider support: ollama (local), anthropic (direct API), bedrock (AWS).
+ * Fallback chain: if primary provider fails fast, tries fallback with remaining
+ * time budget. Slow failures (timeout) degrade gracefully without fallback.
  */
 
-import type { ExpansionConfig } from '../config.js';
+import type { ExpansionConfig, LLMProviderType, ProvidersConfig } from '../config.js';
 
 export interface ExpandedQueries {
   variants: string[];
   latencyMs: number;
   provider: string;
+}
+
+/** Resolved provider connection details passed to expand functions. */
+interface ProviderContext {
+  type: LLMProviderType;
+  model: string;
+  ollamaEndpoint?: string;
+  bedrockRegion?: string;
+  timeoutMs: number;
+  temperature: number;
+  maxVariants: number;
 }
 
 const EXPANSION_PROMPT = `TASK: Rephrase the query below into {{count}} alternative search queries. Do NOT answer the query. Do NOT explain anything. Output ONLY the rephrased queries, one per line.
@@ -55,44 +56,39 @@ export function parseVariants(raw: string, maxVariants: number): string[] {
     .slice(0, maxVariants);
 }
 
-async function expandViaOllama(query: string, cfg: ExpansionConfig): Promise<ExpandedQueries> {
+async function expandViaOllama(query: string, ctx: ProviderContext): Promise<ExpandedQueries> {
   const started = Date.now();
   const body = {
-    model: cfg.ollamaModel,
-    prompt: buildPrompt(query, cfg.maxVariants),
+    model: ctx.model,
+    prompt: buildPrompt(query, ctx.maxVariants),
     stream: false,
-    options: { temperature: cfg.temperature, num_predict: 150 },
+    options: { temperature: ctx.temperature, num_predict: 150 },
   };
 
-  const res = await fetch(`${cfg.ollamaEndpoint}/api/generate`, {
+  const res = await fetch(`${ctx.ollamaEndpoint}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(cfg.timeoutMs),
+    signal: AbortSignal.timeout(ctx.timeoutMs),
   });
 
-  if (!res.ok) {
-    throw new Error(`Ollama expansion failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Ollama expansion failed: ${res.status}`);
 
   const data = (await res.json()) as { response: string };
-  const variants = parseVariants(data.response, cfg.maxVariants);
-
-  return { variants, latencyMs: Date.now() - started, provider: `ollama/${cfg.ollamaModel}` };
+  const variants = parseVariants(data.response, ctx.maxVariants);
+  return { variants, latencyMs: Date.now() - started, provider: `ollama/${ctx.model}` };
 }
 
-async function expandViaAnthropic(query: string, cfg: ExpansionConfig): Promise<ExpandedQueries> {
+async function expandViaAnthropic(query: string, ctx: ProviderContext): Promise<ExpandedQueries> {
   const started = Date.now();
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY not set for expansion provider=anthropic');
-  }
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set for expansion provider=anthropic');
 
   const body = {
-    model: cfg.anthropicModel,
+    model: ctx.model,
     max_tokens: 200,
-    messages: [{ role: 'user', content: buildPrompt(query, cfg.maxVariants) }],
-    temperature: cfg.temperature,
+    messages: [{ role: 'user', content: buildPrompt(query, ctx.maxVariants) }],
+    temperature: ctx.temperature,
   };
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -103,18 +99,62 @@ async function expandViaAnthropic(query: string, cfg: ExpansionConfig): Promise<
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(cfg.timeoutMs),
+    signal: AbortSignal.timeout(ctx.timeoutMs),
   });
 
-  if (!res.ok) {
-    throw new Error(`Anthropic expansion failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Anthropic expansion failed: ${res.status}`);
 
   const data = (await res.json()) as { content: Array<{ text: string }> };
   const text = data.content?.[0]?.text ?? '';
-  const variants = parseVariants(text, cfg.maxVariants);
+  const variants = parseVariants(text, ctx.maxVariants);
+  return { variants, latencyMs: Date.now() - started, provider: `anthropic/${ctx.model}` };
+}
 
-  return { variants, latencyMs: Date.now() - started, provider: `anthropic/${cfg.anthropicModel}` };
+async function expandViaBedrock(query: string, ctx: ProviderContext): Promise<ExpandedQueries> {
+  const started = Date.now();
+  const region = ctx.bedrockRegion || 'us-east-1';
+
+  // Dynamic import — only loaded when bedrock is actually used
+  const { BedrockRuntimeClient, InvokeModelCommand } = await import(
+    '@aws-sdk/client-bedrock-runtime'
+  );
+
+  const client = new BedrockRuntimeClient({ region });
+  const body = JSON.stringify({
+    anthropic_version: 'bedrock-2023-05-31',
+    max_tokens: 200,
+    messages: [{ role: 'user', content: buildPrompt(query, ctx.maxVariants) }],
+    temperature: ctx.temperature,
+  });
+
+  const command = new InvokeModelCommand({
+    modelId: ctx.model,
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: new TextEncoder().encode(body),
+  });
+
+  const response = await client.send(command, {
+    requestTimeout: ctx.timeoutMs,
+  });
+
+  const result = JSON.parse(new TextDecoder().decode(response.body)) as {
+    content: Array<{ text: string }>;
+  };
+  const text = result.content?.[0]?.text ?? '';
+  const variants = parseVariants(text, ctx.maxVariants);
+  return { variants, latencyMs: Date.now() - started, provider: `bedrock/${ctx.model}` };
+}
+
+async function callProvider(query: string, ctx: ProviderContext): Promise<ExpandedQueries> {
+  switch (ctx.type) {
+    case 'ollama':
+      return expandViaOllama(query, ctx);
+    case 'anthropic':
+      return expandViaAnthropic(query, ctx);
+    case 'bedrock':
+      return expandViaBedrock(query, ctx);
+  }
 }
 
 /**
@@ -122,26 +162,48 @@ async function expandViaAnthropic(query: string, cfg: ExpansionConfig): Promise<
  * failure (network, timeout, bad model output) — expansion is best-effort,
  * never blocks retrieval.
  *
- * Fallback: if provider=ollama fails FAST (connection refused, DNS, etc.) and
- * there's remaining time budget, falls back to anthropic. Slow failures (timeout
- * exhausted) do NOT fall back — don't pile latency on top of latency.
+ * Fallback: if primary provider fails FAST and there's remaining time budget,
+ * tries the configured fallback provider. Slow failures (timeout exhausted)
+ * do NOT fall back — don't pile latency on top of latency.
  */
-export async function expandQuery(query: string, cfg: ExpansionConfig): Promise<ExpandedQueries> {
+export async function expandQuery(
+  query: string,
+  cfg: ExpansionConfig,
+  providers?: ProvidersConfig
+): Promise<ExpandedQueries> {
   const started = Date.now();
+  const ollamaEndpoint = providers?.ollama?.endpoint || 'http://localhost:11434';
+  const bedrockRegion = providers?.bedrock?.region || 'us-east-1';
+
+  const primaryCtx: ProviderContext = {
+    type: cfg.provider,
+    model: cfg.model,
+    ollamaEndpoint,
+    bedrockRegion,
+    timeoutMs: cfg.timeoutMs,
+    temperature: cfg.temperature,
+    maxVariants: cfg.maxVariants,
+  };
+
   try {
-    if (cfg.provider === 'anthropic') {
-      return await expandViaAnthropic(query, cfg);
-    }
-    return await expandViaOllama(query, cfg);
+    return await callProvider(query, primaryCtx);
   } catch {
-    // Fallback: ollama failed fast → try anthropic with remaining budget
-    if (cfg.provider === 'ollama' && process.env.ANTHROPIC_API_KEY) {
+    // Fallback: primary failed fast → try fallback with remaining budget
+    if (cfg.fallbackProvider && cfg.fallbackModel) {
       const elapsed = Date.now() - started;
       const remaining = cfg.timeoutMs - elapsed;
       if (remaining > 500) {
         try {
-          const fallbackCfg = { ...cfg, provider: 'anthropic' as const, timeoutMs: remaining };
-          return await expandViaAnthropic(query, fallbackCfg);
+          const fallbackCtx: ProviderContext = {
+            type: cfg.fallbackProvider,
+            model: cfg.fallbackModel,
+            ollamaEndpoint,
+            bedrockRegion,
+            timeoutMs: remaining,
+            temperature: cfg.temperature,
+            maxVariants: cfg.maxVariants,
+          };
+          return await callProvider(query, fallbackCtx);
         } catch {
           // Both failed — degrade gracefully
         }

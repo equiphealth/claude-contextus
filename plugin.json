@@ -12,6 +12,15 @@
   },
   "config": {
     "enabled": true,
+    "providers": {
+      "ollama": {
+        "endpoint": "http://localhost:11434"
+      },
+      "bedrock": {
+        "region": "us-east-1"
+      },
+      "anthropic": {}
+    },
     "sources": {
       "projectMemory": {
         "type": "context",
@@ -55,7 +64,6 @@
       "provider": "ollama",
       "model": "nomic-ai/nomic-embed-text-v1.5",
       "ollamaModel": "nomic-embed-text",
-      "ollamaEndpoint": "http://localhost:11434",
       "dimensions": 768,
       "batchSize": 32,
       "_transformers_note": "Used when provider='transformers'. To run on an HF-blocked network: `pnpm fetch-model --out ./models` on an unblocked machine, then set localModelPath to that dir. Or set remoteHost to an internal HF mirror. allowRemoteModels:false forces strict offline.",
@@ -79,9 +87,9 @@
       "_note": "Multi-vector query expansion: generate alternate phrasings when the initial search scores poorly. Dramatically improves synonym/paraphrase recall. adaptive=expand only below threshold, always=every query, off=disabled.",
       "mode": "adaptive",
       "provider": "ollama",
-      "ollamaModel": "qwen2.5:3b",
-      "anthropicModel": "claude-haiku-4-5-20251001",
-      "ollamaEndpoint": "http://localhost:11434",
+      "model": "qwen2.5:3b",
+      "fallbackProvider": "bedrock",
+      "fallbackModel": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
       "expansionThreshold": 0.55,
       "maxVariants": 3,
       "temperature": 0.7,
@@ -93,12 +101,10 @@
       "mode": "propose"
     },
     "calibration": {
-      "_note": "Quality evaluation (LOGGING.md calibration_eval). targetSamples=evaluations per campaign before auto-disable. model judges whether injected patterns were USED (anthropic Haiku default — proven reliable, ~10x cheaper than Sonnet; ollama is the privacy/offline opt-in). The MUTABLE campaign state (live counter, enabled flip) lives in ~/.contextus/calibration-state.json, NOT here.",
+      "_note": "Quality evaluation (LOGGING.md calibration_eval). targetSamples=evaluations per campaign before auto-disable. Provider judges whether injected patterns were USED (bedrock Haiku default — proven reliable, uses AWS creds). The MUTABLE campaign state (live counter, enabled flip) lives in ~/.contextus/calibration-state.json, NOT here.",
       "targetSamples": 100,
-      "model": {
-        "provider": "anthropic",
-        "model": "claude-haiku-4-5-20251001"
-      }
+      "provider": "bedrock",
+      "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     },
     "notifications": {
       "_verbosity_note": "SessionStart daemon-state messages (user-facing systemMessage). silent=never | normal=fresh spawn/warming/failure only | verbose=also heartbeat with uptime when an existing daemon is found. Override per-session with CONTEXTUS_VERBOSITY env.",

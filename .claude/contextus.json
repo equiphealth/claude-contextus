@@ -1,10 +1,19 @@
 {
   "_note": "Project-level contextus config override — demonstrates all available options (tier 3, highest precedence). See docs/dev/DESIGN.md for the 3-tier merge: global plugin.json → ~/.contextus/config.json → ./.claude/contextus.json",
+  "providers": {
+    "_note": "Shared connection settings — referenced by all features (embedding, expansion, calibration)",
+    "ollama": {
+      "endpoint": "http://localhost:11434"
+    },
+    "bedrock": {
+      "region": "us-east-1"
+    },
+    "anthropic": {}
+  },
   "embedding": {
     "provider": "ollama",
     "model": "nomic-ai/nomic-embed-text-v1.5",
     "ollamaModel": "nomic-embed-text",
-    "ollamaEndpoint": "http://localhost:11434",
     "dimensions": 768,
     "batchSize": 32,
     "transformers": {
@@ -29,14 +38,22 @@
   "expansion": {
     "_note": "Multi-vector query expansion: generates alternate phrasings when initial search scores poorly. Dramatically improves synonym/paraphrase recall.",
     "mode": "adaptive",
+    "_mode_values": "adaptive (default) | always (every query, +100-200ms) | off (disable)",
     "provider": "ollama",
-    "ollamaModel": "qwen2.5:3b",
-    "anthropicModel": "claude-haiku-4-5-20251001",
-    "ollamaEndpoint": "http://localhost:11434",
+    "_provider_values": "ollama (local, fast) | bedrock (AWS, Haiku) | anthropic (direct API)",
+    "model": "qwen2.5:3b",
+    "_model_note": "Model for the primary provider. Small/fast recommended for ollama.",
+    "fallbackProvider": "bedrock",
+    "fallbackModel": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "_fallback_note": "Fallback fires only on fast failures (connection refused) with remaining time budget",
     "expansionThreshold": 0.55,
+    "_expansionThreshold_note": "Adaptive mode fires when best initial score < this (0.0-1.0)",
     "maxVariants": 3,
+    "_maxVariants_note": "Number of alternative phrasings to generate (2-5 recommended)",
     "temperature": 0.7,
-    "timeoutMs": 5000
+    "_temperature_note": "LLM temperature for variant generation (0.0-2.0, higher = more diverse)",
+    "timeoutMs": 5000,
+    "_timeoutMs_note": "Total expansion time budget in ms. Shared between primary + fallback."
   },
   "autoRebuild": true,
   "contextCapture": {
@@ -45,10 +62,8 @@
   },
   "calibration": {
     "targetSamples": 100,
-    "model": {
-      "provider": "anthropic",
-      "model": "claude-haiku-4-5-20251001"
-    }
+    "provider": "bedrock",
+    "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
   },
   "notifications": {
     "verbosity": "verbose"
