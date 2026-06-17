@@ -38,7 +38,12 @@ function defaults(): CalibrationState {
   const cfg = loadConfig();
   const c = cfg.calibration;
   const model: EvalModelConfig = c
-    ? { provider: c.provider, model: c.model, endpoint: cfg.providers.ollama.endpoint, region: cfg.providers.bedrock.region }
+    ? {
+        provider: c.provider,
+        model: c.model,
+        endpoint: cfg.providers.ollama.endpoint,
+        region: cfg.providers.bedrock.region,
+      }
     : DEFAULT_EVAL_MODEL;
   return {
     evaluateUsage: false,

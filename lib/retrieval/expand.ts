@@ -115,9 +115,8 @@ async function expandViaBedrock(query: string, ctx: ProviderContext): Promise<Ex
   const region = ctx.bedrockRegion || 'us-east-1';
 
   // Dynamic import — only loaded when bedrock is actually used
-  const { BedrockRuntimeClient, InvokeModelCommand } = await import(
-    '@aws-sdk/client-bedrock-runtime'
-  );
+  const { BedrockRuntimeClient, InvokeModelCommand } =
+    await import('@aws-sdk/client-bedrock-runtime');
 
   const client = new BedrockRuntimeClient({ region });
   const body = JSON.stringify({

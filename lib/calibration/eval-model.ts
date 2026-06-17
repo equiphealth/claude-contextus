@@ -69,9 +69,8 @@ async function callOllama(prompt: string, cfg: EvalModelConfig): Promise<string>
 
 /** AWS Bedrock InvokeModel via SDK (uses default credential chain). */
 async function callBedrock(prompt: string, cfg: EvalModelConfig): Promise<string> {
-  const { BedrockRuntimeClient, InvokeModelCommand } = await import(
-    '@aws-sdk/client-bedrock-runtime'
-  );
+  const { BedrockRuntimeClient, InvokeModelCommand } =
+    await import('@aws-sdk/client-bedrock-runtime');
   const client = new BedrockRuntimeClient({ region: cfg.region ?? 'us-east-1' });
   const body = JSON.stringify({
     anthropic_version: 'bedrock-2023-05-31',

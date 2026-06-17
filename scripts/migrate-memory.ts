@@ -62,7 +62,9 @@ const CONTEXT_DIR = path.join(PROJECT_ROOT, '.claude', 'context');
 // plugin config source is global (resolved against cwd at embed time), so
 // the repoint always targets the contextus repo's plugin config, not the project's.
 const PLUGIN_JSONC_PATH = path.join(REPO_ROOT, 'plugin.jsonc');
-const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC_PATH) ? PLUGIN_JSONC_PATH : path.join(REPO_ROOT, 'plugin.json');
+const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC_PATH)
+  ? PLUGIN_JSONC_PATH
+  : path.join(REPO_ROOT, 'plugin.json');
 
 /** Load every memory file (excluding the MEMORY.md index) as MemoryFile inputs. */
 async function loadMemoryFiles(): Promise<MemoryFile[]> {

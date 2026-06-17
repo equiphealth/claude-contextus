@@ -110,9 +110,7 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 function handleHealth(res: http.ServerResponse): void {
   const cfg = loadConfig();
   const expansionRate =
-    stats.queries > 0
-      ? Number(((stats.expansionFired / stats.queries) * 100).toFixed(1))
-      : 0;
+    stats.queries > 0 ? Number(((stats.expansionFired / stats.queries) * 100).toFixed(1)) : 0;
   sendJson(res, 200, {
     status: 'ok',
     uptime: process.uptime(),

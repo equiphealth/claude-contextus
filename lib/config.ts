@@ -289,7 +289,11 @@ const _projectConfig = new Map<string, { config: ContextusConfig; mtimes: Map<st
 
 /** Get file mtime in ms, or 0 if missing. */
 function fileMtime(filePath: string): number {
-  try { return fs.statSync(filePath).mtimeMs; } catch { return 0; }
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 /** Strip line and block comments from JSONC text (respects quoted strings). */
@@ -302,15 +306,17 @@ export function stripJsonComments(text: string): string {
       result += '"';
       i++;
       while (i < text.length && text[i] !== '"') {
-        if (text[i] === '\\') { result += text[i++]; }
+        if (text[i] === '\\') {
+          result += text[i++];
+        }
         result += text[i++];
       }
       if (i < text.length) result += text[i++]; // closing quote
-    // Line comment
+      // Line comment
     } else if (text[i] === '/' && text[i + 1] === '/') {
       i += 2;
       while (i < text.length && text[i] !== '\n') i++;
-    // Block comment
+      // Block comment
     } else if (text[i] === '/' && text[i + 1] === '*') {
       i += 2;
       while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
@@ -445,7 +451,12 @@ export function loadProjectConfig(project?: string, cwd?: string): ContextusConf
   const pluginPath = findPluginJson() ?? '';
   const localPath = projectLocalConfigPath(project);
   const repoPathC = cwd ? path.join(cwd, '.claude', 'contextus.jsonc') : '';
-  const repoPath = (repoPathC && fs.existsSync(repoPathC)) ? repoPathC : (cwd ? path.join(cwd, '.claude', 'contextus.json') : '');
+  const repoPath =
+    repoPathC && fs.existsSync(repoPathC)
+      ? repoPathC
+      : cwd
+        ? path.join(cwd, '.claude', 'contextus.json')
+        : '';
   const cached = _projectConfig.get(project);
   if (cached) {
     const stale = [pluginPath, localPath, repoPath].some(
