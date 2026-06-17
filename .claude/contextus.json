@@ -37,7 +37,7 @@
   },
   "expansion": {
     "_note": "Multi-vector query expansion: generates alternate phrasings when initial search scores poorly. Dramatically improves synonym/paraphrase recall.",
-    "mode": "adaptive",
+    "mode": "always",
     "_mode_values": "adaptive (default) | always (every query, +100-200ms) | off (disable)",
     "provider": "ollama",
     "_provider_values": "ollama (local, fast) | bedrock (AWS, Haiku) | anthropic (direct API)",
