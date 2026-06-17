@@ -27,7 +27,7 @@ import { loadConfig } from '../config.js';
 import {
   configureTransformersEnv,
   modelUnavailableError,
-  preflightTransformers,
+  preflightTransformers
 } from './model-resolver.js';
 
 /** nomic instruction prefixes (asymmetric retrieval). */
@@ -86,11 +86,13 @@ interface OllamaEmbeddingResponse {
 }
 
 async function embedOllama(text: string): Promise<number[]> {
-  const { ollamaModel, ollamaEndpoint } = loadConfig().embedding;
+  const cfg = loadConfig();
+  const { ollamaModel } = cfg.embedding;
+  const ollamaEndpoint = cfg.embedding.ollamaEndpoint || cfg.providers.ollama.endpoint;
   const res = await fetch(`${ollamaEndpoint}/api/embeddings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: ollamaModel, prompt: text }),
+    body: JSON.stringify({ model: ollamaModel, prompt: text })
   });
   if (!res.ok) {
     throw new Error(`Ollama embeddings failed: ${res.status} ${await res.text()}`);

@@ -59,7 +59,7 @@ async function main(): Promise<void> {
     const pipe = await pipeline('feature-extraction', model, { quantized: true });
     const out0 = await pipe('search_document: bundle verification', {
       pooling: 'mean',
-      normalize: true,
+      normalize: true
     });
     console.log(`\n✓ Downloaded and verified (${out0.data.length}-dim).`);
     console.log(`\nNext: set this in plugin.json so the blocked machine loads offline —`);

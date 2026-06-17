@@ -1,6 +1,6 @@
 {
   "name": "claude-contextus",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Context-aware knowledge system: markdown-based pattern storage with automatic semantic retrieval for Claude Code",
   "main": "dist/scripts/query-hook.js",
   "type": "module",
@@ -24,9 +24,10 @@
     "tag-context": "tsx scripts/tag-context.ts",
     "calibrate": "tsx scripts/context-calibrate.ts",
     "lint": "eslint lib scripts daemon --ext .ts",
-    "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\"",
-    "format:all": "prettier --write \"**/*.{ts,json}\"",
-    "type-check": "tsc --noEmit"
+    "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\" \"*.jsonc\"",
+    "format:all": "prettier --write \"**/*.{ts,json,jsonc}\"",
+    "type-check": "tsc --noEmit",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "keywords": [
     "claude",
@@ -48,6 +49,7 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1070.0",
     "@lancedb/lancedb": "^0.30.0",
     "@xenova/transformers": "^2.17.0",
     "glob": "^10.3.10",

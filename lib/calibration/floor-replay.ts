@@ -29,7 +29,7 @@ import { loadConfig } from '../config.js';
 import {
   recommendFloor,
   type ReplayResult,
-  type FloorRecommendation,
+  type FloorRecommendation
 } from './floor-calibration.js';
 
 export interface ReplayOptions {

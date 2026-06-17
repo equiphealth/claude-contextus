@@ -26,9 +26,8 @@ import type { ContextRow } from '../../lib/storage/lance-client.js';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-'));
 process.env.HOME = tmp;
 
-const { createTable, getContentHashes, resetConnection } = await import(
-  '../../lib/storage/lance-client.js'
-);
+const { createTable, getContentHashes, resetConnection } =
+  await import('../../lib/storage/lance-client.js');
 
 const PROJECT = 'itest';
 const DIM = 768;
@@ -50,7 +49,7 @@ function row(id: string, filename: string, source: string): ContextRow {
     hit_count: 0,
     last_hit: '',
     updated_at: '2026-06-15T00:00:00.000Z',
-    content_hash: `hash-${id}`,
+    content_hash: `hash-${id}`
   };
 }
 
@@ -62,7 +61,7 @@ before(async () => {
       row('reference/reference-b.md#0', 'reference/reference-b.md', 'projectContext'),
       row('projectDocs:DESIGN.md#0', 'DESIGN.md', 'projectDocs'),
       row('projectDocs:LOGGING.md#0', 'LOGGING.md', 'projectDocs'),
-      row('userMemory:notes.md#0', 'notes.md', 'userMemory'),
+      row('userMemory:notes.md#0', 'notes.md', 'userMemory')
     ],
     { projectName: PROJECT, replace: true }
   );

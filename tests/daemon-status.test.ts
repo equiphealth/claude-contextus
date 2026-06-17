@@ -13,14 +13,14 @@ const downHealth = {
   modelLoaded: false,
   warmupError: 'fetch failed',
   provider: 'ollama',
-  embeddingModel: 'nomic-embed-text',
+  embeddingModel: 'nomic-embed-text'
 };
 const warmHealth = {
   modelLoaded: true,
   warmupError: null,
   provider: 'ollama',
   embeddingModel: 'nomic-embed-text',
-  uptime: 120,
+  uptime: 120
 };
 
 test('provider down (existing daemon) → honest, actionable message; not warmOk', () => {
@@ -28,7 +28,7 @@ test('provider down (existing daemon) → honest, actionable message; not warmOk
     wasRunning: true,
     warmModel: false,
     health: downHealth,
-    verbosity: 'normal',
+    verbosity: 'normal'
   });
   assert.equal(s.warmOk, false, 'must not proceed as if injecting');
   assert.match(s.message, /unreachable/i);
@@ -41,7 +41,7 @@ test('provider down (just spawned, never warmed) → same honest message', () =>
     wasRunning: false,
     warmModel: false,
     health: downHealth,
-    verbosity: 'normal',
+    verbosity: 'normal'
   });
   assert.equal(s.warmOk, false);
   assert.match(s.message, /unreachable/i);
@@ -52,7 +52,7 @@ test('provider down message must NOT be the misleading "still warming"', () => {
     wasRunning: false,
     warmModel: false,
     health: downHealth,
-    verbosity: 'normal',
+    verbosity: 'normal'
   });
   assert.doesNotMatch(s.message, /still warming/i, 'hard failure must not read as transient');
 });
@@ -62,7 +62,7 @@ test('warm existing daemon → warmOk, quiet at normal, heartbeat at verbose', (
     wasRunning: true,
     warmModel: false,
     health: warmHealth,
-    verbosity: 'normal',
+    verbosity: 'normal'
   });
   assert.equal(normal.warmOk, true);
   assert.equal(normal.message, null, 'no heartbeat at normal verbosity');
@@ -71,7 +71,7 @@ test('warm existing daemon → warmOk, quiet at normal, heartbeat at verbose', (
     wasRunning: true,
     warmModel: false,
     health: warmHealth,
-    verbosity: 'verbose',
+    verbosity: 'verbose'
   });
   assert.equal(verbose.warmOk, true);
   assert.match(verbose.message, /using the running daemon/i);
@@ -83,7 +83,7 @@ test('freshly spawned + warmed → warmOk + ready message', () => {
     wasRunning: false,
     warmModel: true,
     health: warmHealth,
-    verbosity: 'normal',
+    verbosity: 'normal'
   });
   assert.equal(s.warmOk, true);
   assert.match(s.message, /model warm, ready to inject/i);
@@ -95,7 +95,7 @@ test('running but still loading (no error) → not warmOk, transient message', (
     wasRunning: true,
     warmModel: false,
     health: loading,
-    verbosity: 'normal',
+    verbosity: 'normal'
   });
   assert.equal(s.warmOk, false);
   assert.match(s.message, /still loading/i);
@@ -108,7 +108,7 @@ test('spawned, did not warm in time, no error → transient "still warming"', ()
     wasRunning: false,
     warmModel: false,
     health: loading,
-    verbosity: 'normal',
+    verbosity: 'normal'
   });
   assert.equal(s.warmOk, false);
   assert.match(s.message, /still warming/i);
@@ -120,7 +120,7 @@ test('warmupError takes precedence even if modelLoaded somehow true', () => {
     wasRunning: true,
     warmModel: false,
     health: { modelLoaded: true, warmupError: 'fetch failed', provider: 'ollama' },
-    verbosity: 'normal',
+    verbosity: 'normal'
   });
   assert.match(s.message, /unreachable/i);
 });

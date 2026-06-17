@@ -42,7 +42,7 @@ async function listTagless(): Promise<void> {
     return;
   }
   const files = await glob(path.join(CONTEXT_DIR, '**', '*.md'), {
-    ignore: ['**/CONTEXT.md', '**/README.md'],
+    ignore: ['**/CONTEXT.md', '**/README.md']
   });
   const tagless: Array<{ relpath: string; name: string; description: string }> = [];
   for (const abs of files.sort()) {
@@ -52,7 +52,7 @@ async function listTagless(): Promise<void> {
       tagless.push({
         relpath: path.relative(CONTEXT_DIR, abs),
         name: String(d.name ?? path.basename(abs, '.md')),
-        description: String(d.description ?? ''),
+        description: String(d.description ?? '')
       });
     }
   }

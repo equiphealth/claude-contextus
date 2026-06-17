@@ -14,7 +14,7 @@ import {
   buildChanges,
   renderDiff,
   hasRealChanges,
-  applyChanges,
+  applyChanges
 } from '../lib/calibration/config-write.js';
 
 function tempPlugin(config: Record<string, unknown>): string {
@@ -59,7 +59,7 @@ test('renderDiff: shows -/+ only for real changes', () => {
 test('applyChanges: writes the value and preserves the rest of the file', () => {
   const file = tempPlugin({
     retrieval: { injectionFloor: 0.35, topK: 5, _note: 'keep me' },
-    embedding: { provider: 'ollama' },
+    embedding: { provider: 'ollama' }
   });
   const written = applyChanges(buildChanges({ 'retrieval.injectionFloor': 0.49 }, file), file);
   assert.equal(written, 1);

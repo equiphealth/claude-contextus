@@ -15,10 +15,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { stripJsonComments } from '../config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Repo root = two levels up from lib/calibration/. */
-const PLUGIN_JSON = path.resolve(__dirname, '..', '..', 'plugin.json');
+const PLUGIN_JSONC = path.resolve(__dirname, '..', '..', 'plugin.jsonc');
+const PLUGIN_JSON_FALLBACK = path.resolve(__dirname, '..', '..', 'plugin.json');
+const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC) ? PLUGIN_JSONC : PLUGIN_JSON_FALLBACK;
 
 /** A single proposed config change (dotted path under config.*). */
 export interface ConfigChange {
@@ -32,7 +35,8 @@ export interface ConfigChange {
 function readRaw(pluginPath: string): Record<string, any> {
   try {
     if (!fs.existsSync(pluginPath)) return {};
-    return JSON.parse(fs.readFileSync(pluginPath, 'utf8')) as Record<string, any>;
+    const text = fs.readFileSync(pluginPath, 'utf8');
+    return JSON.parse(stripJsonComments(text)) as Record<string, any>;
   } catch {
     return {};
   }
@@ -60,7 +64,7 @@ export function buildChanges(
   return Object.entries(proposals).map(([key, proposed]) => ({
     key,
     current: readConfigValue(key, pluginPath),
-    proposed,
+    proposed
   }));
 }
 

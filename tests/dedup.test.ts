@@ -29,7 +29,7 @@ function r(
     updated_at: '',
     distance: 0,
     similarity: finalScore,
-    finalScore,
+    finalScore
   };
 }
 

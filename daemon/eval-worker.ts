@@ -64,7 +64,7 @@ async function tick(): Promise<void> {
       const s = readState();
       logInfo('Calibration drained', {
         processed: n,
-        total: `${s.sampleCount}/${s.targetSamples}`,
+        total: `${s.sampleCount}/${s.targetSamples}`
       });
       if (!s.evaluateUsage && s.completedAt) {
         logInfo('Calibration complete', { samples: s.sampleCount });
@@ -72,7 +72,7 @@ async function tick(): Promise<void> {
     }
   } catch (err) {
     logError('error', 'eval-worker', 'drain failed', {
-      message: err instanceof Error ? err.message : String(err),
+      message: err instanceof Error ? err.message : String(err)
     });
   }
 }

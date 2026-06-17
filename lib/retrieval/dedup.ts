@@ -89,7 +89,7 @@ export function dedupe(ranked: RankedResult[], threshold = DEFAULT_DEDUP_THRESHO
       dropped.push({
         chunk: cand,
         duplicateOf: dupeOf.filename || dupeOf.id,
-        similarity: Number(dupeSim.toFixed(4)),
+        similarity: Number(dupeSim.toFixed(4))
       });
     } else {
       kept.push(cand);

@@ -12,7 +12,7 @@ import {
   kebab,
   reclassifyFeedback,
   renderContextIndex,
-  type MemoryFile,
+  type MemoryFile
 } from '../lib/capture/memory-migrate.js';
 
 function mem(filename: string, data: Record<string, unknown>, body = 'body text'): MemoryFile {
@@ -29,7 +29,7 @@ test('planFile: legacy decision_ file → decisions/decision-<slug>.md', () => {
     mem('decision_build_execution_cadence.md', {
       name: 'build-execution-cadence',
       description: 'how to run the build',
-      metadata: { type: 'decision' },
+      metadata: { type: 'decision' }
     })
   );
   assert.equal(item.toRelPath, 'decisions/decision-build-execution-cadence.md');
@@ -50,7 +50,7 @@ test('planFile: existing tags are preserved, never fabricated', () => {
     mem('decision_floor.md', {
       name: 'floor-calibration-signals',
       description: 'd',
-      metadata: { type: 'decision', tags: ['calibration', 'retrieval'] },
+      metadata: { type: 'decision', tags: ['calibration', 'retrieval'] }
     })
   );
   assert.deepEqual(tagged.tags, ['calibration', 'retrieval']);
@@ -86,7 +86,7 @@ test('reclassifyFeedback: pitfall language → gotcha', () => {
   const g = reclassifyFeedback(
     mem('feedback_ios_quirk.md', {
       name: 'ios-isdisplayed-quirk',
-      description: 'iOS isDisplayed() can return false for visually present elements',
+      description: 'iOS isDisplayed() can return false for visually present elements'
     })
   );
   assert.equal(g.type, 'gotcha');
@@ -96,7 +96,7 @@ test('reclassifyFeedback: AI-process meta → reference', () => {
   const r = reclassifyFeedback(
     mem('feedback_check_claude_mem_first.md', {
       name: 'check-claude-mem-first',
-      description: 'Search claude-mem for related past work before diving into code',
+      description: 'Search claude-mem for related past work before diving into code'
     })
   );
   assert.equal(r.type, 'reference');
@@ -106,7 +106,7 @@ test('reclassifyFeedback: resolved convention → decision (default)', () => {
   const d = reclassifyFeedback(
     mem('feedback_use_logger.md', {
       name: 'use-logger-helper',
-      description: 'Always use getLogger() helper instead of console.log',
+      description: 'Always use getLogger() helper instead of console.log'
     })
   );
   assert.equal(d.type, 'decision');
@@ -117,7 +117,7 @@ test('planFile: banned feedback type is reclassified, never emitted as feedback'
     mem('feedback_use_logger.md', {
       name: 'use-logger-helper',
       description: 'Always use getLogger() helper',
-      metadata: { type: 'feedback' },
+      metadata: { type: 'feedback' }
     })
   );
   assert.notEqual(item.type, 'feedback');
@@ -139,19 +139,22 @@ test('renderContextIndex: groups by type, links each file, lists every entry', (
     mem('decision_use_logger.md', {
       name: 'use-logger',
       description: 'use the logger',
-      metadata: { type: 'decision' },
+      metadata: { type: 'decision' }
     }),
     mem('feedback_ios_quirk.md', {
       name: 'ios-quirk',
       description: 'isDisplayed quirk',
-      metadata: { type: 'feedback' }, // reclassified → gotcha
+      metadata: { type: 'feedback' } // reclassified → gotcha
     }),
-    mem('reference_accounts.md', { name: 'accounts', description: 'where accounts live' }),
+    mem('reference_accounts.md', { name: 'accounts', description: 'where accounts live' })
   ]);
   const idx = renderContextIndex(plan);
 
   assert.match(idx, /^# Context Index/);
-  assert.match(idx, /## Decisions\n\n- \[use-logger\]\(decisions\/decision-use-logger\.md\) — use the logger/);
+  assert.match(
+    idx,
+    /## Decisions\n\n- \[use-logger\]\(decisions\/decision-use-logger\.md\) — use the logger/
+  );
   assert.match(idx, /## Gotchas\n\n- \[ios-quirk\]\(gotchas\/gotcha-ios-quirk\.md\)/);
   assert.match(idx, /## Reference\n\n- \[accounts\]\(reference\/reference-accounts\.md\)/);
   // every plan item appears exactly once
@@ -164,7 +167,7 @@ test('renderContextIndex: groups by type, links each file, lists every entry', (
 test('renderContextIndex: unknown type lands under Other, never dropped', () => {
   // A file whose frontmatter type isn't a known section heading.
   const plan = planMigration([
-    mem('weird_thing.md', { name: 'weird', description: 'd', metadata: { type: 'implementation' } }),
+    mem('weird_thing.md', { name: 'weird', description: 'd', metadata: { type: 'implementation' } })
   ]);
   const idx = renderContextIndex(plan);
   // implementation IS known; assert it's placed, then synthesize a truly-unknown one.

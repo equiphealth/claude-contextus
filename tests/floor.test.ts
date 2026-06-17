@@ -21,7 +21,7 @@ function ranked(similarity: number, finalScore: number, id = 's'): RankedResult 
     updated_at: '',
     distance: 0,
     similarity,
-    finalScore,
+    finalScore
   };
 }
 

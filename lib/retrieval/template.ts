@@ -52,7 +52,7 @@ const _cache = new Map<string, { mtime: number; content: string }>();
 export function loadTemplate(cwd?: string): string {
   const paths = [
     cwd ? path.join(cwd, '.claude', TEMPLATE_FILENAME) : null,
-    path.join(expandHome('~/.contextus'), TEMPLATE_FILENAME),
+    path.join(expandHome('~/.contextus'), TEMPLATE_FILENAME)
   ].filter(Boolean) as string[];
 
   for (const p of paths) {
