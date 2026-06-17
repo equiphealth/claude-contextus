@@ -46,6 +46,14 @@ const DEFAULTS = {
         targetSamples: 100, // LOGGING.md default sample budget per campaign
         model: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     },
+    logging: {
+        paranoid: true,
+        retention: {
+            activeDays: 30,
+            archiveMonths: 6,
+            paranoidDays: 7,
+        },
+    },
 };
 let _config = null;
 /** Per-project merged configs, keyed by project name. */
@@ -95,6 +103,12 @@ function mergeConfigInto(merged, c) {
         Object.assign(merged.notifications, c.notifications);
     if (c.calibration)
         Object.assign(merged.calibration, c.calibration);
+    if (c.logging) {
+        const { retention: retOverride, ...lRest } = c.logging;
+        Object.assign(merged.logging, lRest);
+        if (retOverride)
+            Object.assign(merged.logging.retention, retOverride);
+    }
 }
 /** Read a JSON file's `config` object (or the whole file if no `config` key). [] on miss. */
 function readConfigFile(filePath) {

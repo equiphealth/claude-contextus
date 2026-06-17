@@ -41,7 +41,8 @@ import { getContentHashes } from '../lib/storage/lance-client.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
-import { logRetrieval, logNoInject, logError, logInfo, promptHash, } from '../lib/logger.js';
+import { logRetrieval, logNoInject, logParanoid, logError, logInfo, promptHash, } from '../lib/logger.js';
+import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 const PORT = 37800;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 /** Daemon/protocol version reported by /introspect (keep in sync with plugin.json). */
@@ -186,6 +187,17 @@ async function handleQuery(body, res) {
             latencyMs: Date.now() - started,
             floorDropped,
         });
+        if (cfg.logging.paranoid) {
+            logParanoid({
+                project: projectLabel,
+                promptHash: hash,
+                prompt,
+                injection: '',
+                retrieved: [],
+                similarityScores: [Number(bestScore.toFixed(4))],
+                latencyMs: Date.now() - started,
+            });
+        }
         return sendJson(res, 200, { continue: true });
     }
     const { block, included, tokens } = formatInjection(kept, cfg.retrieval.maxTokens);
@@ -219,6 +231,17 @@ async function handleQuery(body, res) {
         latencyMs: Date.now() - started,
         floorDropped,
     });
+    if (cfg.logging.paranoid) {
+        logParanoid({
+            project: projectLabel,
+            promptHash: hash,
+            prompt,
+            injection: block,
+            retrieved: injectedNames,
+            similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
+            latencyMs: Date.now() - started,
+        });
+    }
     // Append a TRUTHFUL provenance-footer instruction scoped to exactly these files
     // (renderFooterInstruction). Co-located with the real injected set so Claude
     // reports ground truth instead of fabricating a footer (the awareness hook can't
@@ -403,6 +426,8 @@ function cleanupRuntimeFiles() {
     }
 }
 async function startDaemon() {
+    // Rotate stale logs before any writes happen (synchronous, cheap for fresh logs).
+    rotateLogsOnStartup();
     // Bind first so a second daemon racing for the port fails fast (EADDRINUSE)
     // instead of double-loading the model.
     server.on('error', (err) => {
