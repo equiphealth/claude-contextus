@@ -91,6 +91,10 @@
     "notifications": {
       "_verbosity_note": "SessionStart daemon-state messages (user-facing systemMessage). silent=never | normal=fresh spawn/warming/failure only | verbose=also heartbeat with uptime when an existing daemon is found. Override per-session with CONTEXTUS_VERBOSITY env.",
       "verbosity": "verbose"
+    },
+    "logging": {
+      "_paranoid_note": "Logs full prompt text + complete injection payload to ~/.contextus/logs/paranoid.jsonl. OFF by default (privacy). View with: contextus watch --paranoid",
+      "paranoid": true
     }
   },
   "hooks": "hooks/hooks.json",

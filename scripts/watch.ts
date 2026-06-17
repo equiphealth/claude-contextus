@@ -22,6 +22,7 @@ import os from 'os';
 const LOG_DIR = path.join(os.homedir(), '.contextus', 'logs');
 const DAEMON_LOG = path.join(LOG_DIR, 'daemon.log');
 const USAGE_LOG = path.join(LOG_DIR, 'usage.jsonl');
+const PARANOID_LOG = path.join(LOG_DIR, 'paranoid.jsonl');
 
 // --- ANSI colors ---
 const c = {
@@ -42,11 +43,12 @@ interface WatchOpts {
   since?: number; // ms ago
   follow: boolean;
   json: boolean;
+  paranoid: boolean;
 }
 
 function parseArgs(): WatchOpts {
   const args = process.argv.slice(2);
-  const opts: WatchOpts = { verbose: false, follow: true, json: false };
+  const opts: WatchOpts = { verbose: false, follow: true, json: false, paranoid: false };
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -67,6 +69,9 @@ function parseArgs(): WatchOpts {
         break;
       case '--json':
         opts.json = true;
+        break;
+      case '--paranoid':
+        opts.paranoid = true;
         break;
       case '--help':
       case '-h':
@@ -102,6 +107,7 @@ ${c.dim}Options:${c.reset}
   -s, --since <dur>      Replay from duration ago (e.g. 30m, 2h, 1d)
       --no-follow        Replay only, don't tail
       --json             Tail usage.jsonl raw (for piping/jq)
+      --paranoid         Tail paranoid.jsonl (full prompt + injection text)
   -h, --help             Show this help
 
 ${c.dim}Examples:${c.reset}
@@ -109,6 +115,7 @@ ${c.dim}Examples:${c.reset}
   contextus watch -p automation      # only automation project
   contextus watch --since 1h -v      # last hour, verbose
   contextus watch --json | jq .      # raw JSONL for scripting
+  contextus watch --paranoid         # full round-trip (requires logging.paranoid=true)
 `);
 }
 
@@ -185,6 +192,66 @@ function parseKV(raw: string): Record<string, string> {
   return result;
 }
 
+// --- Paranoid formatting ---
+
+interface ParanoidEntry {
+  timestamp: string;
+  project: string;
+  prompt_hash: string;
+  prompt: string;
+  injection: string;
+  retrieved: string[];
+  similarity_scores: number[];
+  latency_ms: number;
+}
+
+function formatParanoidLine(line: string, opts: WatchOpts): string | null {
+  let entry: ParanoidEntry;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return null;
+  }
+
+  if (opts.project && entry.project !== opts.project) return null;
+
+  const time = entry.timestamp.split('T')[1]?.split('.')[0] ?? entry.timestamp;
+  const scores = entry.similarity_scores.map((s: number) => s.toFixed(2)).join('/');
+  const noInject = entry.retrieved.length === 0;
+  const icon = noInject ? '○' : '✓';
+  const iconColor = noInject ? c.dim : c.green;
+
+  let out = `\n${c.dim}${'═'.repeat(70)}${c.reset}\n`;
+  out += `${c.dim}${time}${c.reset} ${iconColor}${icon}${c.reset} ${c.dim}[${entry.project}]${c.reset} ${c.dim}${entry.latency_ms}ms${c.reset}`;
+  if (scores) out += ` ${c.dim}scores=${scores}${c.reset}`;
+  out += '\n';
+
+  // Prompt
+  out += `\n${c.bold}${c.cyan}PROMPT:${c.reset}\n`;
+  const promptPreview = entry.prompt.length > 500
+    ? entry.prompt.slice(0, 500) + `${c.dim}… (${entry.prompt.length} chars)${c.reset}`
+    : entry.prompt;
+  out += `${promptPreview}\n`;
+
+  // Injection
+  if (entry.injection) {
+    out += `\n${c.bold}${c.green}INJECTED (${entry.retrieved.length} patterns):${c.reset}\n`;
+    out += `${c.dim}${entry.retrieved.join(', ')}${c.reset}\n`;
+    if (opts.verbose) {
+      out += `\n${entry.injection}\n`;
+    } else {
+      const preview = entry.injection.length > 300
+        ? entry.injection.slice(0, 300) + `\n${c.dim}… (${entry.injection.length} chars, use -v for full)${c.reset}`
+        : entry.injection;
+      out += `\n${preview}\n`;
+    }
+  } else {
+    out += `\n${c.yellow}NO INJECTION${c.reset} ${c.dim}(best score: ${scores})${c.reset}\n`;
+  }
+
+  return out;
+}
+
 // --- Log following ---
 
 async function replayHistory(file: string, sinceMs: number, opts: WatchOpts): Promise<void> {
@@ -196,14 +263,24 @@ async function replayHistory(file: string, sinceMs: number, opts: WatchOpts): Pr
 
   for await (const line of rl) {
     // Parse timestamp from the line
-    const tsMatch = line.match(/^\[([^\]]+)\]/);
-    if (tsMatch) {
-      const lineDate = new Date(tsMatch[1].replace(' ', 'T') + 'Z');
-      if (lineDate < cutoff) continue;
+    if (opts.paranoid) {
+      try {
+        const entry = JSON.parse(line);
+        if (new Date(entry.timestamp) < cutoff) continue;
+      } catch { continue; }
+    } else {
+      const tsMatch = line.match(/^\[([^\]]+)\]/);
+      if (tsMatch) {
+        const lineDate = new Date(tsMatch[1].replace(' ', 'T') + 'Z');
+        if (lineDate < cutoff) continue;
+      }
     }
 
     if (opts.json) {
       process.stdout.write(line + '\n');
+    } else if (opts.paranoid) {
+      const formatted = formatParanoidLine(line, opts);
+      if (formatted) process.stdout.write(formatted + '\n');
     } else {
       const formatted = formatDaemonLine(line, opts);
       if (formatted) process.stdout.write(formatted + '\n');
@@ -243,6 +320,9 @@ function followFile(file: string, opts: WatchOpts): void {
         if (!line.trim()) continue;
         if (opts.json) {
           process.stdout.write(line + '\n');
+        } else if (opts.paranoid) {
+          const formatted = formatParanoidLine(line, opts);
+          if (formatted) process.stdout.write(formatted + '\n');
         } else {
           const formatted = formatDaemonLine(line, opts);
           if (formatted) process.stdout.write(formatted + '\n');
@@ -269,13 +349,18 @@ function followFile(file: string, opts: WatchOpts): void {
 
 async function main(): Promise<void> {
   const opts = parseArgs();
-  const logFile = opts.json ? USAGE_LOG : DAEMON_LOG;
+  const logFile = opts.paranoid ? PARANOID_LOG : opts.json ? USAGE_LOG : DAEMON_LOG;
 
   // Header
   if (!opts.json) {
+    const mode = opts.paranoid ? ' (PARANOID)' : opts.verbose ? ' (verbose)' : '';
     console.log(
-      `${c.bold}contextus watch${c.reset} ${c.dim}— ${opts.project ? `project: ${opts.project}` : 'all projects'}${opts.verbose ? ' (verbose)' : ''}${c.reset}`
+      `${c.bold}contextus watch${c.reset} ${c.dim}— ${opts.project ? `project: ${opts.project}` : 'all projects'}${mode}${c.reset}`
     );
+    if (opts.paranoid) {
+      console.log(`${c.red}⚠ Paranoid mode: logging full prompts + injections${c.reset}`);
+      console.log(`${c.dim}  Requires logging.paranoid=true in config${c.reset}`);
+    }
     console.log(`${c.dim}${'─'.repeat(60)}${c.reset}`);
   }
 

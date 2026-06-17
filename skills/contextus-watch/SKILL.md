@@ -29,6 +29,12 @@ endpoints.
 
 # Raw JSONL (for piping to jq)
 /contextus-watch --json
+
+# PARANOID: full prompt + injection payload
+/contextus-watch --paranoid
+
+# Paranoid + verbose = full injection text (not truncated)
+/contextus-watch --paranoid -v
 ```
 
 Engine (dev/direct):
@@ -65,6 +71,22 @@ contextus watch — project: automation (verbose)
          scores=0.91/0.84/0.79/0.74/0.71 latency=210ms dropped=0
 ── live ──
 ```
+
+## Paranoid Mode
+
+When `--paranoid` is passed, watch tails `~/.contextus/logs/paranoid.jsonl` instead
+of daemon.log. This shows the **full prompt text** and **complete injection payload**
+for every query — everything sent to the LLM.
+
+**Requires**: `logging.paranoid: true` in your config (off by default for privacy).
+
+Enable in `.claude/contextus.json`:
+```json
+{ "logging": { "paranoid": true } }
+```
+
+Output in paranoid mode shows each event as a card with PROMPT and INJECTED sections.
+Use `-v` to see the full injection text (default truncates at 300 chars).
 
 ## Design
 

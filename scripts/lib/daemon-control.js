@@ -154,16 +154,32 @@ export async function getHealth(timeoutMs = 1000) {
 }
 
 /**
- * Resolve how to launch a daemon process. Prefers the COMPILED JS
- * (`node dist/daemon/X.js`) — the packaged/shipped path, no tsx at runtime. Falls
- * back to `tsx X.ts` only when the build is absent (dev working in the repo before
- * `npm run build`). Returns { cmd, args } for spawn().
+ * Should we run in dev mode (tsx on source) instead of compiled dist/?
+ *
+ * Auto-detects a source checkout (tsconfig.json at repo root) so changes to .ts
+ * files take effect immediately without a build step. Override with:
+ *   CONTEXTUS_DEV=1  → force dev mode (tsx)
+ *   CONTEXTUS_DEV=0  → force production (node dist/)
+ */
+function isDevMode() {
+  const env = process.env.CONTEXTUS_DEV;
+  if (env === '1' || env === 'true') return true;
+  if (env === '0' || env === 'false') return false;
+  // Auto-detect: tsconfig.json at repo root = source checkout = dev mode
+  return fs.existsSync(path.join(REPO_ROOT, 'tsconfig.json'));
+}
+
+/**
+ * Resolve how to launch a daemon process. In dev mode, always uses tsx on the
+ * TypeScript source (changes take effect without `tsc`). In production, uses
+ * the compiled dist/ JS. Falls back to tsx if dist/ is missing regardless.
+ * Returns { cmd, args } for spawn().
  */
 function resolveLaunch(jsPath, tsPath) {
-  if (fs.existsSync(jsPath)) {
+  if (!isDevMode() && fs.existsSync(jsPath)) {
     return { cmd: process.execPath, args: [jsPath] }; // node dist/.../X.js
   }
-  // Dev fallback: no build present → run the .ts via tsx (repo-local, else npx).
+  // Dev mode or no build: run .ts via tsx (repo-local, else npx).
   const useBin = fs.existsSync(TSX_BIN);
   return useBin ? { cmd: TSX_BIN, args: [tsPath] } : { cmd: 'npx', args: ['tsx', tsPath] };
 }
