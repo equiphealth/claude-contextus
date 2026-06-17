@@ -200,10 +200,13 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   if (shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)) {
     const expanded = await expandQuery(prompt, cfg.expansion);
     if (expanded.variants.length > 0) {
+      // Variants use a smaller fetch limit — the union provides breadth,
+      // so each individual variant doesn't need the full CHUNK_FANOUT over-fetch.
+      const variantLimit = cfg.retrieval.topK * 2;
       const variantSearches = await Promise.all(
         expanded.variants.map(async (variant) => {
           const vVec = await embedQuery(variant);
-          return search(vVec, fetchLimit, undefined, project);
+          return search(vVec, variantLimit, undefined, project);
         })
       );
       // Union: merge all results, dedupe by row id (keep highest similarity).
