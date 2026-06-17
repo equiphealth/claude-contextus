@@ -33,6 +33,7 @@ import { rerank } from '../lib/retrieval/reranker.js';
 import { dedupe, collapseByFile } from '../lib/retrieval/dedup.js';
 import { applyFloor } from '../lib/retrieval/floor.js';
 import { formatInjection, renderFooterInstruction } from '../lib/retrieval/inject-format.js';
+import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
@@ -188,7 +189,46 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // files. Pull a wider net (topK × CHUNK_FANOUT) so enough DISTINCT files survive
   // the collapse-by-file step below to fill topK.
   const CHUNK_FANOUT = 4;
-  const raw = await search(vec, cfg.retrieval.topK * CHUNK_FANOUT, undefined, project);
+  const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
+  let raw = await search(vec, fetchLimit, undefined, project);
+
+  // --- Multi-vector query expansion ---
+  // Check if expansion should fire (adaptive: best initial score below threshold,
+  // always: every query, off: never). When it fires, generate variant phrasings,
+  // embed each in parallel, search each, and union with the original results.
+  const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => 1 - r.distance)) : 0;
+  if (shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)) {
+    const expanded = await expandQuery(prompt, cfg.expansion);
+    if (expanded.variants.length > 0) {
+      const variantSearches = await Promise.all(
+        expanded.variants.map(async (variant) => {
+          const vVec = await embedQuery(variant);
+          return search(vVec, fetchLimit, undefined, project);
+        })
+      );
+      // Union: merge all results, dedupe by row id (keep highest similarity).
+      const seen = new Map<string, (typeof raw)[0]>();
+      for (const r of raw) seen.set(r.id, r);
+      for (const results of variantSearches) {
+        for (const r of results) {
+          const existing = seen.get(r.id);
+          if (!existing || r.similarity > existing.similarity) {
+            seen.set(r.id, r);
+          }
+        }
+      }
+      raw = Array.from(seen.values());
+      logInfo('Expansion fired', {
+        project: projectLabel,
+        variants: expanded.variants.length,
+        provider: expanded.provider,
+        latencyMs: expanded.latencyMs,
+        resultsBefore: raw.length - (seen.size - raw.length), // approx original count
+        resultsAfter: raw.length,
+      });
+    }
+  }
+
   const ranked = rerank(raw);
   // Collapse chunks to one best representative per file FIRST (a file's sections
   // aren't competing matches), then trim to topK files, then fold near-duplicate

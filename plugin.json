@@ -75,6 +75,16 @@
       "maxTokens": 3000,
       "mergeStrategy": "interleaved"
     },
+    "expansion": {
+      "_note": "Multi-vector query expansion: generate alternate phrasings when the initial search scores poorly. Dramatically improves synonym/paraphrase recall. adaptive=expand only below threshold, always=every query, off=disabled.",
+      "mode": "adaptive",
+      "provider": "ollama",
+      "ollamaModel": "qwen2.5:0.5b",
+      "anthropicModel": "claude-haiku-4-5-20251001",
+      "ollamaEndpoint": "http://localhost:11434",
+      "expansionThreshold": 0.55,
+      "maxVariants": 3
+    },
     "autoRebuild": true,
     "contextCapture": {
       "enabled": true,

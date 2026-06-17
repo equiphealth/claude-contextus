@@ -101,6 +101,33 @@ export interface RetrievalConfig {
   provenanceFooter: boolean;
 }
 
+/** Query expansion mode: when to generate additional query variants. */
+export type ExpansionMode = 'adaptive' | 'always' | 'off';
+
+export interface ExpansionConfig {
+  /**
+   * adaptive — expand only when best_score < expansionThreshold (default)
+   * always   — expand every query (higher quality, +100-200ms per prompt)
+   * off      — disable expansion entirely
+   */
+  mode: ExpansionMode;
+  /** Provider for generating query variants. */
+  provider: 'ollama' | 'anthropic';
+  /** Ollama model for expansion (small/fast recommended). */
+  ollamaModel: string;
+  /** Anthropic model for expansion (Haiku recommended). */
+  anthropicModel: string;
+  /** Ollama endpoint (shared with embedding by default). */
+  ollamaEndpoint: string;
+  /**
+   * Trigger threshold for adaptive mode. If first search's best_score < this,
+   * expansion fires. Default 0.55 (direct matches hit 0.65, failures below 0.45).
+   */
+  expansionThreshold: number;
+  /** Max query variants to generate (excluding original). Default 3. */
+  maxVariants: number;
+}
+
 /** SessionStart daemon-state message verbosity (user-facing systemMessage). */
 export type NotificationVerbosity = 'silent' | 'normal' | 'verbose';
 
@@ -151,6 +178,7 @@ export interface ContextusConfig {
   embedding: EmbeddingConfig;
   storage: StorageConfig;
   retrieval: RetrievalConfig;
+  expansion: ExpansionConfig;
   notifications: NotificationsConfig;
   calibration: CalibrationConfig;
   logging: LoggingConfig;
@@ -183,6 +211,15 @@ const DEFAULTS: ContextusConfig = {
     maxTokens: 3000,
     mergeStrategy: 'interleaved',
     provenanceFooter: true, // show "Context: used:" by default; opt-out per project
+  },
+  expansion: {
+    mode: 'adaptive',
+    provider: 'ollama',
+    ollamaModel: 'qwen2.5:0.5b',
+    anthropicModel: 'claude-haiku-4-5-20251001',
+    ollamaEndpoint: 'http://localhost:11434',
+    expansionThreshold: 0.55,
+    maxVariants: 3,
   },
   notifications: {
     verbosity: 'normal', // code default; deployed plugin.json sets 'verbose'
@@ -242,6 +279,7 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
   }
   if (c.lancedb?.path) merged.storage.path = c.lancedb.path;
   if (c.retrieval) Object.assign(merged.retrieval, c.retrieval);
+  if (c.expansion) Object.assign(merged.expansion, c.expansion);
   if (c.notifications) Object.assign(merged.notifications, c.notifications);
   if (c.calibration) Object.assign(merged.calibration, c.calibration);
   if (c.logging) {
