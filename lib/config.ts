@@ -271,6 +271,10 @@ function findPluginJson(): string | null {
   return null;
 }
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
 /** Apply a raw `config` object (plugin.json or an override file) onto `merged`. */
 function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void {
   if (c.embedding) {
@@ -282,7 +286,11 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
   }
   if (c.lancedb?.path) merged.storage.path = c.lancedb.path;
   if (c.retrieval) Object.assign(merged.retrieval, c.retrieval);
-  if (c.expansion) Object.assign(merged.expansion, c.expansion);
+  if (c.expansion) {
+    Object.assign(merged.expansion, c.expansion);
+    merged.expansion.expansionThreshold = clamp(merged.expansion.expansionThreshold, 0, 1);
+    merged.expansion.temperature = clamp(merged.expansion.temperature, 0, 2);
+  }
   if (c.notifications) Object.assign(merged.notifications, c.notifications);
   if (c.calibration) Object.assign(merged.calibration, c.calibration);
   if (c.logging) {
