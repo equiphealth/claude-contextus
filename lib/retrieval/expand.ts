@@ -60,7 +60,7 @@ async function expandViaOllama(query: string, cfg: ExpansionConfig): Promise<Exp
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(cfg.timeoutMs),
   });
 
   if (!res.ok) {
@@ -95,7 +95,7 @@ async function expandViaAnthropic(query: string, cfg: ExpansionConfig): Promise<
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(cfg.timeoutMs),
   });
 
   if (!res.ok) {

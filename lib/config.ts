@@ -128,6 +128,8 @@ export interface ExpansionConfig {
   maxVariants: number;
   /** LLM temperature for variant generation. Higher = more diverse. Default 0.7. */
   temperature: number;
+  /** Timeout (ms) for the LLM expansion call. Default 5000. Increase for slow models. */
+  timeoutMs: number;
 }
 
 /** SessionStart daemon-state message verbosity (user-facing systemMessage). */
@@ -223,6 +225,7 @@ const DEFAULTS: ContextusConfig = {
     expansionThreshold: 0.55,
     maxVariants: 3,
     temperature: 0.7,
+    timeoutMs: 5000,
   },
   notifications: {
     verbosity: 'normal', // code default; deployed plugin.json sets 'verbose'
