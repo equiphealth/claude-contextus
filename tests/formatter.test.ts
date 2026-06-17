@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   formatInjection,
   estimateTokens,
-  renderFooterInstruction,
+  renderFooterInstruction
 } from '../lib/retrieval/inject-format.js';
 import type { RankedResult } from '../lib/retrieval/reranker.js';
 
@@ -28,7 +28,7 @@ function chunk(id: string, body: string, similarity = 0.5, hit_count = 0): Ranke
     updated_at: '',
     distance: 0,
     similarity,
-    finalScore: similarity,
+    finalScore: similarity
   };
 }
 

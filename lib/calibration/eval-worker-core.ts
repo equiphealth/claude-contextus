@@ -20,7 +20,7 @@ import {
   buildEvalPrompt,
   parseEvalResponse,
   weightedScore,
-  type InjectedPattern,
+  type InjectedPattern
 } from './eval-calibration.js';
 import { callEvalModel, type EvalCaller, type EvalModelConfig } from './eval-model.js';
 import { logCalibrationEval } from '../logger.js';
@@ -91,7 +91,7 @@ export async function processJob(
     retrieved: job.patterns.map((p) => p.id),
     evaluations: ratings.map((r) => ({ pattern: r.pattern, rating: r.rating })),
     weightedScore: score,
-    evaluationLatencyMs: latency,
+    evaluationLatencyMs: latency
   });
 
   return { weightedScore: score, rated: ratings.length };

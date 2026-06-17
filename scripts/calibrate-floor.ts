@@ -26,7 +26,7 @@ import { loadConfig } from '../lib/config.js';
 import {
   runFloorReplay,
   ReplayError,
-  type ReplayOutcome,
+  type ReplayOutcome
 } from '../lib/calibration/floor-replay.js';
 import { printFloorReport } from '../lib/calibration/floor-report.js';
 

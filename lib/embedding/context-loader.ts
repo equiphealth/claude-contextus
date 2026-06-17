@@ -31,7 +31,7 @@ export const KNOWN_CATEGORY_PREFIXES = [
   // (CATEGORIES_AND_TAGS.md §1: provenance, not meaning) — migrate-memory's
   // reclassifyFeedback re-homes it to decision/gotcha/reference on conversion.
   'reference',
-  'implementation',
+  'implementation'
 ] as const;
 
 /** A parsed context file, ready to embed. */
@@ -102,7 +102,7 @@ export function loadContext(absPath: string, contextDir: string): LoadedContext 
     type,
     tags,
     content: content.trim(),
-    mtime: fs.statSync(absPath).mtimeMs,
+    mtime: fs.statSync(absPath).mtimeMs
   };
 }
 
@@ -120,7 +120,7 @@ export async function loadContexts(contextDir: string): Promise<LoadedContext[]>
   // cwd-relative glob exclude it reliably at any depth.
   const rel = await glob('**/*.md', {
     cwd: contextDir,
-    ignore: ['CONTEXT.md', '**/CONTEXT.md', 'README.md', '**/README.md'],
+    ignore: ['CONTEXT.md', '**/CONTEXT.md', 'README.md', '**/README.md']
   });
   return rel.sort().map((f) => loadContext(path.join(contextDir, f), contextDir));
 }

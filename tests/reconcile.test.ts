@@ -41,7 +41,7 @@ test('stale: a changed file → state stale, only the changed one re-embeds', ()
   const disk = [file('a.md', 'alpha-EDITED'), file('b.md', 'beta')];
   const hashes = new Map([
     ['a.md', contentHash('alpha')], // changed
-    ['b.md', contentHash('beta')], // unchanged
+    ['b.md', contentHash('beta')] // unchanged
   ]);
   const plan = planReconcile(disk, hashes, true);
   assert.equal(plan.state, 'stale');
@@ -63,7 +63,7 @@ test('stale: an orphan row (file deleted) → toRemove, state stale', () => {
   const disk = [file('a.md', 'alpha')];
   const hashes = new Map([
     ['a.md', contentHash('alpha')],
-    ['deleted.md', contentHash('whatever')],
+    ['deleted.md', contentHash('whatever')]
   ]);
   const plan = planReconcile(disk, hashes, true);
   assert.equal(plan.state, 'stale');
@@ -82,7 +82,7 @@ test('orphan-only stale: nothing to embed (the "re-embedding 0" guard)', () => {
   const hashes = new Map([
     ['a.md', contentHash('alpha')],
     ['b.md', contentHash('beta')],
-    ['orphan-doc.md', contentHash('x')], // a row with no disk file (wrong-scope leak)
+    ['orphan-doc.md', contentHash('x')] // a row with no disk file (wrong-scope leak)
   ]);
   const plan = planReconcile(disk, hashes, true);
   assert.equal(plan.state, 'stale');

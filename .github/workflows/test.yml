@@ -35,7 +35,7 @@ jobs:
         run: pnpm type-check
 
       - name: Check formatting
-        run: pnpm exec prettier --check "lib/**/*.ts" "scripts/**/*.ts" "daemon/**/*.ts" "*.json"
+        run: pnpm exec prettier --check "lib/**/*.ts" "scripts/**/*.ts" "daemon/**/*.ts" "*.json" "*.jsonc"
 
   test:
     name: Run Tests

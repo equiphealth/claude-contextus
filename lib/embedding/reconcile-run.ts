@@ -26,7 +26,7 @@ import {
   deleteByFilename,
   getContentHashes,
   tableExists,
-  type ContextRow,
+  type ContextRow
 } from '../storage/lance-client.js';
 
 /** Outcome of a reconcile, for logging + the session-start systemMessage. */
@@ -62,7 +62,7 @@ export async function runReconcile(
   const diskFiles: DiskFile[] = contexts.map((c) => ({
     id: c.id,
     absPath: c.absPath,
-    content: c.content,
+    content: c.content
   }));
   const plan = planReconcile(diskFiles, hashes, exists);
 
@@ -97,6 +97,6 @@ export async function runReconcile(
     state: plan.state,
     embedded,
     removed: plan.toRemove.length,
-    unchanged: plan.unchanged.length,
+    unchanged: plan.unchanged.length
   };
 }

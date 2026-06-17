@@ -33,6 +33,7 @@ import { rerank } from '../lib/retrieval/reranker.js';
 import { dedupe, collapseByFile } from '../lib/retrieval/dedup.js';
 import { applyFloor } from '../lib/retrieval/floor.js';
 import { formatInjection, renderFooterInstruction } from '../lib/retrieval/inject-format.js';
+import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
@@ -49,7 +50,7 @@ import {
   logError,
   logInfo,
   promptHash,
-  type DroppedChunkLog,
+  type DroppedChunkLog
 } from '../lib/logger.js';
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 
@@ -63,6 +64,8 @@ const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
 
 /** Set true once the embedding model has warm-loaded; /health gates on it. */
 let modelLoaded = false;
+/** In-memory query stats (reset on daemon restart). */
+const stats = { queries: 0, expansionFired: 0, expansionSkipped: 0 };
 /**
  * Set when warmup() REJECTS (provider unreachable, model missing, dim mismatch).
  * Distinguishes a hard failure from "still loading" so session-start can tell the
@@ -106,17 +109,24 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 /** GET /health — liveness + readiness (modelLoaded is what session-start polls). */
 function handleHealth(res: http.ServerResponse): void {
   const cfg = loadConfig();
+  const expansionRate =
+    stats.queries > 0 ? Number(((stats.expansionFired / stats.queries) * 100).toFixed(1)) : 0;
   sendJson(res, 200, {
     status: 'ok',
     uptime: process.uptime(),
     modelLoaded,
-    // null while loading or once warm; a string once warmup has hard-failed.
-    // session-start uses this to alert "provider down" vs "still warming".
     warmupError,
-    lancedbConnected: true, // file-mode: connection is lazy + always available
+    lancedbConnected: true,
     embeddingModel:
       cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
     provider: cfg.embedding.provider,
+    expansion: {
+      mode: cfg.expansion.mode,
+      queries: stats.queries,
+      fired: stats.expansionFired,
+      skipped: stats.expansionSkipped,
+      fireRate: `${expansionRate}%`
+    }
   });
 }
 
@@ -168,7 +178,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       project: projectLabel,
       corpus: meta.embeddingModel,
       daemon: activeModel,
-      fix: 're-embed the corpus with the active model (pnpm run embed) or restore the build-time model',
+      fix: 're-embed the corpus with the active model (pnpm run embed) or restore the build-time model'
     });
     // Degrade gracefully — a mismatched space yields garbage similarities.
     return sendJson(res, 200, { continue: true });
@@ -178,7 +188,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       project: projectLabel,
       corpus: meta.dimensions,
       daemon: cfg.embedding.dimensions,
-      fix: 're-embed the corpus (pnpm run embed) so stored vectors match config.embedding.dimensions',
+      fix: 're-embed the corpus (pnpm run embed) so stored vectors match config.embedding.dimensions'
     });
     return sendJson(res, 200, { continue: true });
   }
@@ -188,7 +198,59 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // files. Pull a wider net (topK × CHUNK_FANOUT) so enough DISTINCT files survive
   // the collapse-by-file step below to fill topK.
   const CHUNK_FANOUT = 4;
-  const raw = await search(vec, cfg.retrieval.topK * CHUNK_FANOUT, undefined, project);
+  const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
+  let raw = await search(vec, fetchLimit, undefined, project);
+
+  // --- Multi-vector query expansion ---
+  // Check if expansion should fire (adaptive: best initial score below threshold,
+  // always: every query, off: never). When it fires, generate variant phrasings,
+  // embed each in parallel, search each, and union with the original results.
+  const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
+  stats.queries++;
+  if (shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)) {
+    const expanded = await expandQuery(prompt, cfg.expansion, cfg.providers);
+    if (expanded.variants.length > 0) {
+      stats.expansionFired++;
+      // Variants use a smaller fetch limit — the union provides breadth,
+      // so each individual variant doesn't need the full CHUNK_FANOUT over-fetch.
+      const variantLimit = cfg.retrieval.topK * 2;
+      const variantSearches = await Promise.all(
+        expanded.variants.map(async (variant) => {
+          const vVec = await embedQuery(variant);
+          return search(vVec, variantLimit, undefined, project);
+        })
+      );
+      // Union: merge all results, dedupe by row id (keep highest similarity).
+      const originalCount = raw.length;
+      const seen = new Map<string, (typeof raw)[0]>();
+      for (const r of raw) seen.set(r.id, r);
+      for (const results of variantSearches) {
+        for (const r of results) {
+          const existing = seen.get(r.id);
+          if (!existing || r.similarity > existing.similarity) {
+            seen.set(r.id, r);
+          }
+        }
+      }
+      raw = Array.from(seen.values());
+      logInfo('Expansion fired', {
+        project: projectLabel,
+        variants: expanded.variants,
+        provider: expanded.provider,
+        latencyMs: expanded.latencyMs,
+        resultsBefore: originalCount,
+        resultsAfter: raw.length
+      });
+    }
+  } else if (cfg.expansion.mode !== 'off') {
+    stats.expansionSkipped++;
+    logInfo('Expansion skipped', {
+      project: projectLabel,
+      initialBest: Number(initialBest.toFixed(4)),
+      threshold: cfg.expansion.expansionThreshold
+    });
+  }
+
   const ranked = rerank(raw);
   // Collapse chunks to one best representative per file FIRST (a file's sections
   // aren't competing matches), then trim to topK files, then fold near-duplicate
@@ -199,7 +261,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
 
   const floorDropped: DroppedChunkLog[] = dropped.map((d) => ({
     pattern: d.filename || d.id,
-    similarity: Number(d.similarity.toFixed(4)),
+    similarity: Number(d.similarity.toFixed(4))
   }));
 
   if (noInject) {
@@ -208,7 +270,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       promptHash: hash,
       bestScore: Number(bestScore.toFixed(4)),
       latencyMs: Date.now() - started,
-      floorDropped,
+      floorDropped
     });
     if (cfg.logging.paranoid) {
       logParanoid({
@@ -218,7 +280,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         injection: '',
         retrieved: [],
         similarityScores: [Number(bestScore.toFixed(4))],
-        latencyMs: Date.now() - started,
+        latencyMs: Date.now() - started
       });
     }
     return sendJson(res, 200, { continue: true });
@@ -235,7 +297,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     project
   ).catch((err) =>
     logError('warn', 'daemon', 'hit-count update failed', {
-      message: err instanceof Error ? err.message : String(err),
+      message: err instanceof Error ? err.message : String(err)
     })
   );
   recordInjection(projectLabel, injectedNames);
@@ -248,9 +310,9 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       promptHash: hash,
       patterns: included.map((r) => ({
         id: r.filename || r.id,
-        snippet: r.document.replace(/\s+/g, ' ').slice(0, 160),
+        snippet: r.document.replace(/\s+/g, ' ').slice(0, 160)
       })),
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -261,7 +323,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
     tokensInjected: tokens,
     latencyMs: Date.now() - started,
-    floorDropped,
+    floorDropped
   });
 
   if (cfg.logging.paranoid) {
@@ -272,7 +334,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       injection: block,
       retrieved: injectedNames,
       similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
-      latencyMs: Date.now() - started,
+      latencyMs: Date.now() - started
     });
   }
 
@@ -288,8 +350,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: block + footer,
-    },
+      additionalContext: block + footer
+    }
   });
 }
 
@@ -365,7 +427,7 @@ async function handleReconcile(
     const diskFiles: DiskFile[] = contexts.map((c) => ({
       id: c.id,
       absPath: c.absPath,
-      content: c.content,
+      content: c.content
     }));
     const plan = planReconcile(diskFiles, hashes, exists);
     return sendJson(res, 200, {
@@ -373,7 +435,7 @@ async function handleReconcile(
       newCount: plan.toEmbedNew.length,
       changedCount: plan.toEmbedChanged.length,
       removeCount: plan.toRemove.length,
-      quarantined, // relPaths of files that can't embed (bad prefix/type) — surface these
+      quarantined // relPaths of files that can't embed (bad prefix/type) — surface these
     });
   }
 
@@ -395,14 +457,14 @@ async function handleReconcile(
           project: projectLabel,
           state: r.state,
           embedded: r.embedded,
-          removed: r.removed,
+          removed: r.removed
         });
       }
     })
     .catch((err) =>
       logError('error', 'daemon', 'Reconcile failed', {
         project: projectLabel,
-        message: err instanceof Error ? err.message : String(err),
+        message: err instanceof Error ? err.message : String(err)
       })
     )
     .finally(() => reconcilingProjects.delete(projectLabel));
@@ -431,12 +493,12 @@ const server = http.createServer((req, res) => {
       version: DAEMON_VERSION,
       uptimeSeconds: process.uptime(),
       modelLoaded,
-      project,
+      project
     })
       .then((info) => sendJson(res, 200, info))
       .catch((err) => {
         logError('error', 'daemon', '/introspect failed', {
-          message: err instanceof Error ? err.message : String(err),
+          message: err instanceof Error ? err.message : String(err)
         });
         sendJson(res, 500, { error: 'introspect failed' });
       });
@@ -452,7 +514,7 @@ const server = http.createServer((req, res) => {
       })
       .catch((err) => {
         logError('error', 'daemon', `${url} handler failed`, {
-          message: err instanceof Error ? err.message : String(err),
+          message: err instanceof Error ? err.message : String(err)
         });
         // Never break the prompt — degrade to continue.
         sendJson(res, 200, { continue: true });
@@ -500,7 +562,7 @@ async function startDaemon(): Promise<void> {
     logInfo('Daemon started', {
       pid: process.pid,
       port: PORT,
-      provider: cfg.embedding.provider,
+      provider: cfg.embedding.provider
     });
     // Warm the model AFTER the socket is listening so /health is reachable and
     // reports modelLoaded:false while loading (session-start polls for true).
@@ -510,14 +572,14 @@ async function startDaemon(): Promise<void> {
         warmupError = null;
         logInfo('Model warm', {
           model:
-            cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model,
+            cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model
         });
       })
       .catch((err) => {
         // Record WHY so /health can tell session-start "down" vs "still loading".
         warmupError = err instanceof Error ? err.message : String(err);
         logError('error', 'embedder', 'Model warmup failed', {
-          message: warmupError,
+          message: warmupError
         });
         // Leave modelLoaded:false — health stays not-ready, queries degrade.
       });
@@ -536,7 +598,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 
 startDaemon().catch((err) => {
   logError('error', 'daemon', 'Failed to start', {
-    message: err instanceof Error ? err.message : String(err),
+    message: err instanceof Error ? err.message : String(err)
   });
   process.exit(1);
 });

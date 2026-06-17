@@ -120,7 +120,7 @@ export async function buildIntrospection(args: {
       model: activeModel,
       dimensions: cfg.embedding.dimensions,
       corpusProvider: meta?.provider ?? null,
-      corpusModel: meta?.embeddingModel ?? null,
+      corpusModel: meta?.embeddingModel ?? null
     },
     packs: loadedPacks(),
     corpus: await corpusStats(args.project),
@@ -128,17 +128,17 @@ export async function buildIntrospection(args: {
       topK: cfg.retrieval.topK,
       injectionFloor: cfg.retrieval.injectionFloor,
       similarityThreshold: cfg.retrieval.similarityThreshold,
-      maxTokens: cfg.retrieval.maxTokens,
+      maxTokens: cfg.retrieval.maxTokens
     },
     rerankWeights: {
       typeBoosts: TYPE_BOOSTS,
-      sourceWeights: SOURCE_WEIGHTS,
+      sourceWeights: SOURCE_WEIGHTS
     },
     calibration: {
       evaluateUsage: cal.evaluateUsage,
       sampleCount: cal.sampleCount,
-      targetSamples: cal.targetSamples,
-    },
+      targetSamples: cal.targetSamples
+    }
   };
 }
 

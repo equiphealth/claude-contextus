@@ -30,7 +30,7 @@ function tConfig(): TransformersConfig {
     localModelPath: t.localModelPath ? expandHome(t.localModelPath) : '',
     cacheDir: t.cacheDir ? expandHome(t.cacheDir) : '',
     remoteHost: t.remoteHost,
-    allowRemoteModels: t.allowRemoteModels,
+    allowRemoteModels: t.allowRemoteModels
   };
 }
 
@@ -104,7 +104,7 @@ export function modelUnavailableError(modelId: string): Error {
       `  3. Use an internal HF mirror:`,
       `       set embedding.transformers.remoteHost to your Artifactory/Nexus URL`,
       `  4. On a TLS-intercepting proxy, also export the corporate root:`,
-      `       NODE_EXTRA_CA_CERTS=/path/to/corp-ca.pem`,
+      `       NODE_EXTRA_CA_CERTS=/path/to/corp-ca.pem`
     ].join('\n')
   );
 }

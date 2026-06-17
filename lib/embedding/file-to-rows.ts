@@ -48,7 +48,7 @@ export function planChunks(ctx: LoadedContext): PendingChunk[] {
     const head = [ctx.name, ctx.description].filter(Boolean).join('\n\n');
     if (!head.trim()) return [];
     return [
-      { id: `${ctx.id}#0`, embedText: head, document: ctx.content, chunkIndex: 0, heading: '' },
+      { id: `${ctx.id}#0`, embedText: head, document: ctx.content, chunkIndex: 0, heading: '' }
     ];
   }
   return chunks.map((c) => {
@@ -59,7 +59,7 @@ export function planChunks(ctx: LoadedContext): PendingChunk[] {
       embedText,
       document: c.text,
       chunkIndex: c.index,
-      heading: c.heading,
+      heading: c.heading
     };
   });
 }
@@ -86,6 +86,6 @@ export function buildRows(
     hit_count: 0,
     last_hit: '',
     updated_at: now,
-    content_hash: hash,
+    content_hash: hash
   }));
 }

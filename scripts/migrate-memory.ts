@@ -34,11 +34,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
 import matter from 'gray-matter';
+import { stripJsonComments } from '../lib/config.js';
 import {
   planMigration,
   renderContextIndex,
   type MemoryFile,
-  type MigrationPlanItem,
+  type MigrationPlanItem
 } from '../lib/capture/memory-migrate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,9 +59,12 @@ function resolveProjectRoot(argv: string[]): string {
 const PROJECT_ROOT = resolveProjectRoot(args);
 const MEMORY_DIR = path.join(PROJECT_ROOT, '.claude', 'memory');
 const CONTEXT_DIR = path.join(PROJECT_ROOT, '.claude', 'context');
-// plugin.json's source config is global (resolved against cwd at embed time), so
-// the repoint always targets the contextus repo's plugin.json, not the project's.
-const PLUGIN_JSON = path.join(REPO_ROOT, 'plugin.json');
+// plugin config source is global (resolved against cwd at embed time), so
+// the repoint always targets the contextus repo's plugin config, not the project's.
+const PLUGIN_JSONC_PATH = path.join(REPO_ROOT, 'plugin.jsonc');
+const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC_PATH)
+  ? PLUGIN_JSONC_PATH
+  : path.join(REPO_ROOT, 'plugin.json');
 
 /** Load every memory file (excluding the MEMORY.md index) as MemoryFile inputs. */
 async function loadMemoryFiles(): Promise<MemoryFile[]> {
@@ -76,7 +80,7 @@ async function loadMemoryFiles(): Promise<MemoryFile[]> {
     return {
       filename: path.basename(abs),
       data: data as Record<string, unknown>,
-      body: content,
+      body: content
     };
   });
 }
@@ -88,9 +92,9 @@ function printItem(item: MigrationPlanItem, status: string): void {
   for (const note of item.notes) console.log(`        · ${note}`);
 }
 
-/** Repoint plugin.json memory sources at `.claude/context` (idempotent). */
+/** Repoint plugin config memory sources at `.claude/context` (idempotent). */
 function repointPluginJson(): boolean {
-  const cfg = JSON.parse(fs.readFileSync(PLUGIN_JSON, 'utf8'));
+  const cfg = JSON.parse(stripJsonComments(fs.readFileSync(PLUGIN_JSON, 'utf8')));
   let changed = false;
   const proj = cfg?.config?.sources?.projectMemory;
   if (proj && proj.path !== '.claude/context') {

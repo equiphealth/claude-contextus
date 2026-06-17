@@ -33,7 +33,7 @@ const c = {
   red: '\x1b[31m',
   cyan: '\x1b[36m',
   magenta: '\x1b[35m',
-  bold: '\x1b[1m',
+  bold: '\x1b[1m'
 };
 
 // --- Args ---
@@ -150,6 +150,12 @@ function formatDaemonLine(line: string, opts: WatchOpts): string | null {
   } else if (message.startsWith('No retrieval')) {
     color = c.dim;
     icon = '○';
+  } else if (message.startsWith('Expansion fired')) {
+    color = c.cyan;
+    icon = '⚡';
+  } else if (message.startsWith('Expansion skipped')) {
+    color = c.dim;
+    icon = '⊘';
   } else if (message.startsWith('Calibration')) {
     color = c.magenta;
     icon = '◆';

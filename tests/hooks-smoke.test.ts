@@ -38,8 +38,8 @@ function runHook(file: string, payload: unknown, extraEnv?: Record<string, strin
       CONTEXTUS_VERBOSITY: 'silent',
       CONTEXTUS_WARM_ATTEMPTS: '1',
       CONTEXTUS_WARM_INTERVAL_MS: '50',
-      ...extraEnv,
-    },
+      ...extraEnv
+    }
   });
   let parsed: Record<string, unknown> | null = null;
   try {
@@ -74,7 +74,7 @@ test('awareness-hook.js: loads, exits 0, emits valid JSON', () => {
 test('watch-contexts.js: a non-context edit → clean continue', () => {
   const r = runHook('watch-contexts.js', {
     tool_input: { file_path: '/tmp/somewhere/else.ts' },
-    cwd: process.cwd(),
+    cwd: process.cwd()
   });
   assert.equal(r.status, 0, `stderr: ${r.stderr}`);
   assert.equal(r.parsed!.continue, true);
@@ -85,7 +85,7 @@ test('stop-evaluation.js: no active campaign → loads, exits 0 (the ESM-regress
   // Executing the FILE (not importing its functions) is the whole point.
   const r = runHook('stop-evaluation.js', {
     transcript_path: '/nonexistent/transcript.jsonl',
-    cwd: process.cwd(),
+    cwd: process.cwd()
   });
   assert.equal(r.status, 0, `stop hook crashed on load; stderr: ${r.stderr}`);
   // It may emit {} or {continue:true}; either is a clean non-blocking result.
@@ -93,7 +93,11 @@ test('stop-evaluation.js: no active campaign → loads, exits 0 (the ESM-regress
 });
 
 test('session-start-hook.js: silent verbosity → loads, exits 0, continues', () => {
-  const r = runHook('session-start-hook.js', { cwd: process.cwd() }, { CONTEXTUS_TEST_MODE: '1', CONTEXTUS_VERBOSITY: 'silent' });
+  const r = runHook(
+    'session-start-hook.js',
+    { cwd: process.cwd() },
+    { CONTEXTUS_TEST_MODE: '1', CONTEXTUS_VERBOSITY: 'silent' }
+  );
   assert.equal(r.status, 0, `stderr: ${r.stderr}`);
   assert.ok(r.parsed, `no JSON on stdout: ${r.stdout}`);
   assert.equal(r.parsed!.continue, true);

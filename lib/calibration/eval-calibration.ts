@@ -19,7 +19,7 @@ export const RATING_WEIGHTS = {
   critical: 1.0,
   helpful: 0.7,
   mentioned: 0.3,
-  unused: 0.0,
+  unused: 0.0
 } as const;
 
 export type Rating = keyof typeof RATING_WEIGHTS;

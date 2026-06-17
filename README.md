@@ -7,6 +7,18 @@
   Stop searching for patterns — let them find you.
 </p>
 
+<p align="center">
+  <a href="https://github.com/anthonypdawson/claude-contextus/releases">
+    <img src="https://img.shields.io/github/v/release/anthonypdawson/claude-contextus" alt="Latest Release">
+  </a>
+  <a href="https://github.com/anthonypdawson/claude-contextus/actions/workflows/test.yml">
+    <img src="https://github.com/anthonypdawson/claude-contextus/actions/workflows/test.yml/badge.svg" alt="Test">
+  </a>
+  <a href="https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml">
+    <img src="https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml/badge.svg" alt="Release">
+  </a>
+</p>
+
 ## Overview
 
 **claude-contextus** makes your knowledge base work for you instead of the other way around. Store patterns, decisions, and documentation in markdown — the plugin **automatically** surfaces relevant context on every prompt AND captures new patterns as you discover them. No manual queries, no "remember to search," no "did I write that down?" — just proactive retrieval and capture.
@@ -33,6 +45,7 @@ Think of it as a context system that reads your mind — captures what you learn
 ### 🧠 Smart Retrieval
 
 - **Semantic search**: Finds by meaning, not keywords ("How do I debug?" → matches Logger patterns)
+- **Multi-vector query expansion**: When initial search scores poorly, generates alternate phrasings via a fast LLM and searches with multiple vectors — dramatically improves synonym/paraphrase recall
 - **Multi-source**: Searches project context patterns, project docs, user context patterns, and user docs simultaneously
 - **Configurable relevance**: Tune similarity threshold and top-k per your needs
 

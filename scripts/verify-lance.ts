@@ -20,7 +20,7 @@ import {
   countRows,
   readTableMeta,
   resetConnection,
-  type ContextRow,
+  type ContextRow
 } from '../lib/storage/lance-client.js';
 
 // Route the DB to a throwaway temp dir for this verification run.
@@ -55,7 +55,7 @@ async function main() {
     hit_count: 0,
     last_hit: '',
     updated_at: '2026-06-14T00:00:00.000Z',
-    content_hash: 'deadbeef',
+    content_hash: 'deadbeef'
   };
 
   console.log('1. connect + createTable + single record');
@@ -88,8 +88,8 @@ async function main() {
         id: 'design/design-bar.md',
         vector: vec(99),
         filename: 'design/design-bar.md',
-        type: 'design',
-      }, // new id
+        type: 'design'
+      } // new id
     ],
     PROJECT
   );

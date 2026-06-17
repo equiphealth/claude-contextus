@@ -11,7 +11,7 @@ import {
   hasStanza,
   renderStanza,
   STANZA_START,
-  STANZA_END,
+  STANZA_END
 } from '../lib/capture/claude-md-stanza.js';
 
 function countOccurrences(s: string, sub: string): number {

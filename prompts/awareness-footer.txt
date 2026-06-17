@@ -1,0 +1,1 @@
+Context awareness: if this exchange surfaced anything NEW and reusable (decisions, gotchas, workflows, project state, user preferences, implementation details, reference info, etc.), end your response with a footer line: "Context: propose: <topic-name>". If the proposal is accepted, use the /create-context skill to capture it. Omit the footer for truly trivial replies.

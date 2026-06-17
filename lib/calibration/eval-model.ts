@@ -9,18 +9,20 @@
  * they used this?" rather than open-ended semantic judgement.
  */
 
-/** Which model judges calibration usage. Mirrors the embedding provider split. */
+/** Which model judges calibration usage. Mirrors the provider registry. */
 export interface EvalModelConfig {
-  provider: 'anthropic' | 'ollama';
+  provider: 'anthropic' | 'ollama' | 'bedrock';
   /** model id/tag; sensible per-provider default applied if omitted */
   model?: string;
-  /** ollama endpoint (ignored for anthropic) */
+  /** ollama endpoint (resolved from providers.ollama.endpoint if omitted) */
   endpoint?: string;
+  /** bedrock region (resolved from providers.bedrock.region if omitted) */
+  region?: string;
 }
 
 export const DEFAULT_EVAL_MODEL: EvalModelConfig = {
-  provider: 'anthropic',
-  model: 'claude-haiku-4-5-20251001',
+  provider: 'bedrock',
+  model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 };
 
 /** Injected so tests run the worker end-to-end without a network call. */
@@ -35,14 +37,14 @@ async function callAnthropic(prompt: string, cfg: EvalModelConfig): Promise<stri
     headers: {
       'content-type': 'application/json',
       'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
       model: cfg.model ?? DEFAULT_EVAL_MODEL.model,
       max_tokens: 256,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: prompt }]
     }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(30_000)
   });
   if (!res.ok) {
     throw new Error(`anthropic eval failed: ${res.status} ${await res.text().catch(() => '')}`);
@@ -58,11 +60,34 @@ async function callOllama(prompt: string, cfg: EvalModelConfig): Promise<string>
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model: cfg.model ?? 'llama3.1:8b', prompt, stream: false }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(30_000)
   });
   if (!res.ok) throw new Error(`ollama eval failed: ${res.status}`);
   const data = (await res.json()) as { response?: string };
   return data.response ?? '';
+}
+
+/** AWS Bedrock InvokeModel via SDK (uses default credential chain). */
+async function callBedrock(prompt: string, cfg: EvalModelConfig): Promise<string> {
+  const { BedrockRuntimeClient, InvokeModelCommand } =
+    await import('@aws-sdk/client-bedrock-runtime');
+  const client = new BedrockRuntimeClient({ region: cfg.region ?? 'us-east-1' });
+  const body = JSON.stringify({
+    anthropic_version: 'bedrock-2023-05-31',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: prompt }]
+  });
+  const command = new InvokeModelCommand({
+    modelId: cfg.model ?? DEFAULT_EVAL_MODEL.model,
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: new TextEncoder().encode(body)
+  });
+  const response = await client.send(command, { requestTimeout: 30_000 });
+  const result = JSON.parse(new TextDecoder().decode(response.body)) as {
+    content?: Array<{ text?: string }>;
+  };
+  return result.content?.[0]?.text ?? '';
 }
 
 /** Dispatch to the configured provider. This is what the worker mocks in tests. */
@@ -72,6 +97,8 @@ export const callEvalModel: EvalCaller = (prompt, cfg) => {
       return callAnthropic(prompt, cfg);
     case 'ollama':
       return callOllama(prompt, cfg);
+    case 'bedrock':
+      return callBedrock(prompt, cfg);
     default:
       return Promise.reject(
         new Error(`unknown eval provider: ${(cfg as EvalModelConfig).provider}`)
