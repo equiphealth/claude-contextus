@@ -43,15 +43,15 @@ test('formatInjection: includes the contextus attribution header', () => {
   assert.match(r.block, /\[contextus —/);
 });
 
-test('formatInjection: renders similarity to 2dp and hit count when > 0', () => {
+test('formatInjection: renders filename and type via default template', () => {
   const r = formatInjection([chunk('a', 'body', 0.4783, 3)], 3000);
-  assert.match(r.block, /similarity: 0\.48/);
-  assert.match(r.block, /used 3×/);
+  assert.match(r.block, /\*\*a\.md\*\*/);
+  assert.match(r.block, /_reference_/);
 });
 
-test('formatInjection: omits the hits suffix when hit_count is 0', () => {
-  const r = formatInjection([chunk('a', 'body', 0.5, 0)], 3000);
-  assert.doesNotMatch(r.block, /used/);
+test('formatInjection: includes body content', () => {
+  const r = formatInjection([chunk('a', 'body content here', 0.5, 0)], 3000);
+  assert.match(r.block, /body content here/);
 });
 
 test('formatInjection: always admits the top chunk even if over budget', () => {

@@ -15,6 +15,7 @@
  */
 
 import type { RankedResult } from './reranker.js';
+import { loadTemplate, renderTemplate, type PatternVars, type TemplateContext } from './template.js';
 
 /**
  * Bracketed header — kept terse (it's paid on every injection). Two jobs in five
@@ -84,8 +85,14 @@ export interface FormatResult {
  * `maxTokens`. The header is always counted; at least the top chunk is included
  * even if it alone exceeds budget (better a truncating-but-present top hit than
  * silent nothing — the floor already decided it's relevant).
+ *
+ * When a template file exists (.claude/contextus-template.md or
+ * ~/.contextus/contextus-template.md), renders through it instead of the
+ * hardcoded format. The token budget still applies — we admit chunks greedily
+ * using the legacy renderChunk estimate, then render all admitted chunks
+ * through the template.
  */
-export function formatInjection(kept: RankedResult[], maxTokens: number): FormatResult {
+export function formatInjection(kept: RankedResult[], maxTokens: number, cwd?: string): FormatResult {
   if (kept.length === 0) {
     return { block: '', included: [], budgetDropped: [], tokens: 0 };
   }
@@ -106,7 +113,24 @@ export function formatInjection(kept: RankedResult[], maxTokens: number): Format
     used += cost;
   }
 
-  const body = included.map(renderChunk).join('\n\n');
-  const block = `${HEADER}\n\n${body}`;
+  // Render through user template if one exists, otherwise use hardcoded format.
+  const template = loadTemplate(cwd);
+  const block = renderWithTemplate(template, included);
   return { block, included, budgetDropped, tokens: estimateTokens(block) };
+}
+
+/** Render included chunks through the template system. */
+function renderWithTemplate(template: string, included: RankedResult[]): string {
+  const patterns: PatternVars[] = included.map((r) => ({
+    filename: r.filename || r.id,
+    heading: r.heading || '',
+    body: r.document.trim(),
+    similarity: r.similarity.toFixed(2),
+    hits: r.hit_count,
+    type: r.type || '',
+    source: r.source || '',
+  }));
+
+  const ctx: TemplateContext = { count: included.length, patterns };
+  return renderTemplate(template, ctx);
 }
