@@ -121,15 +121,33 @@ async function expandViaAnthropic(query: string, cfg: ExpansionConfig): Promise<
  * Generate query variants for multi-vector search. Returns empty array on any
  * failure (network, timeout, bad model output) — expansion is best-effort,
  * never blocks retrieval.
+ *
+ * Fallback: if provider=ollama fails FAST (connection refused, DNS, etc.) and
+ * there's remaining time budget, falls back to anthropic. Slow failures (timeout
+ * exhausted) do NOT fall back — don't pile latency on top of latency.
  */
 export async function expandQuery(query: string, cfg: ExpansionConfig): Promise<ExpandedQueries> {
+  const started = Date.now();
   try {
     if (cfg.provider === 'anthropic') {
       return await expandViaAnthropic(query, cfg);
     }
     return await expandViaOllama(query, cfg);
   } catch {
-    return { variants: [], latencyMs: 0, provider: cfg.provider };
+    // Fallback: ollama failed fast → try anthropic with remaining budget
+    if (cfg.provider === 'ollama' && process.env.ANTHROPIC_API_KEY) {
+      const elapsed = Date.now() - started;
+      const remaining = cfg.timeoutMs - elapsed;
+      if (remaining > 500) {
+        try {
+          const fallbackCfg = { ...cfg, provider: 'anthropic' as const, timeoutMs: remaining };
+          return await expandViaAnthropic(query, fallbackCfg);
+        } catch {
+          // Both failed — degrade gracefully
+        }
+      }
+    }
+    return { variants: [], latencyMs: Date.now() - started, provider: cfg.provider };
   }
 }
 

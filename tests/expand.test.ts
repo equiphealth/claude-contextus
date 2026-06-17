@@ -1,4 +1,4 @@
-import { test, mock, describe } from 'node:test';
+import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   shouldExpand,
@@ -148,7 +148,7 @@ test('expandQuery: parses ollama response correctly', async () => {
   };
 
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = mock.fn(async () => ({
+  globalThis.fetch = (async () => ({
     ok: true,
     json: async () => mockResponse,
   })) as unknown as typeof fetch;
@@ -172,7 +172,7 @@ test('expandQuery: parses anthropic response correctly', async () => {
   const originalFetch = globalThis.fetch;
   const origKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = 'test-key';
-  globalThis.fetch = mock.fn(async () => ({
+  globalThis.fetch = (async () => ({
     ok: true,
     json: async () => mockResponse,
   })) as unknown as typeof fetch;
@@ -191,7 +191,7 @@ test('expandQuery: parses anthropic response correctly', async () => {
 
 test('expandQuery: handles non-ok HTTP response gracefully', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = mock.fn(async () => ({
+  globalThis.fetch = (async () => ({
     ok: false,
     status: 500,
   })) as unknown as typeof fetch;
@@ -207,9 +207,9 @@ test('expandQuery: handles non-ok HTTP response gracefully', async () => {
 
 test('expandQuery: handles garbage LLM output gracefully', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = mock.fn(async () => ({
+  globalThis.fetch = (async () => ({
     ok: true,
-    json: async () => ({ response: 'a\nb\nc\nd\ne' }), // all too short
+    json: async () => ({ response: 'a\nb\nc\nd\ne' }),
   })) as unknown as typeof fetch;
 
   try {
@@ -218,6 +218,60 @@ test('expandQuery: handles garbage LLM output gracefully', async () => {
     assert.deepEqual(result.variants, []);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+// --- expandQuery fallback (ollama down → anthropic) ---
+
+test('expandQuery: falls back to anthropic when ollama fails fast', async () => {
+  const originalFetch = globalThis.fetch;
+  const origKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'test-key';
+  let callCount = 0;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    callCount++;
+    const urlStr = typeof url === 'string' ? url : url.toString();
+    if (urlStr.includes('localhost')) {
+      throw new Error('Connection refused');
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        content: [{ text: 'What vector encoder is the default\nWhich embedding model ships by default\nDefault vector model configuration' }],
+      }),
+    };
+  }) as unknown as typeof fetch;
+
+  try {
+    // timeoutMs must be > 500ms to allow fallback (remaining > 500 check)
+    const cfg = { ...baseCfg, ollamaEndpoint: 'http://localhost:11434', timeoutMs: 5000 };
+    const result = await expandQuery('What is the default vector model?', cfg);
+    assert.equal(callCount, 2, `expected 2 fetch calls, got ${callCount}`);
+    assert.equal(result.provider, 'anthropic/claude-haiku-4-5-20251001');
+    assert.equal(result.variants.length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (origKey) process.env.ANTHROPIC_API_KEY = origKey;
+    else delete process.env.ANTHROPIC_API_KEY;
+  }
+});
+
+test('expandQuery: does not fall back when no ANTHROPIC_API_KEY', async () => {
+  const originalFetch = globalThis.fetch;
+  const origKey = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  globalThis.fetch = (async () => {
+    throw new Error('Connection refused');
+  }) as unknown as typeof fetch;
+
+  try {
+    const cfg = { ...baseCfg, ollamaEndpoint: 'http://localhost:11434' };
+    const result = await expandQuery('test query here', cfg);
+    assert.deepEqual(result.variants, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (origKey) process.env.ANTHROPIC_API_KEY = origKey;
+    else delete process.env.ANTHROPIC_API_KEY;
   }
 });
 
