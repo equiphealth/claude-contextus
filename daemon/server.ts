@@ -196,7 +196,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // Check if expansion should fire (adaptive: best initial score below threshold,
   // always: every query, off: never). When it fires, generate variant phrasings,
   // embed each in parallel, search each, and union with the original results.
-  const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => 1 - r.distance)) : 0;
+  const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
   if (shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)) {
     const expanded = await expandQuery(prompt, cfg.expansion);
     if (expanded.variants.length > 0) {
