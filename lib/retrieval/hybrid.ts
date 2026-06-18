@@ -79,16 +79,19 @@ export function fuseRRF(
 
   if (top.length === 0) return [];
 
-  // Normalize RRF scores to [0, 1] for downstream pipeline compatibility.
-  // The fused similarity is what the floor gates on.
-  const maxRRF = top[0].rrfScore;
-
+  // IMPORTANT: preserve the SEMANTIC similarity for floor decisions.
+  // RRF determines ORDER, but the injection floor must gate on actual vector
+  // relevance — otherwise max-normalization makes the floor always pass (the
+  // top result always gets 1.0 regardless of actual relevance).
   return top.map((s) => {
     const data = resultData.get(s.id)!;
+    // Use the original semantic similarity if available, otherwise fall back to
+    // keyword-only score (which is already normalized [0,1] from keyword.ts).
+    const semanticSim = s.sRank !== null ? data.similarity : data.similarity * 0.5;
     return {
       ...data,
-      similarity: s.rrfScore / maxRRF,
-      distance: 1 - s.rrfScore / maxRRF,
+      similarity: semanticSim,
+      distance: 1 - semanticSim,
       rrfScore: s.rrfScore,
       semanticRank: s.sRank,
       keywordRank: s.kRank

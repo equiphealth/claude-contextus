@@ -70,9 +70,9 @@ export interface ContextRow {
 
 /** A search result: a row plus LanceDB's `_distance` and derived similarity. */
 export interface SearchResult extends ContextRow {
-  /** L2/cosine distance from query (lower = closer) */
+  /** L2² distance from query (lower = closer). LanceDB default metric is L2. */
   distance: number;
-  /** 1 - distance (cosine space); higher = more similar */
+  /** Cosine similarity derived from L2² on unit vectors: 1 - L2²/2 */
   similarity: number;
 }
 
@@ -190,7 +190,7 @@ export async function search(
   return rows.map((r) => ({
     ...r,
     distance: r._distance,
-    similarity: 1 - r._distance
+    similarity: 1 - r._distance / 2
   }));
 }
 

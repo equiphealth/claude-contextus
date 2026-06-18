@@ -92,11 +92,12 @@ test('fuseRRF: respects topK limit', () => {
   assert.equal(results.length, 5);
 });
 
-test('fuseRRF: similarity is normalized to [0, 1]', () => {
+test('fuseRRF: preserves semantic similarity for floor gating', () => {
   const semantic = [makeSearchResult('a', 0.9), makeSearchResult('b', 0.7)];
   const keyword = [makeKeywordResult('c', 5.0, 1.0)];
   const results = fuseRRF(semantic, keyword, 10);
-  assert.equal(results[0].similarity, 1);
+  // Top result 'a' preserves its semantic similarity (not normalized to 1.0)
+  assert.equal(results[0].similarity, 0.9);
   for (const r of results) {
     assert.ok(r.similarity >= 0 && r.similarity <= 1);
   }

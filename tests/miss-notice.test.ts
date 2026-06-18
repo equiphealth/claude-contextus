@@ -8,21 +8,21 @@ import {
 
 // --- isNearMiss ---
 
-test('isNearMiss: true when score > 0.25 and dropped > 0', () => {
-  assert.equal(isNearMiss(0.35, 2), true);
+test('isNearMiss: true when score > 0.625 and dropped > 0', () => {
+  assert.equal(isNearMiss(0.68, 2), true);
 });
 
-test('isNearMiss: false when score <= 0.25 (noise)', () => {
-  assert.equal(isNearMiss(0.25, 3), false);
-  assert.equal(isNearMiss(0.1, 1), false);
+test('isNearMiss: false when score <= 0.625 (noise)', () => {
+  assert.equal(isNearMiss(0.625, 3), false);
+  assert.equal(isNearMiss(0.4, 1), false);
 });
 
 test('isNearMiss: false when no dropped candidates', () => {
-  assert.equal(isNearMiss(0.4, 0), false);
+  assert.equal(isNearMiss(0.7, 0), false);
 });
 
-test('isNearMiss: boundary at 0.26 is a near miss', () => {
-  assert.equal(isNearMiss(0.26, 1), true);
+test('isNearMiss: boundary at 0.626 is a near miss', () => {
+  assert.equal(isNearMiss(0.626, 1), true);
 });
 
 // --- extractNearTopics ---
