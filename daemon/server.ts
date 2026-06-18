@@ -38,6 +38,7 @@ import {
   estimateTokens
 } from '../lib/retrieval/inject-format.js';
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
+import { keywordSearch, loadCorpusForKeyword } from '../lib/retrieval/keyword.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
@@ -215,27 +216,49 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     return sendJson(res, 200, { continue: true });
   }
 
-  let vec: number[];
+  // --- Embedding + vector search (with keyword fallback + auto-recovery) ---
+  // If embedding genuinely fails (provider down, not slow), fall back to keyword
+  // search so the user gets SOME context rather than complete silence. Also trigger
+  // auto-recovery so the daemon re-warms when the provider comes back.
+  let raw: Awaited<ReturnType<typeof search>>;
+  let usedKeywordFallback = false;
   try {
-    vec = await embedQuery(prompt);
-  } catch (err) {
+    const vec = await embedQuery(prompt);
+    // Over-fetch: files are now chunked, so a topK of chunks may all belong to a few
+    // files. Pull a wider net (topK × CHUNK_FANOUT) so enough DISTINCT files survive
+    // the collapse-by-file step below to fill topK.
+    const CHUNK_FANOUT = 4;
+    const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
+    raw = await search(vec, fetchLimit, undefined, project);
+  } catch (embedErr) {
     // Provider dropped mid-session — mark down and trigger re-warmup so the
     // daemon recovers automatically once the provider comes back.
     modelLoaded = false;
-    warmupError = err instanceof Error ? err.message : String(err);
-    logError('warn', 'embedder', 'Embed failed mid-session — triggering re-warmup', {
+    warmupError = embedErr instanceof Error ? embedErr.message : String(embedErr);
+    logError('warn', 'embedder', 'Embedding failed, attempting keyword fallback + triggering re-warmup', {
+      project: projectLabel,
       message: warmupError
     });
     if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
     attemptWarmup();
-    return sendJson(res, 200, { continue: true });
+
+    // Try keyword fallback before giving up entirely
+    const corpus = await loadCorpusForKeyword(project);
+    if (corpus.length === 0) {
+      return sendJson(res, 200, { continue: true });
+    }
+    const keywordResults = keywordSearch(corpus, prompt, cfg.retrieval.topK);
+    if (keywordResults.length === 0) {
+      logInfo('Keyword fallback: no matches', { project: projectLabel });
+      return sendJson(res, 200, { continue: true });
+    }
+    raw = keywordResults;
+    usedKeywordFallback = true;
+    logInfo('Keyword fallback fired', {
+      project: projectLabel,
+      results: keywordResults.length
+    });
   }
-  // Over-fetch: files are now chunked, so a topK of chunks may all belong to a few
-  // files. Pull a wider net (topK × CHUNK_FANOUT) so enough DISTINCT files survive
-  // the collapse-by-file step below to fill topK.
-  const CHUNK_FANOUT = 4;
-  const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
-  let raw = await search(vec, fetchLimit, undefined, project);
 
   // --- Multi-vector query expansion ---
   // Check if expansion should fire (adaptive: best initial score below threshold,
@@ -243,7 +266,10 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // embed each in parallel, search each, and union with the original results.
   const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
   stats.queries++;
-  if (shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)) {
+  if (
+    !usedKeywordFallback &&
+    shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)
+  ) {
     const expanded = await expandQuery(prompt, cfg.expansion, cfg.providers);
     if (expanded.variants.length > 0) {
       stats.expansionFired++;
@@ -383,12 +409,15 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // hallucination, observed 2026-06-15). Gated by retrieval.provenanceFooter
   // (per-project): some users want only the answer, not the retrieval receipt. The
   // `propose:` capture footer is separate + always-on (it's how patterns get saved).
+  const fallbackNotice = usedKeywordFallback
+    ? '\n\n[contextus notice] Results above are from keyword fallback (embedding provider was unreachable). Relevance may be lower than normal semantic search.'
+    : '';
   const footer = cfg.retrieval.provenanceFooter ? renderFooterInstruction(included) : '';
   sendJson(res, 200, {
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: block + footer
+      additionalContext: block + fallbackNotice + footer
     }
   });
 }
