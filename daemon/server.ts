@@ -249,10 +249,15 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     // daemon recovers automatically once the provider comes back.
     modelLoaded = false;
     warmupError = embedErr instanceof Error ? embedErr.message : String(embedErr);
-    logError('warn', 'embedder', 'Embedding failed, attempting keyword fallback + triggering re-warmup', {
-      project: projectLabel,
-      message: warmupError
-    });
+    logError(
+      'warn',
+      'embedder',
+      'Embedding failed, attempting keyword fallback + triggering re-warmup',
+      {
+        project: projectLabel,
+        message: warmupError
+      }
+    );
     if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
     attemptWarmup();
 
