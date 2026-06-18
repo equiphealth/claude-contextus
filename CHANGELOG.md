@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0] - 2026-06-17
+
+### Added
+- **Hybrid search (RRF)**: Always-on keyword + semantic fusion via Reciprocal Rank Fusion. Nails exact-symbol queries ("getLogger" scores 0.408 semantically — misses the floor) by running BM25 keyword search in parallel with vector search and merging ranked lists. Adds < 20ms overhead. Configurable: `retrieval.hybrid: 'always' | 'off'`.
+- **Keyword fallback**: BM25-inspired text scan fires when the embedding provider is unreachable (not slow). Gives SOME retrieval instead of complete silence when Ollama is down. Results tagged with a fallback notice.
+- **Token cost reporting**: `/context-status --cost` shows overhead % (tokens injected ÷ prompt tokens) paired with calibration quality signal for org defensibility. New `prompt_tokens` field logged in usage.jsonl.
+- **Cost report CLI**: `scripts/cost-report.ts` — parses usage logs, computes cost/value framing, supports `--project`, `--days`, `--json` flags.
+
+### Changed
+- `retrieval` config gains `hybrid` field (default: `'always'`)
+- usage.jsonl retrieval events now include `prompt_tokens` field
+
 ## [0.3.0] - 2026-06-17
 
 ### Added

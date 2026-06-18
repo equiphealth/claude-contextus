@@ -100,6 +100,9 @@ export interface StorageConfig {
   path: string;
 }
 
+/** Hybrid search mode: when to fuse keyword results with vector search. */
+export type HybridMode = 'always' | 'off';
+
 export interface RetrievalConfig {
   topK: number;
   /** UNVALIDATED ranking filter — see DESIGN.md "Validate during POC". A quality
@@ -129,6 +132,14 @@ export interface RetrievalConfig {
    * the config tiers, so one project can stay quiet without affecting others.
    */
   provenanceFooter: boolean;
+  /**
+   * Hybrid search mode — fuse keyword (BM25) results with semantic (vector) search
+   * via Reciprocal Rank Fusion (RRF).
+   *   always — run keyword + semantic in parallel, merge with RRF on every query
+   *   off    — pure semantic search (keyword only used as fallback when embedding down)
+   * Default: 'always'. Adds < 20ms overhead (keyword scan is CPU-bound, runs parallel).
+   */
+  hybrid: HybridMode;
 }
 
 /** Query expansion mode: when to generate additional query variants. */
@@ -251,7 +262,8 @@ const DEFAULTS: ContextusConfig = {
     injectionFloor: 0.35, // UNVALIDATED permissive gate — calibrate in Phase 5
     maxTokens: 3000,
     mergeStrategy: 'interleaved',
-    provenanceFooter: true // show "Context: used:" by default; opt-out per project
+    provenanceFooter: true, // show "Context: used:" by default; opt-out per project
+    hybrid: 'always' // fuse keyword + semantic via RRF on every query
   },
   expansion: {
     mode: 'adaptive',

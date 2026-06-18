@@ -39,7 +39,8 @@
     "injectionFloor": 0.45, // Raw similarity gate: 'inject anything at all?'
     "maxTokens": 3000, // Token budget for injected context (approximate)
     "mergeStrategy": "interleaved", // interleaved | prioritize-context | prioritize-docs
-    "provenanceFooter": true // Show 'Context: used: <file> (<score>)' footer
+    "provenanceFooter": true, // Show 'Context: used: <file> (<score>)' footer
+    "hybrid": "always" // always=fuse keyword+semantic via RRF | off=pure semantic
   },
 
   "expansion": {
