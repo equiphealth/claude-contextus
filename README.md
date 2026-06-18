@@ -35,33 +35,35 @@ Think of it as a context system that reads your mind — captures what you learn
 
 ## Features
 
+**See [docs/FEATURES.md](docs/FEATURES.md) for comprehensive coverage** — this is the highlight reel.
+
 ### 🎯 Proactive (Not Reactive)
 
-- **Zero-query context injection**: Relevant context patterns appear automatically on every prompt
-- **Calibrated pattern capture**: System proposes new patterns as you work, learns what's worth remembering
-- **Automatic quality tuning**: Tracks which patterns are actually useful vs. just retrieved
-- **Automatic rebuilds**: Embeddings stay fresh as your knowledge grows
+- **Zero-query injection** — Context appears automatically on every prompt, no manual searching
+- **Learns what's useful** — Tracks which patterns actually help vs. just retrieved
+- **Automatic rebuilds** — Embeddings stay fresh as your knowledge grows
+- **Pattern capture** — Proposes new patterns as you discover them
 
 ### 🧠 Smart Retrieval
 
-- **Hybrid search**: Fuses semantic (vector) and keyword (BM25) results via Reciprocal Rank Fusion — nails exact-symbol queries that pure embedding dilutes ("getLogger", "expandHome")
-- **Semantic search**: Finds by meaning, not keywords ("How do I debug?" → matches Logger patterns)
-- **Multi-vector query expansion**: When initial search scores poorly, generates alternate phrasings via a fast LLM and searches with multiple vectors — dramatically improves synonym/paraphrase recall
-- **Keyword fallback**: When the embedding provider is unreachable, falls back to BM25 text search so you still get context instead of silence
-- **Multi-source**: Searches project context patterns, project docs, user context patterns, and user docs simultaneously
-- **Configurable relevance**: Tune similarity threshold and top-k per your needs
+- **Hybrid search** — Fuses semantic + keyword (RRF), nails exact symbols ("getLogger") that pure embeddings miss
+- **Multi-vector expansion** — Generates alternate phrasings when search scores poorly, dramatically improves recall
+- **Keyword fallback** — When provider is down, falls back to BM25 so you still get context
+- **Multi-source** — Searches project + user patterns and docs simultaneously
 
-### 📝 Team-Friendly
+### 📊 Observability & Tuning
 
-- **Markdown-based**: Human-readable, easy to edit, git-trackable
-- **Per-user storage**: Embeddings stored in `~/.contextus/data/` (per-user, per-project)
-- **Merge-friendly**: No binary merge conflicts — embeddings are derived artifacts
+- **Token cost reporting** — Shows overhead % paired with usage rate (`/context-status --cost`)
+- **Calibration tools** — Tune injection floor from real usage data (`/context-calibrate`)
+- **Live activity stream** — Watch retrievals in real time (`/contextus-watch`)
+- **Self-documenting** — Introspect endpoint exposes config + corpus stats
 
 ### 🛠️ Integrated Workflow
 
-- **Management skills**: `/create-context`, `/create-doc`, `/configure`, `/audit-context`
-- **Auto-hooks**: Captures file changes, triggers rebuilds, injects context
-- **User + project scope**: Personal patterns persist across all projects
+- **26 skills** — Setup, create, audit, search, tag, calibrate, debug
+- **Auto-hooks** — File changes trigger rebuilds, prompts inject context
+- **JSONC config** — Hot-reload (no restart), comments allowed
+- **Team-friendly** — Markdown files, git-trackable, merge-friendly
 
 ## Requirements
 
