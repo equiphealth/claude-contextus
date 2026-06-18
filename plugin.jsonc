@@ -5,7 +5,7 @@
   // Two files on purpose: this is the tunable runtime config, that is the install descriptor.
   // Keep `version` in sync with the manifest.
   "name": "contextus",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
   "repository": "github:anthonypdawson/claude-contextus",
@@ -89,7 +89,10 @@
       // Calibrated to 0.45 via /context-calibrate --floor against 721-chunk corpus.
       "injectionFloor": 0.45,
       "maxTokens": 3000,
-      "mergeStrategy": "interleaved"
+      "mergeStrategy": "interleaved",
+      // Hybrid search: fuse keyword (BM25) + semantic (vector) via Reciprocal Rank Fusion.
+      // always=every query gets both, off=pure semantic (keyword only as fallback when embedding down).
+      "hybrid": "always"
     },
     "expansion": {
       // Multi-vector query expansion: generate alternate phrasings when the initial

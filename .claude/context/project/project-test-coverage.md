@@ -21,3 +21,5 @@ Skip:
 **Test style**: `node:test` + `node:assert/strict`. Mock `globalThis.fetch` for network tests. Use `describe()` for logical grouping. Keep tests fast (<5s total for the pure-logic suite).
 
 **How to apply**: When adding a new module, write tests for the public API surface and failure modes. If the user flags a gap, address it — don't gold-plate.
+
+**For feature PRs specifically**: Each PR that adds new library code (`lib/`) MUST include a corresponding test file (`tests/<module>.test.ts`). Test the *new* module's exports directly — don't rely on integration coverage through the daemon. Run `pnpm test` and verify the new tests pass before pushing. Target: 80% coverage of the new code, not just "tests exist."
