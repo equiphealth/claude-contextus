@@ -11,8 +11,9 @@
  * isolation is by the `project` request field → per-project LanceDB dir. Built
  * on Node's stdlib `http` — no framework dependency in the hot path.
  *
- * Endpoints:
+ * Endpoints (see docs/API.md for full reference):
  *   GET  /health          → { status, uptime, modelLoaded, lancedbConnected, embeddingModel }
+ *   GET  /novelty         → { project, recent: string[] } — recently-injected patterns
  *   GET  /introspect      → live config + corpus stats (Self-doc Layer 1)
  *   POST /query  {project, prompt}        → { continue, hookSpecificOutput?: { additionalContext } }
  *   POST /notify {project, file, cwd?}    → { ok, embedded, id? }
