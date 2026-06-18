@@ -39,7 +39,11 @@ import {
   estimateTokens
 } from '../lib/retrieval/inject-format.js';
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
-import { keywordSearch, loadCorpusForKeyword } from '../lib/retrieval/keyword.js';
+import {
+  keywordSearch,
+  loadCorpusForKeyword,
+  invalidateCorpusCache
+} from '../lib/retrieval/keyword.js';
 import { fuseRRF, hybridKeywordSearch } from '../lib/retrieval/hybrid.js';
 import {
   buildRetrievalMissNotice,
@@ -484,6 +488,7 @@ async function handleNotify(
   const contextDir = path.join(cwd, '.claude', 'context');
   const result = await embedSingleFile(absFile, contextDir, project);
   if (result.embedded) {
+    invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
   }
   sendJson(res, 200, { ok: true, ...result });
@@ -564,6 +569,7 @@ async function handleReconcile(
   runReconcile(contextDir, project)
     .then((r) => {
       if (r.embedded > 0 || r.removed > 0) {
+        invalidateCorpusCache(project);
         logInfo('Reconcile complete', {
           project: projectLabel,
           state: r.state,

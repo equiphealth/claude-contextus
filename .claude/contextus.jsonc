@@ -40,7 +40,7 @@
   "expansion": {
     // Multi-vector query expansion: generates alternate phrasings when initial search
     // scores poorly. Dramatically improves synonym/paraphrase recall.
-    "mode": "always", // adaptive (default) | always (every query) | off
+    "mode": "adaptive", // adaptive (default) | always (every query) | off
     "provider": "ollama", // ollama (local, fast) | bedrock (AWS) | anthropic (direct API)
     "model": "qwen2.5:3b", // Small/fast recommended for ollama
     "fallbackProvider": "bedrock",
