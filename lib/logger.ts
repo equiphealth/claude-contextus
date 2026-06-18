@@ -82,6 +82,8 @@ export interface RetrievalLog {
   retrieved: string[];
   similarityScores: number[];
   tokensInjected: number;
+  /** estimated token count of the user's prompt (for overhead % calculation) */
+  promptTokens: number;
   latencyMs: number;
   /** every chunk the floor dropped, with its score (v2 governance evidence) */
   floorDropped: DroppedChunkLog[];
@@ -96,6 +98,7 @@ export function logRetrieval(e: RetrievalLog): void {
     prompt_hash: e.promptHash,
     retrieved: e.retrieved,
     tokens_injected: e.tokensInjected,
+    prompt_tokens: e.promptTokens,
     latency_ms: e.latencyMs,
     similarity_scores: e.similarityScores,
     floor_dropped: e.floorDropped
@@ -117,6 +120,8 @@ export interface NoInjectLog {
   project: string;
   promptHash: string;
   bestScore: number;
+  /** estimated token count of the user's prompt */
+  promptTokens: number;
   latencyMs: number;
   /** below-floor chunks still logged as governance evidence */
   floorDropped: DroppedChunkLog[];
@@ -131,6 +136,7 @@ export function logNoInject(e: NoInjectLog): void {
     prompt_hash: e.promptHash,
     retrieved: [],
     tokens_injected: 0,
+    prompt_tokens: e.promptTokens,
     latency_ms: e.latencyMs,
     reason: 'below_floor',
     best_match_score: e.bestScore,
