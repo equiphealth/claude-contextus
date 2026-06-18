@@ -172,11 +172,63 @@ Quality (if calibrated) = mean `weighted_score` across `calibration_eval` events
 
 Count `.claude/context/` files + `docs/` by mtime for the Growth line.
 
+## Cost Mode
+
+```bash
+/context-status --cost [--project <name>] [--days <N>]
+```
+
+Outputs the honest org defensibility report — overhead % paired with value signal:
+
+```
+Token Cost Report (2026-05-18 → 2026-06-17)
+Project: automation
+
+Queries:
+  Total:          848
+  Injected:       620 (73.1%)
+  Skipped (floor): 228
+
+Token Overhead:
+  Prompt tokens (total):   1,247,000
+  Injected tokens (total): 89,400
+  Overhead:                7.2%
+  Avg injection size:      144 tokens
+  Avg prompt size:         1,470 tokens
+
+Value Signal:
+  Calibration evals:  45
+  Weighted score:     72%
+  Usage ratings:
+    used: 32
+    partially_used: 8
+    not_used: 5
+
+Bottom Line:
+  7.2% token overhead with strong (72% weighted usage score) value signal.
+```
+
+### Implementation
+
+Run the cost report script and display its output:
+```bash
+npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cost-report.ts" [--project <name>] [--days <N>]
+```
+
+The script reads `~/.contextus/logs/usage.jsonl` and computes:
+- **Overhead %** = total injected tokens ÷ total prompt tokens
+- **Value signal** = mean weighted_score from calibration_eval events
+- **Injection rate** = queries with ≥1 pattern ÷ total queries
+
+Pass `--json` for machine-readable output. If `prompt_tokens` data is missing
+(pre-upgrade events), the report notes it and shows what it can.
+
 ## Design Notes
 
 This is the **user-facing** dashboard. Non-technical, focuses on **value delivered**:
 - "How much is this helping me?" (tokens saved, usage rate)
 - "Is it growing?" (new patterns/docs)
 - "Is it working?" (recent activity)
+- "What does it cost?" (--cost: overhead % + value signal)
 
 Technical tuning metrics (zero-hit patterns, staleness, threshold calibration) live in `/context-calibrate`.

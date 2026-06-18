@@ -32,7 +32,11 @@ import { search, tableExists, readTableMeta, incrementHits } from '../lib/storag
 import { rerank } from '../lib/retrieval/reranker.js';
 import { dedupe, collapseByFile } from '../lib/retrieval/dedup.js';
 import { applyFloor } from '../lib/retrieval/floor.js';
-import { formatInjection, renderFooterInstruction } from '../lib/retrieval/inject-format.js';
+import {
+  formatInjection,
+  renderFooterInstruction,
+  estimateTokens
+} from '../lib/retrieval/inject-format.js';
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
@@ -301,6 +305,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       project: projectLabel,
       promptHash: hash,
       bestScore: Number(bestScore.toFixed(4)),
+      promptTokens: estimateTokens(prompt),
       latencyMs: Date.now() - started,
       floorDropped
     });
@@ -354,6 +359,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     retrieved: injectedNames,
     similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
     tokensInjected: tokens,
+    promptTokens: estimateTokens(prompt),
     latencyMs: Date.now() - started,
     floorDropped
   });
