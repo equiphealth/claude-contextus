@@ -40,7 +40,7 @@
     "claude-code"
   ],
   "author": "Anthony Dawson",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/anthonypdawson/claude-contextus.git"
