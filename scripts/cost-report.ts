@@ -24,7 +24,6 @@ interface RetrievalEvent {
   timestamp: string;
   project: string;
   tokens_injected: number;
-  prompt_tokens?: number;
   retrieved: string[];
   similarity_scores?: number[];
   reason?: string;
@@ -90,11 +89,9 @@ interface CostReport {
     injectionRate: number;
   };
   tokens: {
-    totalPromptTokens: number;
     totalInjectedTokens: number;
-    overheadPercent: number;
     avgInjectionSize: number;
-    avgPromptSize: number;
+    dailyRunRate: number;
   };
   quality: {
     hasCalibration: boolean;
@@ -103,7 +100,6 @@ interface CostReport {
     usageRatings: Record<string, number>;
   };
   costValue: {
-    overheadPercent: number;
     valueSignal: string;
     summary: string;
   };
@@ -111,24 +107,20 @@ interface CostReport {
 
 function computeReport(events: UsageEvent[], project: string, days: number): CostReport {
   const retrievals = events.filter((e): e is RetrievalEvent => e.type === 'retrieval');
-  const evals = events.filter((e): e is CalibrationEvent => e.type === 'calibration_eval');
+  // Only count calibration evals from projects that had real retrieval traffic —
+  // test-project evals (e.g. "demo") leak into the log and shouldn't pollute the value signal.
+  const realProjects = new Set(retrievals.map((e) => e.project));
+  const evals = events.filter(
+    (e): e is CalibrationEvent => e.type === 'calibration_eval' && realProjects.has(e.project)
+  );
 
   const injected = retrievals.filter((e) => e.retrieved.length > 0);
   const skipped = retrievals.filter((e) => e.retrieved.length === 0);
 
-  const totalPromptTokens = retrievals.reduce((sum, e) => sum + (e.prompt_tokens ?? 0), 0);
   const totalInjectedTokens = retrievals.reduce((sum, e) => sum + e.tokens_injected, 0);
-
-  const hasPromptData = retrievals.some((e) => e.prompt_tokens && e.prompt_tokens > 0);
-  const overheadPercent =
-    totalPromptTokens > 0
-      ? Number(((totalInjectedTokens / totalPromptTokens) * 100).toFixed(1))
-      : 0;
-
   const avgInjectionSize =
     injected.length > 0 ? Math.round(totalInjectedTokens / injected.length) : 0;
-  const avgPromptSize =
-    retrievals.length > 0 ? Math.round(totalPromptTokens / retrievals.length) : 0;
+  const dailyRunRate = days > 0 ? Math.round(totalInjectedTokens / days) : totalInjectedTokens;
 
   // Quality from calibration evals
   const hasCalibration = evals.length > 0;
@@ -144,7 +136,7 @@ function computeReport(events: UsageEvent[], project: string, days: number): Cos
     }
   }
 
-  // Cost ÷ value framing
+  // Value framing
   let valueSignal: string;
   if (!hasCalibration) {
     valueSignal = 'unknown (run /context-calibrate to measure)';
@@ -157,13 +149,10 @@ function computeReport(events: UsageEvent[], project: string, days: number): Cos
   }
 
   let summary: string;
-  if (!hasPromptData) {
-    summary =
-      'Prompt token data not yet available — overhead will appear after daemon restart with updated logging.';
-  } else if (!hasCalibration) {
-    summary = `${overheadPercent}% token overhead. Run /context-calibrate to quantify the value side.`;
+  if (!hasCalibration) {
+    summary = `${totalInjectedTokens.toLocaleString()} tokens injected (~${dailyRunRate.toLocaleString()}/day). Run /context-calibrate to quantify the value side.`;
   } else {
-    summary = `${overheadPercent}% token overhead with ${valueSignal} value signal.`;
+    summary = `${totalInjectedTokens.toLocaleString()} tokens injected (~${dailyRunRate.toLocaleString()}/day) with ${valueSignal} value signal.`;
   }
 
   const now = new Date();
@@ -184,11 +173,9 @@ function computeReport(events: UsageEvent[], project: string, days: number): Cos
         retrievals.length > 0 ? Number(((injected.length / retrievals.length) * 100).toFixed(1)) : 0
     },
     tokens: {
-      totalPromptTokens,
       totalInjectedTokens,
-      overheadPercent,
       avgInjectionSize,
-      avgPromptSize
+      dailyRunRate
     },
     quality: {
       hasCalibration,
@@ -197,7 +184,6 @@ function computeReport(events: UsageEvent[], project: string, days: number): Cos
       usageRatings
     },
     costValue: {
-      overheadPercent,
       valueSignal,
       summary
     }
@@ -211,26 +197,20 @@ function formatHuman(report: CostReport): string {
   lines.push('');
 
   lines.push('Queries:');
-  lines.push(`  Total:          ${report.queries.total}`);
-  lines.push(`  Injected:       ${report.queries.injected} (${report.queries.injectionRate}%)`);
+  lines.push(`  Total:           ${report.queries.total}`);
+  lines.push(`  Injected:        ${report.queries.injected} (${report.queries.injectionRate}%)`);
   lines.push(`  Skipped (floor): ${report.queries.skipped}`);
   lines.push('');
 
-  lines.push('Token Overhead:');
-  if (report.tokens.totalPromptTokens === 0) {
-    lines.push('  ⚠ No prompt_tokens data yet (requires daemon restart with updated logging)');
-  } else {
-    lines.push(`  Prompt tokens (total):   ${report.tokens.totalPromptTokens.toLocaleString()}`);
-    lines.push(`  Injected tokens (total): ${report.tokens.totalInjectedTokens.toLocaleString()}`);
-    lines.push(`  Overhead:                ${report.tokens.overheadPercent}%`);
-    lines.push(`  Avg injection size:      ${report.tokens.avgInjectionSize} tokens`);
-    lines.push(`  Avg prompt size:         ${report.tokens.avgPromptSize} tokens`);
-  }
+  lines.push('Injection Cost:');
+  lines.push(`  Total tokens:    ${report.tokens.totalInjectedTokens.toLocaleString()}`);
+  lines.push(`  Avg per query:   ${report.tokens.avgInjectionSize} tokens`);
+  lines.push(`  Daily run rate:  ~${report.tokens.dailyRunRate.toLocaleString()} tokens/day`);
   lines.push('');
 
   lines.push('Value Signal:');
   if (!report.quality.hasCalibration) {
-    lines.push('  ⚠ No calibration data — run /context-calibrate to measure retrieval quality');
+    lines.push('  No calibration data — run /context-calibrate to measure retrieval quality');
   } else {
     lines.push(`  Calibration evals:  ${report.quality.evalCount}`);
     lines.push(

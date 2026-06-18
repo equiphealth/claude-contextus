@@ -81,12 +81,12 @@ function makeCalibrationEval(
   };
 }
 
-test('cost-report: computes overhead from prompt_tokens and tokens_injected', () => {
+test('cost-report: computes absolute injection cost', () => {
   const tmpDir = setup();
   const dataDir = writeUsageLog(tmpDir, [
-    makeRetrieval({ prompt_tokens: 2000, tokens_injected: 200 }),
-    makeRetrieval({ prompt_tokens: 3000, tokens_injected: 300 }),
-    makeNoInject({ prompt_tokens: 1500 })
+    makeRetrieval({ tokens_injected: 200 }),
+    makeRetrieval({ tokens_injected: 300 }),
+    makeNoInject({})
   ]);
 
   const result = execSync(`npx tsx scripts/cost-report.ts --json --days 30`, {
@@ -98,10 +98,9 @@ test('cost-report: computes overhead from prompt_tokens and tokens_injected', ()
   assert.equal(report.queries.total, 3);
   assert.equal(report.queries.injected, 2);
   assert.equal(report.queries.skipped, 1);
-  // overhead = 500 / 6500 = 7.7%
   assert.equal(report.tokens.totalInjectedTokens, 500);
-  assert.equal(report.tokens.totalPromptTokens, 6500);
-  assert.ok(report.tokens.overheadPercent > 7 && report.tokens.overheadPercent < 8);
+  assert.equal(report.tokens.avgInjectionSize, 250);
+  assert.ok(report.tokens.dailyRunRate > 0);
 
   fs.rmSync(tmpDir, { recursive: true });
 });
@@ -152,7 +151,7 @@ test('cost-report: handles empty log gracefully', () => {
   fs.rmSync(tmpDir, { recursive: true });
 });
 
-test('cost-report: handles missing prompt_tokens (pre-upgrade data)', () => {
+test('cost-report: handles pre-upgrade data (no prompt_tokens field)', () => {
   const tmpDir = setup();
   const events = [
     {
@@ -175,9 +174,8 @@ test('cost-report: handles missing prompt_tokens (pre-upgrade data)', () => {
   });
   const report = JSON.parse(result);
 
-  assert.equal(report.tokens.totalPromptTokens, 0);
-  assert.equal(report.tokens.overheadPercent, 0);
-  assert.ok(report.costValue.summary.includes('not yet available'));
+  assert.equal(report.tokens.totalInjectedTokens, 400);
+  assert.equal(report.tokens.avgInjectionSize, 400);
 
   fs.rmSync(tmpDir, { recursive: true });
 });
@@ -185,9 +183,9 @@ test('cost-report: handles missing prompt_tokens (pre-upgrade data)', () => {
 test('cost-report: filters by project', () => {
   const tmpDir = setup();
   const dataDir = writeUsageLog(tmpDir, [
-    makeRetrieval({ project: 'alpha', prompt_tokens: 2000, tokens_injected: 200 }),
-    makeRetrieval({ project: 'beta', prompt_tokens: 3000, tokens_injected: 600 }),
-    makeRetrieval({ project: 'alpha', prompt_tokens: 1000, tokens_injected: 100 })
+    makeRetrieval({ project: 'alpha', tokens_injected: 200 }),
+    makeRetrieval({ project: 'beta', tokens_injected: 600 }),
+    makeRetrieval({ project: 'alpha', tokens_injected: 100 })
   ]);
 
   const result = execSync(`npx tsx scripts/cost-report.ts --json --project alpha --days 30`, {
@@ -198,8 +196,29 @@ test('cost-report: filters by project', () => {
 
   assert.equal(report.queries.total, 2);
   assert.equal(report.tokens.totalInjectedTokens, 300);
-  assert.equal(report.tokens.totalPromptTokens, 3000);
   assert.equal(report.project, 'alpha');
+
+  fs.rmSync(tmpDir, { recursive: true });
+});
+
+test('cost-report: excludes calibration evals from projects with no retrieval traffic', () => {
+  const tmpDir = setup();
+  const dataDir = writeUsageLog(tmpDir, [
+    makeRetrieval({ project: 'real-project', tokens_injected: 500 }),
+    makeCalibrationEval({ project: 'real-project', weighted_score: 0.8 }),
+    makeCalibrationEval({ project: 'demo', weighted_score: 0.1 }),
+    makeCalibrationEval({ project: 'demo', weighted_score: 0.2 })
+  ]);
+
+  const result = execSync(`npx tsx scripts/cost-report.ts --json --days 30`, {
+    encoding: 'utf8',
+    env: { ...process.env, CONTEXTUS_LOG_DIR: path.join(dataDir, 'logs') }
+  });
+  const report = JSON.parse(result);
+
+  // Only the real-project eval should count (demo has no retrieval traffic)
+  assert.equal(report.quality.evalCount, 1);
+  assert.equal(report.quality.avgWeightedScore, 0.8);
 
   fs.rmSync(tmpDir, { recursive: true });
 });
