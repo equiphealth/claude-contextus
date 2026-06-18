@@ -44,8 +44,10 @@ Think of it as a context system that reads your mind — captures what you learn
 
 ### 🧠 Smart Retrieval
 
+- **Hybrid search**: Fuses semantic (vector) and keyword (BM25) results via Reciprocal Rank Fusion — nails exact-symbol queries that pure embedding dilutes ("getLogger", "expandHome")
 - **Semantic search**: Finds by meaning, not keywords ("How do I debug?" → matches Logger patterns)
 - **Multi-vector query expansion**: When initial search scores poorly, generates alternate phrasings via a fast LLM and searches with multiple vectors — dramatically improves synonym/paraphrase recall
+- **Keyword fallback**: When the embedding provider is unreachable, falls back to BM25 text search so you still get context instead of silence
 - **Multi-source**: Searches project context patterns, project docs, user context patterns, and user docs simultaneously
 - **Configurable relevance**: Tune similarity threshold and top-k per your needs
 
