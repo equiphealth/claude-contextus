@@ -14,7 +14,9 @@ metadata:
    - `.claude-plugin/plugin.json` → `"version"` field (install manifest)
 2. **Update CHANGELOG.md** with a section for the new version (Added/Changed/Fixed)
 3. **Update README.md** if the feature is user-visible (Features section, config examples, etc.)
-4. **Update `examples/contextus.jsonc`** if new config fields were added (with JSONC comments explaining them)
+4. **Update `docs/FEATURES.md`** if the feature adds/changes capabilities (skills, retrieval, config options, hooks)
+5. **Update `docs/API.md`** if daemon endpoints were added/changed (see sync points in reference-api-documentation-structure)
+6. **Update `examples/contextus.jsonc`** if new config fields were added (with JSONC comments explaining them)
 
 **Why**: The release workflow auto-creates versioned GitHub releases when it detects a new version in `package.json`. No bump = no release. CHANGELOG is the human-readable record. README is what new users see first. The 3-file version sync is easily missed because `plugin.jsonc` and `.claude-plugin/plugin.json` serve different purposes but both contain a version field.
 

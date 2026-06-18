@@ -13,6 +13,8 @@
   understanding sources, maintenance.
 - **[calibration.md](calibration.md)** — Tuning the injection floor to your corpus, the
   usage-eval refinement loop, and the per-project config tiers.
+- **[API.md](API.md)** — Complete HTTP API reference for the contextus daemon (endpoints,
+  parameters, responses, error handling).
 - **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** — Moving from an older `.claude/memory/` +
   hooks system to contextus.
 

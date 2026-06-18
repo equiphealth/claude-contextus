@@ -26,6 +26,12 @@
 - **Parallel re-search** — Each variant searched in parallel, results unioned with original
 - **Provider fallback** — Ollama → Bedrock chain with shared timeout budget
 
+#### Retrieval-Miss Proposals
+- **Near-miss detection** — When bestScore > 0.25 but < injection floor (gap detected), surfaces evidence-driven capture proposals
+- **Actionable prompting** — Tells Claude exactly what topics were close and the score gap, prompting either a capture proposal or a user question
+- **Not passive** — Fires based on concrete retrieval data, not generic "notice something" footers
+- **Score transparency** — Shows best score, floor, gap %, and nearest topic names in the notice
+
 #### Keyword Fallback (Degradation)
 - **Provider-down safety** — When embedding fails (Ollama unreachable), falls back to BM25 text search
 - **Clear provenance** — Results tagged with "[contextus notice] keyword fallback" so users know
@@ -191,10 +197,13 @@ All config files support comments and trailing commas. The system strips JSONC b
 #### Endpoints
 - `GET /health` — Liveness + readiness (modelLoaded, warmupError, expansion stats)
 - `GET /health?probe=true` — Active health check (verifies provider reachable)
-- `GET /introspect` — Config + corpus stats + hit tracking
+- `GET /novelty?project=<path>` — Recently-injected patterns (for awareness hook deduplication)
+- `GET /introspect?project=<path>` — Config + corpus stats + hit tracking
 - `POST /query` — Main retrieval: embed → search → rerank → floor → inject
 - `POST /notify` — File change notification: triggers incremental re-embed
 - `POST /reconcile` — Corpus sync: add new, update changed, remove deleted
+
+See [API.md](./API.md) for comprehensive endpoint documentation.
 
 #### Retrieval Pipeline
 ```

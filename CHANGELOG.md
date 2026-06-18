@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0] - 2026-06-18
+
+### Added
+- **Retrieval-miss proposals**: Evidence-driven context capture prompts when a query nearly matches but falls short of the injection floor (bestScore > 0.25 but < floor). Surfaces nearest topics, score gap, and actionable instructions for Claude to propose captures or ask users about missing context.
+- **`scripts/test-api.sh`**: CLI utility for exercising all daemon endpoints. Supports individual endpoint testing or full sweep (`./scripts/test-api.sh all`).
+- **Comprehensive API docs** (`docs/API.md`): Full HTTP endpoint reference with request/response schemas, degradation scenarios, and performance expectations.
+- **Feature inventory** (`docs/FEATURES.md`): Complete capability listing covering retrieval, management, architecture, and configuration.
+- **Implementation context files**: 8 new `.claude/context/implementation/` patterns covering retrieval pipeline, hybrid search, query expansion, injection floor, config hot-reload, auto-recovery, novelty tracking, and hit tracking.
+- **Gotcha: project identifier mismatch**: Context pattern documenting that daemon expects `basename`, not full path.
+
+### Fixed
+- `scripts/test-api.sh` passes `basename` (not full path) as project identifier — matches daemon expectation.
+- `daemon/server.ts` header comment now lists `/novelty` endpoint and links to `docs/API.md`.
+
+### Changed
+- PR checklist context pattern now explicitly requires `docs/FEATURES.md` and `docs/API.md` updates for feature PRs.
+- `docs/DOCS.md` index updated with API.md entry.
+
 ## [0.4.0] - 2026-06-17
 
 ### Added

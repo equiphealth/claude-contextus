@@ -144,12 +144,24 @@ export function keywordSearch(
   }));
 }
 
+// In-memory corpus cache — avoids re-reading all rows from disk on every hybrid query.
+const _corpusCache = new Map<string, { rows: ContextRow[]; loadedAt: number }>();
+
+/** Invalidate the keyword corpus cache for a project (call on notify/reconcile). */
+export function invalidateCorpusCache(projectName?: string): void {
+  _corpusCache.delete(projectName ?? '__default__');
+}
+
 /**
- * Load all rows from the corpus for keyword scanning. This reads the full
- * document content (no vectors) — acceptable for a fallback path that only
- * fires when embedding is down.
+ * Load all rows from the corpus for keyword scanning. Cached in memory and
+ * invalidated on file changes (notify/reconcile). Without caching, this was
+ * the primary latency bottleneck (~5s to read 1207 rows from LanceDB on every query).
  */
 export async function loadCorpusForKeyword(projectName?: string): Promise<ContextRow[]> {
+  const cacheKey = projectName ?? '__default__';
+  const cached = _corpusCache.get(cacheKey);
+  if (cached) return cached.rows;
+
   // Lazy import to avoid circular dependency with lance-client
   const { openTable, tableExists } = await import('../storage/lance-client.js');
   if (!(await tableExists(projectName))) return [];
@@ -171,5 +183,6 @@ export async function loadCorpusForKeyword(projectName?: string): Promise<Contex
       'content_hash'
     ])
     .toArray()) as ContextRow[];
+  _corpusCache.set(cacheKey, { rows, loadedAt: Date.now() });
   return rows;
 }
