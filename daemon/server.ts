@@ -40,6 +40,11 @@ import {
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
 import { keywordSearch, loadCorpusForKeyword } from '../lib/retrieval/keyword.js';
 import { fuseRRF, hybridKeywordSearch } from '../lib/retrieval/hybrid.js';
+import {
+  buildRetrievalMissNotice,
+  isNearMiss,
+  extractNearTopics
+} from '../lib/retrieval/miss-notice.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
@@ -363,6 +368,25 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         retrieved: [],
         similarityScores: [Number(bestScore.toFixed(4))],
         latencyMs: Date.now() - started
+      });
+    }
+    // Retrieval-miss signal: when the best score is above noise (>0.25) but below
+    // the floor, this was a "near miss" — the corpus had something related but not
+    // strong enough. Surface a targeted capture prompt so Claude proposes context
+    // that would fill the gap, or asks the user about it.
+    if (isNearMiss(bestScore, floorDropped.length)) {
+      const nearTopics = extractNearTopics(floorDropped);
+      const missNotice = buildRetrievalMissNotice(
+        bestScore,
+        cfg.retrieval.injectionFloor,
+        nearTopics
+      );
+      return sendJson(res, 200, {
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: missNotice
+        }
       });
     }
     return sendJson(res, 200, { continue: true });
