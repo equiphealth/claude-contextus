@@ -11,8 +11,9 @@
  * isolation is by the `project` request field → per-project LanceDB dir. Built
  * on Node's stdlib `http` — no framework dependency in the hot path.
  *
- * Endpoints:
+ * Endpoints (see docs/API.md for full reference):
  *   GET  /health          → { status, uptime, modelLoaded, lancedbConnected, embeddingModel }
+ *   GET  /novelty         → { project, recent: string[] } — recently-injected patterns
  *   GET  /introspect      → live config + corpus stats (Self-doc Layer 1)
  *   POST /query  {project, prompt}        → { continue, hookSpecificOutput?: { additionalContext } }
  *   POST /notify {project, file, cwd?}    → { ok, embedded, id? }
@@ -29,17 +30,15 @@ import fs from 'fs';
 import { loadConfig, loadProjectConfig, expandHome } from '../lib/config.js';
 import { warmup, embedQuery } from '../lib/embedding/embedder.js';
 import { search, tableExists, readTableMeta, incrementHits } from '../lib/storage/lance-client.js';
-import { rerank } from '../lib/retrieval/reranker.js';
-import { dedupe, collapseByFile } from '../lib/retrieval/dedup.js';
-import { applyFloor } from '../lib/retrieval/floor.js';
-import {
-  formatInjection,
-  renderFooterInstruction,
-  estimateTokens
-} from '../lib/retrieval/inject-format.js';
+import { estimateTokens } from '../lib/retrieval/inject-format.js';
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
-import { keywordSearch, loadCorpusForKeyword } from '../lib/retrieval/keyword.js';
+import {
+  keywordSearch,
+  loadCorpusForKeyword,
+  invalidateCorpusCache
+} from '../lib/retrieval/keyword.js';
 import { fuseRRF, hybridKeywordSearch } from '../lib/retrieval/hybrid.js';
+import { processSearchResults } from '../lib/retrieval/pipeline.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
@@ -55,8 +54,7 @@ import {
   logParanoid,
   logError,
   logInfo,
-  promptHash,
-  type DroppedChunkLog
+  promptHash
 } from '../lib/logger.js';
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 
@@ -332,27 +330,26 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     });
   }
 
-  const ranked = rerank(raw);
-  // Collapse chunks to one best representative per file FIRST (a file's sections
-  // aren't competing matches), then trim to topK files, then fold near-duplicate
-  // files before the floor. Order: rerank → collapse → topK → dedupe → floor.
-  const byFile = collapseByFile(ranked).slice(0, cfg.retrieval.topK);
-  const { kept: deduped } = dedupe(byFile);
-  const { kept, dropped, bestScore, noInject } = applyFloor(deduped, cfg.retrieval.injectionFloor);
+  // --- Post-search pipeline (testable core in lib/retrieval/pipeline.ts) ---
+  const outcome = processSearchResults(
+    raw,
+    {
+      topK: cfg.retrieval.topK,
+      injectionFloor: cfg.retrieval.injectionFloor,
+      maxTokens: cfg.retrieval.maxTokens,
+      provenanceFooter: cfg.retrieval.provenanceFooter
+    },
+    { cwd, usedKeywordFallback }
+  );
 
-  const floorDropped: DroppedChunkLog[] = dropped.map((d) => ({
-    pattern: d.filename || d.id,
-    similarity: Number(d.similarity.toFixed(4))
-  }));
-
-  if (noInject) {
+  if (outcome.kind === 'no-inject' || outcome.kind === 'near-miss') {
     logNoInject({
       project: projectLabel,
       promptHash: hash,
-      bestScore: Number(bestScore.toFixed(4)),
+      bestScore: Number(outcome.bestScore.toFixed(4)),
       promptTokens: estimateTokens(prompt),
       latencyMs: Date.now() - started,
-      floorDropped
+      floorDropped: outcome.floorDropped
     });
     if (cfg.logging.paranoid) {
       logParanoid({
@@ -361,14 +358,24 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         prompt,
         injection: '',
         retrieved: [],
-        similarityScores: [Number(bestScore.toFixed(4))],
+        similarityScores: [Number(outcome.bestScore.toFixed(4))],
         latencyMs: Date.now() - started
+      });
+    }
+    if (outcome.kind === 'near-miss') {
+      return sendJson(res, 200, {
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: outcome.notice
+        }
       });
     }
     return sendJson(res, 200, { continue: true });
   }
 
-  const { block, included, tokens } = formatInjection(kept, cfg.retrieval.maxTokens, cwd);
+  // outcome.kind === 'inject'
+  const { block, included, tokens } = outcome;
   const injectedNames = included.map((r) => r.filename || r.id);
 
   // Learn from this injection (best-effort, off the response path):
@@ -406,7 +413,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     tokensInjected: tokens,
     promptTokens: estimateTokens(prompt),
     latencyMs: Date.now() - started,
-    floorDropped
+    floorDropped: outcome.floorDropped
   });
 
   if (cfg.logging.paranoid) {
@@ -421,22 +428,11 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     });
   }
 
-  // Append a TRUTHFUL provenance-footer instruction scoped to exactly these files
-  // (renderFooterInstruction). Co-located with the real injected set so Claude
-  // reports ground truth instead of fabricating a footer (the awareness hook can't
-  // do this — it doesn't know what was injected; instructing it to induced
-  // hallucination, observed 2026-06-15). Gated by retrieval.provenanceFooter
-  // (per-project): some users want only the answer, not the retrieval receipt. The
-  // `propose:` capture footer is separate + always-on (it's how patterns get saved).
-  const fallbackNotice = usedKeywordFallback
-    ? '\n\n[contextus notice] Results above are from keyword fallback (embedding provider was unreachable). Relevance may be lower than normal semantic search.'
-    : '';
-  const footer = cfg.retrieval.provenanceFooter ? renderFooterInstruction(included) : '';
   sendJson(res, 200, {
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: block + fallbackNotice + footer
+      additionalContext: block
     }
   });
 }
@@ -459,6 +455,7 @@ async function handleNotify(
   const contextDir = path.join(cwd, '.claude', 'context');
   const result = await embedSingleFile(absFile, contextDir, project);
   if (result.embedded) {
+    invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
   }
   sendJson(res, 200, { ok: true, ...result });
@@ -539,6 +536,7 @@ async function handleReconcile(
   runReconcile(contextDir, project)
     .then((r) => {
       if (r.embedded > 0 || r.removed > 0) {
+        invalidateCorpusCache(project);
         logInfo('Reconcile complete', {
           project: projectLabel,
           state: r.state,

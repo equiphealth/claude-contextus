@@ -1,6 +1,6 @@
 {
   "name": "claude-contextus",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Context-aware knowledge system: markdown-based pattern storage with automatic semantic retrieval for Claude Code",
   "main": "dist/scripts/query-hook.js",
   "type": "module",
@@ -40,7 +40,7 @@
     "claude-code"
   ],
   "author": "Anthony Dawson",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/anthonypdawson/claude-contextus.git"
