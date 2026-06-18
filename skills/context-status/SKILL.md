@@ -178,7 +178,7 @@ Count `.claude/context/` files + `docs/` by mtime for the Growth line.
 /context-status --cost [--project <name>] [--days <N>]
 ```
 
-Outputs the honest org defensibility report — overhead % paired with value signal:
+Outputs the honest org defensibility report — absolute injection cost paired with value signal:
 
 ```
 Token Cost Report (2026-05-18 → 2026-06-17)
@@ -227,6 +227,6 @@ This is the **user-facing** dashboard. Non-technical, focuses on **value deliver
 - "How much is this helping me?" (tokens saved, usage rate)
 - "Is it growing?" (new patterns/docs)
 - "Is it working?" (recent activity)
-- "What does it cost?" (--cost: overhead % + value signal)
+- "What does it cost?" (--cost: absolute injection tokens + value signal)
 
 Technical tuning metrics (zero-hit patterns, staleness, threshold calibration) live in `/context-calibrate`.
