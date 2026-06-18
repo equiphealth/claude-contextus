@@ -185,16 +185,14 @@ Token Cost Report (2026-05-18 → 2026-06-17)
 Project: automation
 
 Queries:
-  Total:          848
-  Injected:       620 (73.1%)
+  Total:           848
+  Injected:        620 (73.1%)
   Skipped (floor): 228
 
-Token Overhead:
-  Prompt tokens (total):   1,247,000
-  Injected tokens (total): 89,400
-  Overhead:                7.2%
-  Avg injection size:      144 tokens
-  Avg prompt size:         1,470 tokens
+Injection Cost:
+  Total tokens:    89,400
+  Avg per query:   144 tokens
+  Daily run rate:  ~2,980 tokens/day
 
 Value Signal:
   Calibration evals:  45
@@ -205,7 +203,7 @@ Value Signal:
     not_used: 5
 
 Bottom Line:
-  7.2% token overhead with strong (72% weighted usage score) value signal.
+  89,400 tokens injected (~2,980/day) with strong (72% weighted usage score) value signal.
 ```
 
 ### Implementation
@@ -216,12 +214,12 @@ npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cost-report.ts" [--project <name>] [--day
 ```
 
 The script reads `~/.contextus/logs/usage.jsonl` and computes:
-- **Overhead %** = total injected tokens ÷ total prompt tokens
+- **Total injected tokens** = absolute cost of all injections in the period
+- **Daily run rate** = total ÷ days (for budgeting)
 - **Value signal** = mean weighted_score from calibration_eval events
 - **Injection rate** = queries with ≥1 pattern ÷ total queries
 
-Pass `--json` for machine-readable output. If `prompt_tokens` data is missing
-(pre-upgrade events), the report notes it and shows what it can.
+Pass `--json` for machine-readable output.
 
 ## Design Notes
 
