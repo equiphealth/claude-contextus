@@ -9,7 +9,7 @@
  *
  * Graceful degradation (DESIGN.md): if the daemon is unreachable, fire a
  * background restart and emit `{ continue: true }` — one missed injection, never
- * a blocked prompt. Bounded 5s timeout (hook also has a 5s timeout in hooks.json).
+ * a blocked prompt. Bounded 10s timeout (hook also has a 10s timeout in hooks.json).
  */
 
 import path from 'path';
@@ -54,7 +54,7 @@ async function main() {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ prompt, project: projectName(cwd), cwd }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return emit({ continue: true });
     const body = await res.json();
