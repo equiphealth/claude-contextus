@@ -89,7 +89,10 @@
       // Calibrated to 0.45 via /context-calibrate --floor against 721-chunk corpus.
       "injectionFloor": 0.45,
       "maxTokens": 3000,
-      "mergeStrategy": "interleaved"
+      "mergeStrategy": "interleaved",
+      // Hybrid search: fuse keyword (BM25) + semantic (vector) via Reciprocal Rank Fusion.
+      // always=every query gets both, off=pure semantic (keyword only as fallback when embedding down).
+      "hybrid": "always"
     },
     "expansion": {
       // Multi-vector query expansion: generate alternate phrasings when the initial
