@@ -68,6 +68,7 @@ decision):
 
 ```bash
 /contextus-setup                  # set up the current project
+/contextus-setup --tune           # calibrate thresholds from real usage data
 ```
 
 Engine (dev/direct). Run the repo-local `tsx` **by path** — NOT `pnpm` (the
@@ -88,8 +89,21 @@ Run it twice and the second run:
 - **updates the CLAUDE.md stanza in place** (no second block),
 - re-embeds only changed files (unchanged ones are skipped by the staleness gate).
 
+## Config Tuning (--tune)
+
+After ~a week of real usage, `--tune` runs the floor-calibration algorithm on
+your real prompt history and recommends optimal thresholds:
+
+- **injectionFloor** — tuned from the actual similarity distribution (gap-finding
+  or coverage-target, depending on your corpus shape)
+- **expansionThreshold** — set slightly above the floor (covers the expansion gap)
+- Shows the recommendation + trade curve; you apply via `/context-calibrate --floor --apply`
+
+This replaces manual threshold guessing with data-driven calibration.
+
 ## Related
 
 - `/create-context` — capture your first pattern
 - `/migrate-memory` — convert legacy `.claude/memory/` files into the corpus
+- `/context-calibrate` — detailed calibration with --diff/--apply
 - `/context-status` — health dashboard once you're set up
