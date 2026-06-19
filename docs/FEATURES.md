@@ -63,7 +63,8 @@
 #### Skills (26 total)
 
 **Setup & Configuration:**
-- `/contextus-setup` — Guided setup wizard (Quick: 30s defaults, Power User: full config). Detects Ollama, legacy memory, cross-project sources. `--tune` for threshold calibration.
+- `/contextus-setup` — Guided setup wizard (Quick: 30s defaults, Power User: full config). Detects Ollama, legacy memory, cross-project sources, offers linking. `--tune` for threshold calibration.
+- `/link-project` — Link another project's context into your corpus. Cross-project sharing with automatic refresh.
 - `/configure` — Interactive config editor for `.claude/contextus.jsonc`
 - `/migrate-memory` — Convert `.claude/memory/` (old format) → `.claude/context/` (new)
 
@@ -142,6 +143,7 @@ metadata:
 #### Multi-Source Architecture
 - **Project context** — `.claude/context/` (team patterns, git-committed)
 - **Project docs** — `docs/` (long-form documentation, indexed by DOCS.md)
+- **Linked projects** — other projects' `.claude/context/` (via `pnpm link-project`, machine-local)
 - **User context** — `~/.claude/context/` (personal patterns, cross-project)
 - **User docs** — `~/.claude/docs/` (personal documentation)
 

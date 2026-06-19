@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-06-19
+
+### Added
+- **Linked projects**: `pnpm link-project <path>` shares another project's `.claude/context/` into the current corpus. Context from linked projects is ranked at 0.85 (below own patterns, above user context), watched for live changes (macOS/Win), and reconciled on session start.
+- **Multi-source watcher**: fs.watch now covers all source directories (not just projectContext), detecting both deletions AND creations/modifications in linked projects.
+- **`workflow_dispatch` force**: Release workflow gains a manual force option for re-releasing without a version bump.
+- **Release workflow version diff**: Versioned releases now trigger on actual package.json version change (HEAD vs HEAD^) instead of tag existence check.
+
+### Changed
+- `embedSingleFile` accepts an optional `source` parameter (backward-compatible; defaults to `projectContext`).
+- Full `pnpm embed` rebuilds now include linked project sources.
+- Release process context pattern updated with "always branch first" convention.
+
 ## [0.6.0] - 2026-06-19
 
 ### Added
