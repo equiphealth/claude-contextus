@@ -220,6 +220,37 @@ export function logInfo(message: string, kv?: Record<string, unknown>): void {
   appendSafe(DAEMON_LOG_PATH, humanLine('INFO', message, kv));
 }
 
+/** Usage signal: self-reported context usage from the provenance footer. */
+export interface UsageSignalLog {
+  project: string;
+  promptHash: string;
+  injected: string[];
+  used: string[];
+  usageRate: number;
+}
+
+/** Log a usage_signal event — the model's self-report of what context it used. */
+export function logUsageSignal(e: UsageSignalLog): void {
+  const record = {
+    type: 'usage_signal',
+    timestamp: new Date().toISOString(),
+    project: e.project,
+    prompt_hash: e.promptHash,
+    injected: e.injected,
+    used: e.used,
+    usage_rate: Number(e.usageRate.toFixed(4))
+  };
+  appendSafe(USAGE_PATH, JSON.stringify(record) + '\n');
+  appendSafe(
+    DAEMON_LOG_PATH,
+    humanLine('INFO', 'Usage signal', {
+      used: `${e.used.length}/${e.injected.length}`,
+      rate: `${(e.usageRate * 100).toFixed(0)}%`,
+      project: e.project
+    })
+  );
+}
+
 /** Full round-trip log: prompt text + injection payload. Privacy-sensitive. */
 export interface ParanoidLog {
   project: string;

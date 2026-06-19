@@ -173,8 +173,8 @@ async function main() {
     if (!hasContextusStanza(cwd)) {
       lines.push(
         hasPopulatedContextDir(cwd)
-          ? 'contextus: active in this project (.claude/context/ is populated and injecting). To register it in CLAUDE.md and silence this notice, run /contextus-setup.'
-          : 'contextus: run /contextus-setup to scaffold .claude/context/ and register contextus in this project (one-time).'
+          ? 'contextus: detected .claude/context/ — run /contextus-setup to register and start injecting.'
+          : 'contextus: run /contextus-setup for guided setup (~2 min, or /contextus-setup --quick for defaults).'
       );
     }
   }

@@ -460,12 +460,62 @@ async function handleNotify(
 
   const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
   const contextDir = path.join(cwd, '.claude', 'context');
+  watchContextDir(contextDir, project);
   const result = await embedSingleFile(absFile, contextDir, project);
   if (result.embedded) {
     invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
+  } else if (result.reason === 'deleted') {
+    invalidateCorpusCache(project);
+    logInfo('Context file deleted — rows removed', {
+      file: result.id,
+      project: project ?? 'default'
+    });
   }
   sendJson(res, 200, { ok: true, ...result });
+}
+
+/* ── Directory watcher — live deletion detection ────────────────────────────── */
+
+/**
+ * Active watchers keyed by context dir path. One watcher per project.
+ * Started after a successful reconcile (which proves the dir exists and is
+ * worth watching). Uses fs.watch with recursive:true (supported on macOS/Win).
+ */
+const activeWatchers = new Map<string, fs.FSWatcher>();
+
+function watchContextDir(contextDir: string, project: string | undefined): void {
+  if (activeWatchers.has(contextDir)) return;
+  if (!fs.existsSync(contextDir)) return;
+
+  try {
+    const watcher = fs.watch(contextDir, { recursive: true }, (eventType, filename) => {
+      if (!filename || !filename.endsWith('.md')) return;
+      if (eventType !== 'rename') return; // 'rename' fires on delete + create
+      const absPath = path.join(contextDir, filename);
+      // Only act on deletions — file gone from disk
+      if (!fs.existsSync(absPath)) {
+        // Debounce: skip if a reconcile is in progress for this project
+        const projectLabel = project ?? 'default';
+        if (reconcilingProjects.has(projectLabel)) return;
+        embedSingleFile(absPath, contextDir, project)
+          .then((result) => {
+            if (result.reason === 'deleted') {
+              invalidateCorpusCache(project);
+              logInfo('Watcher: context file deleted', {
+                file: result.id,
+                project: projectLabel
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    });
+    activeWatchers.set(contextDir, watcher);
+    logInfo('Watching context dir', { dir: contextDir, project: project ?? 'default' });
+  } catch {
+    // fs.watch can fail on unsupported filesystems — degrade silently
+  }
 }
 
 /**
@@ -551,6 +601,7 @@ async function handleReconcile(
           removed: r.removed
         });
       }
+      watchContextDir(contextDir, project);
     })
     .catch((err) =>
       logError('error', 'daemon', 'Reconcile failed', {
@@ -635,6 +686,31 @@ const WARMUP_MAX_RETRIES = 5;
 const WARMUP_BASE_DELAY_MS = 10_000; // 10s, 20s, 40s, 80s, 160s
 let warmupRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+/**
+ * Pre-warm the expansion model (fire-and-forget). Ollama unloads idle models,
+ * so qwen2.5:3b takes ~9.5s cold vs 443ms warm. Sending a trivial generate
+ * request loads the model into memory before the first real expansion fires.
+ */
+function prewarmExpansion(): void {
+  const cfg = loadConfig();
+  if (cfg.expansion.mode === 'off') return;
+  if (cfg.expansion.provider !== 'ollama') return;
+
+  const endpoint = cfg.providers?.ollama?.endpoint || 'http://localhost:11434';
+  const model = cfg.expansion.model;
+
+  fetch(`${endpoint}/api/generate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model, prompt: 'hi', stream: false, options: { num_predict: 1 } }),
+    signal: AbortSignal.timeout(15_000)
+  })
+    .then(() => logInfo('Expansion model pre-warmed', { model }))
+    .catch(() => {
+      // Best-effort — if it fails, expansion will just use fallback or time out
+    });
+}
+
 function attemptWarmup(attempt = 0): void {
   const cfg = loadConfig();
   warmup()
@@ -653,6 +729,7 @@ function attemptWarmup(attempt = 0): void {
             cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model
         });
       }
+      prewarmExpansion();
     })
     .catch((err) => {
       warmupError = err instanceof Error ? err.message : String(err);

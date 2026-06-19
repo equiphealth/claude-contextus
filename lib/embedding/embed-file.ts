@@ -42,8 +42,18 @@ export async function embedSingleFile(
   if (!normFile.startsWith(normDir + path.sep)) {
     return { embedded: false, reason: 'outside_context_dir' };
   }
-  if (!fs.existsSync(normFile) || !normFile.endsWith('.md')) {
+  if (!normFile.endsWith('.md')) {
     return { embedded: false, reason: 'not_a_markdown_file' };
+  }
+  // File deleted: remove its rows from the corpus (orphan cleanup).
+  if (!fs.existsSync(normFile)) {
+    const relPath = path.relative(normDir, normFile).replace(/\\/g, '/');
+    const stored = (await getContentHashes(projectName)).get(relPath);
+    if (stored !== undefined) {
+      await deleteByFilename(relPath, projectName);
+      return { embedded: false, id: relPath, reason: 'deleted' };
+    }
+    return { embedded: false, reason: 'not_found' };
   }
   const base = path.basename(normFile);
   if (base === 'CONTEXT.md' || base === 'README.md') {

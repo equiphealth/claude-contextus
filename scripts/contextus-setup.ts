@@ -26,20 +26,27 @@ import path from 'path';
 import { upsertStanza, hasStanza } from '../lib/capture/claude-md-stanza.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { tableExists, countRows } from '../lib/storage/lance-client.js';
+import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js';
+import { printFloorReport } from '../lib/calibration/floor-report.js';
+import { buildChanges, renderDiff, hasRealChanges } from '../lib/calibration/config-write.js';
+import { loadConfig, projectLocalConfigPath } from '../lib/config.js';
 
 interface Args {
   dir: string;
   embed: boolean;
+  tune: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
   let dir = process.cwd();
   let embed = true;
+  let tune = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--dir' && argv[i + 1]) dir = path.resolve(argv[++i]);
     else if (argv[i] === '--no-embed') embed = false;
+    else if (argv[i] === '--tune') tune = true;
   }
-  return { dir, embed };
+  return { dir, embed, tune };
 }
 
 /** A small, honest starter index so a fresh project has somewhere to grow. */
@@ -138,10 +145,54 @@ async function main(): Promise<void> {
     console.log('  embed              skipped (--no-embed)');
   }
 
+  // 4. Config tuning via floor calibration (--tune or if prompted)
+  if (args.tune) {
+    console.log('\n── Config Tuning ──');
+    try {
+      const outcome = await runFloorReplay({ project }, (msg) => console.log(`  ${msg}`));
+      const cfg = loadConfig();
+      printFloorReport(outcome, cfg.retrieval.injectionFloor);
+
+      const rec = outcome.recommendation;
+      const proposals: Record<string, unknown> = {
+        'retrieval.injectionFloor': rec.recommendedFloor
+      };
+      // Set expansion threshold slightly above floor (covers the gap)
+      if (rec.recommendedFloor > 0) {
+        proposals['expansion.expansionThreshold'] = Math.min(
+          0.95,
+          Math.round((rec.recommendedFloor + 0.05) * 100) / 100
+        );
+      }
+
+      const configPath = projectLocalConfigPath(project);
+      const changes = buildChanges(proposals, configPath);
+      if (hasRealChanges(changes)) {
+        console.log('\n  Proposed config changes (per-project):');
+        console.log(renderDiff(changes));
+        console.log(`\n  Target: ${configPath}`);
+        console.log('  To apply: /context-calibrate --floor --apply');
+        console.log('  Or re-run: /contextus-setup --tune (with manual --apply in calibrate)');
+      } else {
+        console.log('  Config already matches the recommendation — no changes needed.');
+      }
+    } catch (err) {
+      if (err instanceof ReplayError) {
+        console.log(`  ⚠ ${err.message}`);
+        console.log('    (tune requires real typed prompts — use the project for a week first)');
+      } else {
+        console.log(`  ⚠ Tuning failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
   console.log('\n✓ Setup complete. Context will be injected automatically on your next prompts.');
-  console.log(
-    '  Next: /create-context to capture your first pattern, or /context-status to check health.'
-  );
+  if (!args.tune) {
+    console.log(
+      '  Next: /create-context to capture your first pattern, or /context-status to check health.'
+    );
+    console.log('  Tune: /contextus-setup --tune (after ~a week of use) to calibrate thresholds.');
+  }
 }
 
 main().catch((err) => {
