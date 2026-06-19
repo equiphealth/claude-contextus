@@ -30,6 +30,8 @@ Two tracks below. CAE is the keystone either way — most of Track A's later ite
 | **Hybrid search (semantic + keyword RRF)** | #6 | 2026-06-17 | Always-on keyword fusion via RRF. |
 | **Retrieval-miss proposals** | #7 | 2026-06-18 | Near-miss detection → awareness footer proposing new context capture. Evidence-driven. |
 | **Scoring fix + adaptive hybrid** | #8 | 2026-06-18 | Fixed L2²→cosine formula (`1-d/2`), fixed RRF normalization. Hybrid mode: `always`→`adaptive` (keyword only fires when semantic < floor). Thresholds recalibrated to correct scale. |
+| **Pre-warm + deletion detection + setup --tune** | #9 | 2026-06-18 | Expansion model pre-warm at SessionStart, fs.watch-based deletion detection (macOS only — recursive watch unsupported on Linux), `/contextus-setup --tune` for data-driven threshold calibration. |
+| **Usage signal (self-report tracking)** | #10 | 2026-06-19 | Stop hook always parses "Context: used:" footer → logs `usage_signal` event. `pnpm usage-rate` reports headline metric: "context used in XX% of injected responses." Zero API cost. |
 | **Query transformation** | — | — | Superseded by multi-vector expansion (PR #2). Boilerplate stripping remains a TODO. |
 
 ### Track A — buildable now (no usage data required)
@@ -39,8 +41,8 @@ Roughly in build order; CAE first because it unblocks the most.
 | Item | Source | Depends On | Notes |
 |------|--------|------------|-------|
 | **CAE gate** — Haiku applicability sub-agent per candidate, scoring rubric (§4), hard overrides, conflict priority. Slots in as `… → floor → CAE → inject`. | CAE spec | v1 floor + rejection logging | The keystone — tag-gating, removal, and the relevance-gate all hang off it. (Its *cost model* is Track B.) |
-| **Deletion detection** — Delete-tool hook + session-start orphan cleanup. Phase 6 reconcile already handles new + modified files; the gap is *removal*. | (discovered 2026-06-14) | Phase 6 auto-reconcile infrastructure | Self-contained, no CAE dependency. See details below |
-| **`/contextus-setup` skill** (user idea, 2026-06-18) — interactive onboarding + advanced config tuning in one skill. Two modes: (1) **First-run onboarding** — scaffold `.claude/context/`, write starter `contextus.jsonc`, offer `/migrate-memory`, offer transcript mining (if Track B lands). (2) **Config tuning** — run `calibrate --floor` algorithm on the corpus, recommend `injectionFloor` + `expansionThreshold` based on actual score distributions, ask whether project has symbol-heavy queries (→ `hybrid: "adaptive"`), preview config diff, write it on approval. Consolidates the "manual knob-turning" DX into a guided flow. | user idea 2026-06-18 | floor-calibration (v1), config-write (v1) | **Buildable now.** The calibration math + config-write infra exist; this is a UX wrapper. Pairs with the install-time onboarding idea (memory: idea-install-convert-native-memory). The advanced config part subsumes what users currently do manually after reading calibration.md. |
+| ~~**Deletion detection**~~ | ~~(discovered 2026-06-14)~~ | ~~Phase 6 auto-reconcile~~ | **SHIPPED** PR #9 — fs.watch live deletion (macOS/Windows only; Linux falls back to reconcile-on-start). See "Corpus Reconciliation" section below. |
+| **`/contextus-setup` skill** (user idea, 2026-06-18) — interactive onboarding + advanced config tuning in one skill. Two modes: (1) **First-run onboarding** — scaffold `.claude/context/`, write starter `contextus.jsonc`, offer `/migrate-memory`, offer transcript mining (if Track B lands). (2) **Config tuning** — run `calibrate --floor` algorithm on the corpus, recommend `injectionFloor` + `expansionThreshold` based on actual score distributions, ask whether project has symbol-heavy queries (→ `hybrid: "adaptive"`), preview config diff, write it on approval. Consolidates the "manual knob-turning" DX into a guided flow. | user idea 2026-06-18 | floor-calibration (v1), config-write (v1) | **Partially shipped** (PR #9): `--tune` mode works (floor replay + threshold recommendation + config diff). Remaining: interactive first-run questions (docs frontmatter opt-in, exclude patterns), transcript mining offer. |
 | **Per-category retrieval config** — Category Rule 4: each category declares injection trigger, weight, scope, merge/compete behavior. Re-ranker reads it. | Categories §3 (Rule 4) | re-ranker | Independent re-ranker work |
 | **Multi-source incremental refresh** — v1's watch/reconcile path is `.claude/context/`-only; doc + user packs refresh only on a full `pnpm run embed`. v2: incrementally re-embed docs on change too (slower-changing, noisier). | Phase 6 multi-source | v1 multi-source ingest | The docs auto-refresh gap; deliberate v1 scope cut |
 | **Smarter chunking** — v1 ships fixed header-split + token-fallback with collapse-to-file. v2: semantic/recursive chunking, per-source chunk sizing (docs ≠ context), chunk-level dedup, tuning `topK × fanout`. | Phase 6 chunking | v1 chunker | Chunking pulled into v1 (nomic 2048 cap); maturity is v2 |
@@ -101,37 +103,29 @@ These need design decisions before implementation:
 
 ## Corpus Reconciliation & Deletion Detection
 
-**Problem:** V1 has no detection or cleanup when `.claude/context/` or `.claude/docs/` files are deleted. Orphaned rows stay in LanceDB indefinitely. Also doesn't detect new files added between sessions (only catches edits via PostToolUse hook).
+**Status: PARTIALLY SHIPPED (PR #9, 2026-06-18)**
 
-**V2 Solution:**
+### What shipped
+- **fs.watch-based live deletion** — daemon watches `.claude/context/` directories. On file removal, deletes orphan rows from LanceDB immediately. Works reliably on **macOS** (recursive watch supported since Node 19+).
+- **embedSingleFile deletion path** — when notified about a non-existent file, detects via `getContentHashes` and calls `deleteByFilename`.
+- **Session-start reconcile** — already catches new/modified files; combined with fs.watch, covers all CRUD operations.
 
-### During session
-- Add `Delete` tool to PostToolUse hook filter (currently only watches `Write|Edit|MultiEdit|NotebookEdit`)
-- When a context/doc file is deleted → daemon removes corresponding rows immediately
+### Platform limitation: Linux
+Node.js `fs.watch({ recursive: true })` is **not supported on Linux** (only macOS and Windows). On Linux the watcher silently does nothing — deletions are only caught at next session-start reconcile. Options for Linux:
+- Fall back to `chokidar` (adds a dependency, heavier)
+- Use inotify bindings directly (complex, no recursive equivalent)
+- Accept the gap: reconcile-on-start is sufficient since context files change rarely
 
-### Between sessions
-Session-start reconciliation (builds on Phase 6 auto-reconcile infrastructure):
-- Scan `.claude/context/` + `.claude/docs/` filesystem
-- Compare against LanceDB rows
-- **Missing files** → remove orphaned rows
-- **New files** (never embedded) → background embed
-- **Modified files** → already handled by staleness check (content_hash)
+**Decision:** Accept the gap for now. Linux users get reconcile-on-start cleanup; macOS/Windows users get live deletion. Not worth a heavy dependency for rare events.
 
-### Edge cases
-- **File moves/renames** (path changes, content same) — treat as delete+add or detect via content_hash?
-- **Bulk operations** (delete a whole category folder) — batch cleanup, not per-file
+### Remaining gaps
+- **File moves/renames** — treated as delete+add (content_hash detects it's the same content on re-add, no duplicate embed)
+- **Bulk operations** — handled naturally (each 'rename' event fires independently)
 
 ### Related v2 work
 - Full removal/governance model (soft/hard/replacement from CAE spec)
 - Corpus versioning (track DB state vs filesystem state)
 - Rejection-driven removal from quality evaluation
-
-**Why v2, not v1:**
-- Requires robust reconciliation infrastructure (Phase 6 establishes basics, but full sync is more complex)
-- Deletion is less urgent than it seems — orphaned rows can still match queries, but staleness/hit-count will naturally demote them over time
-- Clean design requires thinking through all the edge cases (renames, bulk ops, race conditions between watch hook and reconciliation)
-
-**Discovered:** 2026-06-14 during Phase 6 review
 
 ---
 

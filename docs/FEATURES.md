@@ -41,7 +41,8 @@
 
 #### Calibration System
 - **Injection floor tuning** — `/context-calibrate --floor` replays usage logs to find optimal threshold
-- **Usage evaluation** — Post-prompt Stop hook evaluates which patterns were actually used (v2)
+- **Usage signal (self-report)** — Stop hook parses "Context: used:" footer on every response, logs `usage_signal` events. Zero API cost, zero model calls — pure regex + JSONL.
+- **Usage rate report** — `pnpm usage-rate` gives the headline metric: "context used in XX% of injected responses." Per-pattern breakdown, low-value pattern flagging, project/time filtering.
 - **Token cost reporting** — `/context-status --cost` shows overhead % paired with usage rate
 - **Honest metrics** — Reports raw overhead without spin, paired with value signal
 
@@ -119,8 +120,10 @@ Primary skills have `/ctx-*` aliases for brevity:
 - Triggers incremental re-embed on `.claude/context/**/*.md` writes
 - Notifies daemon of file change via `/notify` endpoint
 
-**SessionEnd (optional):**
-- Usage evaluation (post-prompt Stop hook — v2)
+**Stop (every response):**
+- Parses "Context: used:" footer from Claude's response
+- Logs `usage_signal` event (injected vs used patterns, per-response rate)
+- Enqueues calibration eval job if campaign is active
 
 ### 📝 Content Management
 

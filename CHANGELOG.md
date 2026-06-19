@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0] - 2026-06-19
+
+### Added
+- **Usage signal tracking**: Stop hook now ALWAYS parses the "Context: used:" provenance footer and logs `usage_signal` events to usage.jsonl. Previously only fired during calibration campaigns.
+- **Usage rate report** (`pnpm usage-rate`): Headline metric — "context was used in XX% of injected responses." Per-pattern breakdown, low-value pattern flagging, `--project`/`--days`/`--json` filtering.
+- **Footer parser** (`lib/calibration/parse-footer.ts`): Regex extraction of the provenance footer for structured analysis.
+
+### Changed
+- Stop hook (`scripts/stop-evaluation.js`): Refactored from calibration-only to always-on usage signal + optional calibration enqueuing.
+- Logger gains `logUsageSignal` event type for the new `usage_signal` JSONL schema.
+
 ## [0.5.0] - 2026-06-18
 
 ### Added
