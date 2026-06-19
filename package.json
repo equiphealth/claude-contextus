@@ -23,6 +23,7 @@
     "contextus-setup": "tsx scripts/contextus-setup.ts",
     "tag-context": "tsx scripts/tag-context.ts",
     "calibrate": "tsx scripts/context-calibrate.ts",
+    "usage-rate": "tsx scripts/usage-rate.ts",
     "lint": "eslint lib scripts daemon --ext .ts",
     "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\" \"*.jsonc\"",
     "format:all": "prettier --write \"**/*.{ts,json,jsonc}\"",
