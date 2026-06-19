@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force versioned release regardless of version change'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -64,27 +71,24 @@ jobs:
           tar -czf claude-contextus-plugin.tar.gz -C _package .
           echo "✓ Package created: $(du -h claude-contextus-plugin.tar.gz | cut -f1)"
 
-      - name: Read version from package.json
+      - name: Get current and previous version
         id: version
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "TAG=v$VERSION" >> $GITHUB_OUTPUT
+          CURRENT=$(node -p "require('./package.json').version")
+          PREVIOUS=$(git show HEAD^:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+          CHANGED=false
+          if [[ -n "$CURRENT" && "$CURRENT" != "$PREVIOUS" ]]; then CHANGED=true; fi
 
-      - name: Check if version tag already exists
-        id: tag_check
-        run: |
-          if git rev-parse "v${{ steps.version.outputs.VERSION }}" >/dev/null 2>&1; then
-            echo "EXISTS=true" >> $GITHUB_OUTPUT
-          else
-            echo "EXISTS=false" >> $GITHUB_OUTPUT
-          fi
+          echo "VERSION=$CURRENT" >> $GITHUB_OUTPUT
+          echo "PREVIOUS=$PREVIOUS" >> $GITHUB_OUTPUT
+          echo "CHANGED=$CHANGED" >> $GITHUB_OUTPUT
+          echo "Current: $CURRENT | Previous: $PREVIOUS | Changed: $CHANGED"
 
-      # Versioned release: only when package.json version is new (PR bumped it)
+      # Versioned release: only when package.json version changed (PR bumped it)
       # Extract the current version's section from CHANGELOG.md for the release body.
       # Falls back to git log if CHANGELOG.md doesn't have a matching section.
       - name: Generate changelog
-        if: steps.tag_check.outputs.EXISTS == 'false'
+        if: steps.version.outputs.CHANGED == 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.force == 'true')
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
@@ -108,7 +112,7 @@ jobs:
           fi
 
       - name: Create versioned release
-        if: steps.tag_check.outputs.EXISTS == 'false'
+        if: steps.version.outputs.CHANGED == 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.force == 'true')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}

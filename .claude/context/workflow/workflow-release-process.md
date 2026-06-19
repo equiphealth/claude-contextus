@@ -18,7 +18,9 @@ merge to main → CI reads package.json version → tag exists? → NO → creat
 
 ## What triggers a release
 
-A version bump in `package.json`. That's it. No manual tagging, no release branches, no workflow_dispatch.
+A version bump in `package.json`. The workflow compares `HEAD` vs `HEAD^` — if the version string changed, a versioned release is created. No manual tagging needed.
+
+Escape hatch: `workflow_dispatch` with `force: true` creates a release even without a version change.
 
 ## PR checklist for release-worthy changes
 
