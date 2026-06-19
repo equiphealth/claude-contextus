@@ -27,6 +27,7 @@ import type { SearchResult } from '../storage/lance-client.js';
 export const SOURCE_WEIGHTS: Record<string, number> = {
   projectContext: 1.0,
   projectDocs: 0.9,
+  linkedContext: 0.85,
   userContext: 0.8,
   parentContext: 0.7,
   userDocs: 0.7,

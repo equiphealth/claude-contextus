@@ -23,9 +23,10 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
+import path from 'path';
 import { loadConfig, resolveDBPath, findPluginConfig } from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
+import { resolveSources, resolveLinkedSources, loadAllSources } from '../lib/embedding/sources.js';
 import { embedDocuments } from '../lib/embedding/embedder.js';
 import { createTable, type ContextRow } from '../lib/storage/lance-client.js';
 import { planChunks, buildRows, type PendingChunk } from '../lib/embedding/file-to-rows.js';
@@ -40,7 +41,8 @@ async function main(): Promise<void> {
   // packs), each relative to the project root (process.cwd()). The daemon's
   // incremental path stays context-only; doc sources refresh here, on a full
   // rebuild — matching their slower-changing, noisier nature.
-  const sources = resolveSources(pluginCfg);
+  const projectName = path.basename(process.cwd());
+  const sources = [...resolveSources(pluginCfg), ...resolveLinkedSources(projectName)];
   if (sources.length === 0) {
     console.error(`\n✗ No enabled sources resolved from plugin.json config.sources`);
     process.exit(1);

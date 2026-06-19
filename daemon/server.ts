@@ -44,6 +44,7 @@ import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
+import { resolveLinkedSources } from '../lib/embedding/sources.js';
 import { getContentHashes } from '../lib/storage/lance-client.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
@@ -484,7 +485,11 @@ async function handleNotify(
  */
 const activeWatchers = new Map<string, fs.FSWatcher>();
 
-function watchContextDir(contextDir: string, project: string | undefined): void {
+function watchContextDir(
+  contextDir: string,
+  project: string | undefined,
+  source = 'projectContext'
+): void {
   if (activeWatchers.has(contextDir)) return;
   if (!fs.existsSync(contextDir)) return;
 
@@ -498,13 +503,30 @@ function watchContextDir(contextDir: string, project: string | undefined): void 
         // Debounce: skip if a reconcile is in progress for this project
         const projectLabel = project ?? 'default';
         if (reconcilingProjects.has(projectLabel)) return;
-        embedSingleFile(absPath, contextDir, project)
+        embedSingleFile(absPath, contextDir, project, source)
           .then((result) => {
             if (result.reason === 'deleted') {
               invalidateCorpusCache(project);
               logInfo('Watcher: context file deleted', {
                 file: result.id,
-                project: projectLabel
+                project: projectLabel,
+                source
+              });
+            }
+          })
+          .catch(() => {});
+      } else {
+        // File created or modified — re-embed it
+        const projectLabel = project ?? 'default';
+        if (reconcilingProjects.has(projectLabel)) return;
+        embedSingleFile(absPath, contextDir, project, source)
+          .then((result) => {
+            if (result.embedded) {
+              invalidateCorpusCache(project);
+              logInfo('Watcher: context file updated', {
+                file: result.id,
+                project: projectLabel,
+                source
               });
             }
           })
@@ -512,7 +534,7 @@ function watchContextDir(contextDir: string, project: string | undefined): void 
       }
     });
     activeWatchers.set(contextDir, watcher);
-    logInfo('Watching context dir', { dir: contextDir, project: project ?? 'default' });
+    logInfo('Watching context dir', { dir: contextDir, project: project ?? 'default', source });
   } catch {
     // fs.watch can fail on unsupported filesystems — degrade silently
   }
@@ -591,7 +613,7 @@ async function handleReconcile(
   // Respond immediately; the embed runs detached from the request lifecycle.
   sendJson(res, 200, { state: 'started' });
   runReconcile(contextDir, project)
-    .then((r) => {
+    .then(async (r) => {
       if (r.embedded > 0 || r.removed > 0) {
         invalidateCorpusCache(project);
         logInfo('Reconcile complete', {
@@ -602,6 +624,31 @@ async function handleReconcile(
         });
       }
       watchContextDir(contextDir, project);
+      // Reconcile and watch linked project sources
+      const linkedSources = resolveLinkedSources(projectLabel);
+      for (const ls of linkedSources) {
+        const linkedContexts = await loadContexts(ls.dir);
+        const hashes = await getContentHashes(project, 'linkedContext');
+        const diskFiles: DiskFile[] = linkedContexts.map((c) => ({
+          id: c.id,
+          absPath: c.absPath,
+          content: c.content
+        }));
+        const exists = await tableExists(project);
+        const plan = planReconcile(diskFiles, hashes, exists);
+        if (plan.embedPaths.length > 0) {
+          for (const absPath of plan.embedPaths) {
+            await embedSingleFile(absPath, ls.dir, project, 'linkedContext');
+          }
+          invalidateCorpusCache(project);
+          logInfo('Linked reconcile complete', {
+            project: projectLabel,
+            linkedDir: ls.dir,
+            embedded: plan.embedPaths.length
+          });
+        }
+        watchContextDir(ls.dir, project, 'linkedContext');
+      }
     })
     .catch((err) =>
       logError('error', 'daemon', 'Reconcile failed', {

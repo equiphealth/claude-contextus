@@ -19,7 +19,7 @@
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
-import { expandHome } from '../config.js';
+import { expandHome, projectLocalConfigPath } from '../config.js';
 import { loadContext, type LoadedContext } from './context-loader.js';
 
 /** One resolved, enabled source ready to load. */
@@ -97,6 +97,49 @@ export async function loadAllSources(sources: ResolvedSource[]): Promise<Sourced
   const out: SourcedContext[] = [];
   for (const src of sources) {
     out.push(...(await loadSource(src)));
+  }
+  return out;
+}
+
+/* ── Linked Projects ─────────────────────────────────────────────────────────── */
+
+export interface LinkedProjectEntry {
+  name: string;
+  path: string;
+  enabled?: boolean;
+}
+
+/**
+ * Read linked projects from the tier-2 config (machine-local).
+ * Returns an empty array if no config or no linkedProjects key.
+ */
+export function readLinkedProjects(projectName: string): LinkedProjectEntry[] {
+  const configPath = projectLocalConfigPath(projectName);
+  try {
+    const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return Array.isArray(raw.linkedProjects) ? raw.linkedProjects : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolve linked projects into ResolvedSource entries.
+ * Each linked project's `.claude/context/` becomes a source with name='linkedContext'.
+ * Skips entries that are disabled or whose context dir doesn't exist.
+ */
+export function resolveLinkedSources(projectName: string): ResolvedSource[] {
+  const linked = readLinkedProjects(projectName);
+  const out: ResolvedSource[] = [];
+  for (const entry of linked) {
+    if (entry.enabled === false) continue;
+    const dir = path.resolve(expandHome(entry.path), '.claude', 'context');
+    if (!fs.existsSync(dir)) continue;
+    out.push({
+      name: 'linkedContext',
+      dir,
+      exclude: ['**/CONTEXT.md', '**/README.md']
+    });
   }
   return out;
 }

@@ -26,6 +26,8 @@
     "usage-rate": "tsx scripts/usage-rate.ts",
     "cost-report": "tsx scripts/cost-report.ts",
     "setup-detect": "tsx scripts/setup-detect.ts",
+    "link-project": "tsx scripts/link-project.ts",
+    "unlink-project": "tsx scripts/link-project.ts --remove",
     "lint": "eslint lib scripts daemon --ext .ts",
     "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\" \"*.jsonc\"",
     "format:all": "prettier --write \"**/*.{ts,json,jsonc}\"",

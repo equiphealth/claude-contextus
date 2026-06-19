@@ -29,13 +29,15 @@ export interface EmbedFileResult {
 /**
  * Re-embed a single context file and upsert it into the project table.
  * `absFile` is the changed file; `contextDir` is the project's `.claude/context`.
+ * `source` identifies the source label for reranking (default: projectContext).
  * Returns `embedded: false` (no throw) when the file is outside the context dir,
  * missing, or fails the prefix↔type gate — those are skips, not failures.
  */
 export async function embedSingleFile(
   absFile: string,
   contextDir: string,
-  projectName?: string
+  projectName?: string,
+  source = 'projectContext'
 ): Promise<EmbedFileResult> {
   const normFile = path.resolve(absFile);
   const normDir = path.resolve(contextDir);
@@ -48,7 +50,7 @@ export async function embedSingleFile(
   // File deleted: remove its rows from the corpus (orphan cleanup).
   if (!fs.existsSync(normFile)) {
     const relPath = path.relative(normDir, normFile).replace(/\\/g, '/');
-    const stored = (await getContentHashes(projectName)).get(relPath);
+    const stored = (await getContentHashes(projectName, source)).get(relPath);
     if (stored !== undefined) {
       await deleteByFilename(relPath, projectName);
       return { embedded: false, id: relPath, reason: 'deleted' };
@@ -69,7 +71,7 @@ export async function embedSingleFile(
 
   // Staleness gate: a save that didn't change the body shouldn't pay for a
   // re-embed. Compare the new content hash against the stored (file-level) one.
-  const stored = (await getContentHashes(projectName)).get(ctx.relPath);
+  const stored = (await getContentHashes(projectName, source)).get(ctx.relPath);
   if (!isStale(stored, ctx.content)) {
     return { embedded: false, id: ctx.id, reason: 'unchanged' };
   }
@@ -81,9 +83,7 @@ export async function embedSingleFile(
   if (pending.length === 0) return { embedded: false, id: ctx.id, reason: 'empty' };
   const vectors = [];
   for (const p of pending) vectors.push(await embedDocument(p.embedText));
-  // The incremental path only ever handles `.claude/context/` files (the
-  // PostToolUse watcher gates on that dir), so they're always projectContext.
-  const rows = buildRows(ctx, pending, vectors, 'projectContext', new Date().toISOString());
+  const rows = buildRows(ctx, pending, vectors, source, new Date().toISOString());
   await deleteByFilename(ctx.relPath, projectName);
   await upsertRows(rows, projectName);
   return { embedded: true, id: ctx.id };
