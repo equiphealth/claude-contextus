@@ -34,9 +34,31 @@ interface Args {
   json: boolean;
 }
 
+function printHelp(): void {
+  console.log(`usage-rate — "Context was used in XX% of injected responses"
+
+Usage:
+  pnpm usage-rate [options]
+
+Options:
+  --project <name>   Filter to a single project (default: all projects)
+  --days <N>         Only include the last N days (default: all time)
+  --json             Machine-readable JSON output
+  --help             Show this help message
+
+Examples:
+  pnpm usage-rate
+  pnpm usage-rate --project automation --days 7
+  pnpm usage-rate --json`);
+}
+
 function parseArgs(argv: string[]): Args {
   const args: Args = { json: false };
   for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--help' || argv[i] === '-h') {
+      printHelp();
+      process.exit(0);
+    }
     if (argv[i] === '--project' && argv[i + 1]) args.project = argv[++i];
     else if (argv[i] === '--days' && argv[i + 1]) args.days = parseInt(argv[++i], 10);
     else if (argv[i] === '--json') args.json = true;

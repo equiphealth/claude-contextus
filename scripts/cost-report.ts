@@ -39,6 +39,24 @@ interface CalibrationEvent {
 
 type UsageEvent = RetrievalEvent | CalibrationEvent;
 
+function printHelp(): void {
+  console.log(`cost-report — Token overhead numbers for org defensibility
+
+Usage:
+  pnpm cost-report [options]
+
+Options:
+  --project <name>   Filter to a single project (default: all projects)
+  --days <N>         Time window in days (default: 30)
+  --json             Machine-readable JSON output
+  --help             Show this help message
+
+Examples:
+  pnpm cost-report
+  pnpm cost-report --project automation --days 7
+  pnpm cost-report --json`);
+}
+
 function parseArgs(): { project?: string; days: number; json: boolean } {
   const args = process.argv.slice(2);
   let project: string | undefined;
@@ -46,6 +64,10 @@ function parseArgs(): { project?: string; days: number; json: boolean } {
   let json = false;
 
   for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--help' || args[i] === '-h') {
+      printHelp();
+      process.exit(0);
+    }
     if (args[i] === '--project' && args[i + 1]) {
       project = args[++i];
     } else if (args[i] === '--days' && args[i + 1]) {
