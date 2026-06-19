@@ -63,7 +63,7 @@
 #### Skills (26 total)
 
 **Setup & Configuration:**
-- `/contextus-setup` — First-run setup: scaffold `.claude/context/`, register in CLAUDE.md, initial embed
+- `/contextus-setup` — Guided setup wizard (Quick: 30s defaults, Power User: full config). Detects Ollama, legacy memory, cross-project sources. `--tune` for threshold calibration.
 - `/configure` — Interactive config editor for `.claude/contextus.jsonc`
 - `/migrate-memory` — Convert `.claude/memory/` (old format) → `.claude/context/` (new)
 

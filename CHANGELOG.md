@@ -3,13 +3,20 @@
 ## [0.6.0] - 2026-06-19
 
 ### Added
-- **Usage signal tracking**: Stop hook now ALWAYS parses the "Context: used:" provenance footer and logs `usage_signal` events to usage.jsonl. Previously only fired during calibration campaigns.
+- **Interactive setup wizard**: `/contextus-setup` rewritten as a two-track guided experience — Quick (30s sane defaults) or Power User (explains each option, lets you customize). New `setup-detect.ts` gathers all project state in one JSON call.
+- **Usage signal tracking**: Stop hook now ALWAYS parses the "Context: used:" provenance footer and logs `usage_signal` events to usage.jsonl. Zero API cost — pure regex + JSONL.
 - **Usage rate report** (`pnpm usage-rate`): Headline metric — "context was used in XX% of injected responses." Per-pattern breakdown, low-value pattern flagging, `--project`/`--days`/`--json` filtering.
+- **Expansion pre-warm**: qwen2.5:3b pinged at daemon startup so first expansion doesn't timeout (9.5s cold → 443ms warm).
+- **Deletion detection**: fs.watch on `.claude/context/` dirs removes orphan rows from LanceDB on file deletion. macOS/Windows only; Linux falls back to reconcile-on-start.
+- **`/contextus-setup --tune`**: Runs floor-replay calibration on real prompts, recommends injectionFloor + expansionThreshold, shows config diff.
+- **Proactive capture**: Awareness footer updated to instruct Claude to extract complete patterns with examples/thresholds — not stubs.
 - **Footer parser** (`lib/calibration/parse-footer.ts`): Regex extraction of the provenance footer for structured analysis.
+- **`--help` on CLI scripts**: `usage-rate` and `cost-report` are now self-documenting. `cost-report` added to package.json.
 
 ### Changed
 - Stop hook (`scripts/stop-evaluation.js`): Refactored from calibration-only to always-on usage signal + optional calibration enqueuing.
 - Logger gains `logUsageSignal` event type for the new `usage_signal` JSONL schema.
+- Session-start nudge updated to reference guided setup experience.
 
 ## [0.5.0] - 2026-06-18
 
