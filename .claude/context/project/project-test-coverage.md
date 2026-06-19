@@ -3,7 +3,7 @@ name: test-coverage-target
 description: Target ~80% test coverage — cover exports, edge cases, failures; skip internal-helper obsession
 metadata:
   type: project
-  tags: [testing, standards, coverage]
+  tags: [testing, standards, coverage, feature, pr, implementation, code-review]
 ---
 
 **Test coverage target: ~80%**
