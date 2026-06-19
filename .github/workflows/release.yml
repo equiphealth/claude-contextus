@@ -81,22 +81,31 @@ jobs:
           fi
 
       # Versioned release: only when package.json version is new (PR bumped it)
+      # Extract the current version's section from CHANGELOG.md for the release body.
+      # Falls back to git log if CHANGELOG.md doesn't have a matching section.
       - name: Generate changelog
         if: steps.tag_check.outputs.EXISTS == 'false'
         run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            COMMITS=$(git log --pretty=format:"- %s (%h)" HEAD)
+
+          # Try to extract from CHANGELOG.md (between ## [VERSION] and next ## [)
+          if grep -q "## \[${VERSION}\]" CHANGELOG.md 2>/dev/null; then
+            sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$d' > CHANGELOG.txt
           else
-            COMMITS=$(git log --pretty=format:"- %s (%h)" ${PREV_TAG}..HEAD)
+            # Fallback: commit list
+            if [ -z "$PREV_TAG" ]; then
+              COMMITS=$(git log --pretty=format:"- %s (%h)" HEAD)
+            else
+              COMMITS=$(git log --pretty=format:"- %s (%h)" ${PREV_TAG}..HEAD)
+            fi
+            printf "## What's Changed\n\n%s\n" "$COMMITS" > CHANGELOG.txt
           fi
-          cat > CHANGELOG.txt << EOF
-          ## What's Changed
 
-          ${COMMITS}
-
-          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...v${{ steps.version.outputs.VERSION }}
-          EOF
+          # Append compare link
+          if [ -n "$PREV_TAG" ]; then
+            printf "\n**Full Changelog**: https://github.com/${{ github.repository }}/compare/%s...v%s\n" "$PREV_TAG" "$VERSION" >> CHANGELOG.txt
+          fi
 
       - name: Create versioned release
         if: steps.tag_check.outputs.EXISTS == 'false'
