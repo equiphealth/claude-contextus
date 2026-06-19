@@ -635,6 +635,31 @@ const WARMUP_MAX_RETRIES = 5;
 const WARMUP_BASE_DELAY_MS = 10_000; // 10s, 20s, 40s, 80s, 160s
 let warmupRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+/**
+ * Pre-warm the expansion model (fire-and-forget). Ollama unloads idle models,
+ * so qwen2.5:3b takes ~9.5s cold vs 443ms warm. Sending a trivial generate
+ * request loads the model into memory before the first real expansion fires.
+ */
+function prewarmExpansion(): void {
+  const cfg = loadConfig();
+  if (cfg.expansion.mode === 'off') return;
+  if (cfg.expansion.provider !== 'ollama') return;
+
+  const endpoint = cfg.providers?.ollama?.endpoint || 'http://localhost:11434';
+  const model = cfg.expansion.model;
+
+  fetch(`${endpoint}/api/generate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model, prompt: 'hi', stream: false, options: { num_predict: 1 } }),
+    signal: AbortSignal.timeout(15_000)
+  })
+    .then(() => logInfo('Expansion model pre-warmed', { model }))
+    .catch(() => {
+      // Best-effort — if it fails, expansion will just use fallback or time out
+    });
+}
+
 function attemptWarmup(attempt = 0): void {
   const cfg = loadConfig();
   warmup()
@@ -653,6 +678,7 @@ function attemptWarmup(attempt = 0): void {
             cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model
         });
       }
+      prewarmExpansion();
     })
     .catch((err) => {
       warmupError = err instanceof Error ? err.message : String(err);
