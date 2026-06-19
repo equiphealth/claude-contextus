@@ -5,7 +5,7 @@ import type { SearchResult } from '../lib/storage/lance-client.js';
 
 const DEFAULT_CONFIG: PipelineConfig = {
   topK: 5,
-  injectionFloor: 0.45,
+  injectionFloor: 0.725,
   maxTokens: 3000,
   provenanceFooter: false
 };
@@ -33,19 +33,19 @@ function makeResult(overrides: Partial<SearchResult> = {}): SearchResult {
 
 // --- Near-miss scenario (the hard one to test before this extraction) ---
 
-test('pipeline: near-miss when best score is between 0.25 and floor', () => {
+test('pipeline: near-miss when best score is between noise floor and injection floor', () => {
   const raw = [
     makeResult({
       id: 'daemon-lifecycle.md',
       filename: 'daemon-lifecycle.md',
-      similarity: 0.38,
-      distance: 0.62
+      similarity: 0.68,
+      distance: 0.32
     }),
     makeResult({
       id: 'config-reload.md',
       filename: 'config-reload.md',
-      similarity: 0.32,
-      distance: 0.68
+      similarity: 0.65,
+      distance: 0.35
     })
   ];
   const result = processSearchResults(raw, DEFAULT_CONFIG);
@@ -53,23 +53,23 @@ test('pipeline: near-miss when best score is between 0.25 and floor', () => {
   if (result.kind === 'near-miss') {
     assert.ok(result.notice.includes('retrieval gap detected'));
     assert.ok(result.notice.includes('daemon lifecycle'));
-    assert.ok(result.notice.includes('best: 0.38'));
-    assert.ok(result.notice.includes('floor: 0.45'));
-    assert.equal(result.bestScore, 0.38);
+    assert.ok(result.notice.includes('best: 0.68'));
+    assert.ok(result.notice.includes('floor: 0.725'));
+    assert.equal(result.bestScore, 0.68);
   }
 });
 
 test('pipeline: near-miss with score just above noise floor', () => {
   const raw = [
-    makeResult({ id: 'some-topic.md', filename: 'some-topic.md', similarity: 0.26, distance: 0.74 })
+    makeResult({ id: 'some-topic.md', filename: 'some-topic.md', similarity: 0.63, distance: 0.37 })
   ];
   const result = processSearchResults(raw, DEFAULT_CONFIG);
   assert.equal(result.kind, 'near-miss');
 });
 
-test('pipeline: NOT a near-miss when score at noise floor (0.25)', () => {
+test('pipeline: NOT a near-miss when score at noise floor (0.625)', () => {
   const raw = [
-    makeResult({ id: 'noise.md', filename: 'noise.md', similarity: 0.25, distance: 0.75 })
+    makeResult({ id: 'noise.md', filename: 'noise.md', similarity: 0.625, distance: 0.375 })
   ];
   const result = processSearchResults(raw, DEFAULT_CONFIG);
   assert.equal(result.kind, 'no-inject');
@@ -88,15 +88,15 @@ test('pipeline: NOT a near-miss when score is 0 (empty corpus match)', () => {
 test('pipeline: injects when score clears the floor', () => {
   const raw = [
     makeResult({
-      similarity: 0.62,
-      distance: 0.38,
+      similarity: 0.82,
+      distance: 0.18,
       document: 'The daemon uses HTTP on port 37800.'
     }),
     makeResult({
       id: 'config.md',
       filename: 'config.md',
-      similarity: 0.55,
-      distance: 0.45,
+      similarity: 0.76,
+      distance: 0.24,
       document: 'Config hot-reloads on every query.'
     })
   ];
@@ -110,7 +110,7 @@ test('pipeline: injects when score clears the floor', () => {
 });
 
 test('pipeline: provenance footer included when configured', () => {
-  const raw = [makeResult({ similarity: 0.6, distance: 0.4 })];
+  const raw = [makeResult({ similarity: 0.8, distance: 0.2 })];
   const result = processSearchResults(raw, { ...DEFAULT_CONFIG, provenanceFooter: true });
   assert.equal(result.kind, 'inject');
   if (result.kind === 'inject') {
@@ -119,7 +119,7 @@ test('pipeline: provenance footer included when configured', () => {
 });
 
 test('pipeline: keyword fallback notice appended', () => {
-  const raw = [makeResult({ similarity: 0.6, distance: 0.4 })];
+  const raw = [makeResult({ similarity: 0.8, distance: 0.2 })];
   const result = processSearchResults(raw, DEFAULT_CONFIG, { usedKeywordFallback: true });
   assert.equal(result.kind, 'inject');
   if (result.kind === 'inject') {
@@ -130,13 +130,13 @@ test('pipeline: keyword fallback notice appended', () => {
 // --- Floor boundary ---
 
 test('pipeline: score exactly at floor is injected (>= check)', () => {
-  const raw = [makeResult({ similarity: 0.45, distance: 0.55 })];
+  const raw = [makeResult({ similarity: 0.725, distance: 0.275 })];
   const result = processSearchResults(raw, DEFAULT_CONFIG);
   assert.equal(result.kind, 'inject');
 });
 
 test('pipeline: score just below floor triggers near-miss', () => {
-  const raw = [makeResult({ similarity: 0.44, distance: 0.56 })];
+  const raw = [makeResult({ similarity: 0.72, distance: 0.28 })];
   const result = processSearchResults(raw, DEFAULT_CONFIG);
   assert.equal(result.kind, 'near-miss');
 });
@@ -145,8 +145,8 @@ test('pipeline: score just below floor triggers near-miss', () => {
 
 test('pipeline: mixed scores — injects what clears, drops what doesnt', () => {
   const raw = [
-    makeResult({ id: 'good.md', filename: 'good.md', similarity: 0.6, distance: 0.4 }),
-    makeResult({ id: 'weak.md', filename: 'weak.md', similarity: 0.3, distance: 0.7 })
+    makeResult({ id: 'good.md', filename: 'good.md', similarity: 0.8, distance: 0.2 }),
+    makeResult({ id: 'weak.md', filename: 'weak.md', similarity: 0.65, distance: 0.35 })
   ];
   const result = processSearchResults(raw, DEFAULT_CONFIG);
   assert.equal(result.kind, 'inject');
@@ -165,8 +165,8 @@ test('pipeline: respects topK limit', () => {
     makeResult({
       id: `file-${i}.md`,
       filename: `file-${i}.md`,
-      similarity: 0.6 + i * 0.01,
-      distance: 0.4 - i * 0.01
+      similarity: 0.75 + i * 0.01,
+      distance: 0.25 - i * 0.01
     })
   );
   const config = { ...DEFAULT_CONFIG, topK: 3 };
@@ -180,15 +180,15 @@ test('pipeline: respects topK limit', () => {
 // --- Custom floor configuration ---
 
 test('pipeline: higher floor makes more near-misses', () => {
-  const raw = [makeResult({ similarity: 0.55, distance: 0.45 })];
-  const strictConfig = { ...DEFAULT_CONFIG, injectionFloor: 0.6 };
+  const raw = [makeResult({ similarity: 0.7, distance: 0.3 })];
+  const strictConfig = { ...DEFAULT_CONFIG, injectionFloor: 0.75 };
   const result = processSearchResults(raw, strictConfig);
   assert.equal(result.kind, 'near-miss');
 });
 
 test('pipeline: lower floor makes fewer near-misses', () => {
-  const raw = [makeResult({ similarity: 0.3, distance: 0.7 })];
-  const lenientConfig = { ...DEFAULT_CONFIG, injectionFloor: 0.25 };
+  const raw = [makeResult({ similarity: 0.65, distance: 0.35 })];
+  const lenientConfig = { ...DEFAULT_CONFIG, injectionFloor: 0.6 };
   const result = processSearchResults(raw, lenientConfig);
   assert.equal(result.kind, 'inject');
 });

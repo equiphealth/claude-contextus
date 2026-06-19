@@ -87,12 +87,13 @@
       "similarityThreshold": 0.7, // Post-ranking filter — calibrate in Phase 5
       // Gate on raw similarity — 'inject anything at all?'. SEPARATE from similarityThreshold.
       // Calibrated to 0.45 via /context-calibrate --floor against 721-chunk corpus.
-      "injectionFloor": 0.45,
+      "injectionFloor": 0.725,
       "maxTokens": 3000,
       "mergeStrategy": "interleaved",
       // Hybrid search: fuse keyword (BM25) + semantic (vector) via Reciprocal Rank Fusion.
-      // always=every query gets both, off=pure semantic (keyword only as fallback when embedding down).
-      "hybrid": "always"
+      // adaptive=keyword augments only when semantic scores are below floor (rescues exact-symbol queries).
+      // always=every query gets both. off=pure semantic (keyword only as error fallback).
+      "hybrid": "adaptive"
     },
     "expansion": {
       // Multi-vector query expansion: generate alternate phrasings when the initial
@@ -102,7 +103,7 @@
       "model": "qwen2.5:3b",
       "fallbackProvider": "bedrock",
       "fallbackModel": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-      "expansionThreshold": 0.55,
+      "expansionThreshold": 0.775,
       "maxVariants": 3,
       "temperature": 0.7,
       "timeoutMs": 5000

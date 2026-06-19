@@ -13,11 +13,9 @@
  * ⚠ PHASE-5 CALIBRATION (the load-bearing caveat): the floor is model-dependent
  * and the deployed value is UNVALIDATED. Phase-1 measurement (see the
  * floor-calibration-signals memory + BUILD_LOG) found ollama-nomic puts CORRECT
- * top hits at 0.45–0.68 with noise at ~0.0–0.09 — so DESIGN.md's placeholder
- * 0.7 would suppress good matches and inject nothing. We therefore read a
- * SEPARATE `injectionFloor` knob (default 0.35, permissive) — NOT the ranking
- * `similarityThreshold`. Phase 5's replay harness sets the real number from real
- * prompts; this default exists only to make the spine demonstrably inject.
+ * top hits at 0.72–0.84 (cosine similarity from L2²: 1 - _distance/2) with
+ * noise at ~0.5. The floor-replay harness sets the real number from real prompts;
+ * this default exists only to make the spine demonstrably inject.
  */
 
 import type { RankedResult } from './reranker.js';

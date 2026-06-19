@@ -39,7 +39,7 @@ test('buildCoverageCurve: monotonically non-increasing injection rate as floor r
   for (let i = 1; i < curve.length; i++) {
     assert.ok(curve[i].injectionRate <= curve[i - 1].injectionRate);
   }
-  assert.equal(curve[0].floor, 0.05);
+  assert.equal(curve[0].floor, 0.3);
 });
 
 test('recommendFloor: places floor in the noise/signal gap (bimodal distribution)', () => {
@@ -129,7 +129,7 @@ test('recommendFloor: empty corpus → permissive fallback, never throws', () =>
   ]);
   assert.equal(rec.sampled, 0);
   assert.equal(rec.emptyResults, 2);
-  assert.equal(rec.recommendedFloor, 0.35);
+  assert.equal(rec.recommendedFloor, 0.65);
   assert.match(rec.rationale, /empty corpus|permissive|recalibrate/i);
 });
 
