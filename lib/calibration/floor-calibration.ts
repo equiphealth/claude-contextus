@@ -82,7 +82,7 @@ export function coverage(values: number[], floor: number): number {
 }
 
 /** Fixed grid of candidate floors for the trade curve + coverage-target search. */
-const FLOOR_GRID = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7];
+const FLOOR_GRID = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.725, 0.75, 0.775, 0.8, 0.85];
 
 /**
  * Build a floor→injection-rate trade curve over a fixed grid of floors.
@@ -179,11 +179,11 @@ export function recommendFloor(results: ReplayResult[]): FloorRecommendation {
       top1Min: 0,
       top1Max: 0,
       medianSeparation: 0,
-      recommendedFloor: 0.35,
+      recommendedFloor: 0.65,
       coverageAtFloor: 0,
       coverageCurve: [],
       rationale:
-        'No prompts produced retrievable results (empty corpus?). Falling back to the permissive 0.35 default — recalibrate once the corpus is populated.'
+        'No prompts produced retrievable results (empty corpus?). Falling back to the permissive 0.65 default — recalibrate once the corpus is populated.'
     };
   }
 

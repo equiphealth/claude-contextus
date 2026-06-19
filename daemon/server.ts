@@ -225,23 +225,30 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     const CHUNK_FANOUT = 4;
     const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
 
+    // Always start with semantic search
+    const vec = await embedQuery(prompt);
+    raw = await search(vec, fetchLimit, undefined, project);
+
     if (cfg.retrieval.hybrid === 'always') {
-      // Hybrid mode: run vector + keyword in parallel, fuse with RRF
-      const [vec, corpus] = await Promise.all([embedQuery(prompt), loadCorpusForKeyword(project)]);
-      const [semanticResults, keywordResults] = await Promise.all([
-        search(vec, fetchLimit, undefined, project),
-        Promise.resolve(hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK))
-      ]);
+      // Always-on hybrid: fuse keyword + semantic unconditionally
+      const corpus = await loadCorpusForKeyword(project);
+      const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
       if (keywordResults.length > 0) {
-        raw = fuseRRF(semanticResults, keywordResults, fetchLimit);
-      } else {
-        raw = semanticResults;
+        raw = fuseRRF(raw, keywordResults, fetchLimit);
       }
-    } else {
-      // Pure semantic search
-      const vec = await embedQuery(prompt);
-      raw = await search(vec, fetchLimit, undefined, project);
+    } else if (cfg.retrieval.hybrid === 'adaptive') {
+      // Adaptive hybrid: only augment with keyword when semantic scores are weak.
+      // Rescues exact-symbol queries ("getLogger") that embed poorly but BM25 nails.
+      const semanticBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
+      if (semanticBest < cfg.retrieval.injectionFloor) {
+        const corpus = await loadCorpusForKeyword(project);
+        const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
+        if (keywordResults.length > 0) {
+          raw = fuseRRF(raw, keywordResults, fetchLimit);
+        }
+      }
     }
+    // hybrid === 'off': pure semantic, keyword only as error fallback (below)
   } catch (embedErr) {
     // Provider dropped mid-session — mark down and trigger re-warmup so the
     // daemon recovers automatically once the provider comes back.

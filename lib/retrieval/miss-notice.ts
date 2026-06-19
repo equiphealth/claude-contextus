@@ -34,10 +34,11 @@ export function buildRetrievalMissNotice(
 
 /**
  * Determine whether a no-inject event qualifies as a "near miss" worth surfacing.
- * Requirements: score above noise floor (0.25) and at least one dropped candidate.
+ * Requirements: score above noise floor (0.625 = unrelated but not pure random)
+ * and at least one dropped candidate.
  */
 export function isNearMiss(bestScore: number, droppedCount: number): boolean {
-  return bestScore > 0.25 && droppedCount > 0;
+  return bestScore > 0.625 && droppedCount > 0;
 }
 
 /**

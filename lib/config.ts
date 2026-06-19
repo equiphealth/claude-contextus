@@ -101,7 +101,7 @@ export interface StorageConfig {
 }
 
 /** Hybrid search mode: when to fuse keyword results with vector search. */
-export type HybridMode = 'always' | 'off';
+export type HybridMode = 'always' | 'adaptive' | 'off';
 
 export interface RetrievalConfig {
   topK: number;
@@ -263,7 +263,7 @@ const DEFAULTS: ContextusConfig = {
     maxTokens: 3000,
     mergeStrategy: 'interleaved',
     provenanceFooter: true, // show "Context: used:" by default; opt-out per project
-    hybrid: 'always' // fuse keyword + semantic via RRF on every query
+    hybrid: 'adaptive' // keyword augments only when semantic is below floor
   },
   expansion: {
     mode: 'adaptive',
