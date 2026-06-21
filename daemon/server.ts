@@ -594,7 +594,8 @@ async function handleCapture(
   }
 
   // Build the frontmatter + body
-  const tagsLine = tags.length > 0 ? `\n  tags: [${tags.join(', ')}]` : '';
+  const tagsLine =
+    tags.length > 0 ? `\n  tags: [${tags.map((t: string) => `"${t}"`).join(', ')}]` : '';
   const fileContent = `---
 name: ${slug}
 description: ${description}
