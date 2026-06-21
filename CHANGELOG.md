@@ -8,10 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Unified database**: Single LanceDB at `~/.contextus/data/contextus.lance` replaces per-project isolation. All projects share one table with a `project` column (sha256 hash of absolute path, 12 chars). Eliminates row duplication for linked projects.
+- **Workspaces**: JSONC files under `~/.contextus/workspaces/` define bidirectional project groups. Queries scope via `WHERE project IN (self, siblings, '__user__')`. Replaces the old `linkedProjects` config key.
+- **`pnpm link-project` rewrite**: Now creates/joins workspaces instead of one-directional links. New flags: `--workspace <name>`, `--remove <path>`. Both projects see each other's context automatically.
+- **User-level context sources**: `~/.contextus/context/` and `~/.contextus/docs/` stamped with `project: '__user__'` — visible to all workspace-scoped queries without explicit linking.
+- **Upgrade detection on session start**: `checkUpgradeNeeded()` compares data version against installed package.json version, notifies user to run `/contextus-upgrade` when migrations are pending.
+- **Version-gated migrations**: `upgrade-detect.ts` checks `~/.contextus/version.json` against installed version; only proposes migrations when the installed code actually supports them.
+- **Silent Capture v2 staging mode**: Awareness hook supports `propose` (current default), `staging` (write directly, git is gate), and `silent` (no capture) modes via config.
+- **Proactive capture reinforcement**: Three-layer obligation (awareness hook prompt, CLAUDE.md mandate, context pattern) ensures Claude proposes context capture after implementation work.
+- **Telemetry proposal**: Design doc for future opt-in anonymous telemetry with transparency requirements and hard privacy boundaries (`docs/dev/TELEMETRY_PROPOSAL.md`).
+- **Incremental CHANGELOG workflow**: Context pattern + workflow for updating changelog during development, not at PR merge time.
+- **Regression test suite**: `tests/unified-db-scoping.test.ts` covers row ID uniqueness, project stamp consistency, keyword scoping, and `__user__` visibility.
 
 ### Changed
+- **Package version**: 0.7.0 → 0.8.0 (breaking: requires re-embed for project column)
+- **Global user sources**: Moved from `~/.claude/memory` / `~/.claude/docs` to `~/.contextus/context/` / `~/.contextus/docs/`
+- **Row IDs**: Now globally unique — `<projectHash>:<relPath>#<chunkIndex>` (prevents cross-project collisions in unified DB)
+- **`deleteByProject`**: Uses WHERE predicate pushed to LanceDB (O(matching rows), not O(total))
+- **Watcher**: Now handles both `'change'` and `'rename'` events (in-place edits trigger re-embed)
+- **`getInstalledVersion()`**: Uses `fileURLToPath(import.meta.url)` for Windows compatibility
+- **link-project SKILL.md**: Rewritten for workspace-based API
 
 ### Fixed
+- **Row ID collisions**: Two projects with the same relative filename no longer overwrite each other's rows
+- **Unscoped deletion**: `deleteByFilename` and `getContentHashes` now accept `projectFilter` — operations don't cascade across projects
+- **Reconcile missing projectId**: Stale file path in reconcile now passes `projectId` and `source` to `embedSingleFile`
+- **User sources stamped wrong**: User context/docs rows were stamped with project hash (invisible to other projects); now stamped `__user__`
+- **Keyword search cross-project leak**: `loadCorpusForKeyword` now accepts `projectScope` and applies `WHERE project IN (...)` filter — keyword/hybrid paths no longer return another project's patterns
 
 ## [0.7.0] - 2026-06-19
 
