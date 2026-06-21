@@ -111,7 +111,10 @@
     "autoRebuild": true,
     "contextCapture": {
       "enabled": true,
-      "mode": "staging"
+      "mode": "staging",
+      // "always" = emit "Context: captured:" for every capture
+      // "off" = no capture confirmation in response
+      "captureFooter": "always"
     },
     "calibration": {
       // Quality evaluation (LOGGING.md calibration_eval). Provider judges whether

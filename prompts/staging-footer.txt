@@ -25,8 +25,9 @@ FILENAME: `<category>/<type>-<slug>.md` — folder name and filename prefix must
 
 AFTER WRITING:
 1. Update the relevant CONTEXT.md index (`.claude/context/CONTEXT.md` or `~/.contextus/context/CONTEXT.md`) with a one-line entry
-2. For user-level captures, emit: "Context: captured: ~/.contextus/context/<path>"
-3. For project captures, no footer needed (git status will surface them)
+2. At the END of your response, emit one line per capture: "Context: captured: <relPath>"
+   Examples: "Context: captured: decisions/decision-foo.md"
+             "Context: captured: ~/.contextus/context/reference/reference-bar.md"
 
 OBLIGATION: You MUST capture when ANY of these occur:
 - Implementation work surfaces new subsystems, architectural patterns, non-obvious failure modes, or workflow knowledge

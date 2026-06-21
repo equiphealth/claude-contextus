@@ -54,14 +54,16 @@ function projectName(cwd) {
   return cwd ? path.basename(cwd) : path.basename(process.cwd());
 }
 
-/** Read contextCapture.mode with config precedence: project > plugin. */
-function captureMode() {
+/** Read contextCapture config with precedence: project > plugin. */
+function captureConfig() {
   let mode = 'propose';
+  let captureFooter = 'always';
   // Plugin defaults (lowest precedence)
   try {
     const text = fs.readFileSync(PLUGIN_JSON, 'utf8');
     const cfg = JSON.parse(stripJsonComments(text));
     if (cfg?.config?.contextCapture?.mode) mode = cfg.config.contextCapture.mode;
+    if (cfg?.config?.contextCapture?.captureFooter) captureFooter = cfg.config.contextCapture.captureFooter;
   } catch {}
   // Project-level override (highest precedence)
   const projectConfig = path.resolve(process.cwd(), '.claude', 'contextus.jsonc');
@@ -69,8 +71,13 @@ function captureMode() {
     const text = fs.readFileSync(projectConfig, 'utf8');
     const cfg = JSON.parse(stripJsonComments(text));
     if (cfg?.contextCapture?.mode) mode = cfg.contextCapture.mode;
+    if (cfg?.contextCapture?.captureFooter) captureFooter = cfg.contextCapture.captureFooter;
   } catch {}
-  return mode;
+  return { mode, captureFooter };
+}
+
+function captureMode() {
+  return captureConfig().mode;
 }
 
 /** Ask the daemon what it has recently injected for this project (best-effort). */
@@ -105,13 +112,19 @@ function loadPromptTemplate(mode) {
 }
 
 /** Build the footer instruction, folding in the novelty signal if we have one. */
-function buildFooter(mode, recent) {
+function buildFooter(mode, recent, captureFooter) {
   // NOTE: this hook handles ONLY the `propose:` (capture) footer. The `used:`
   // (provenance) footer is emitted by the daemon's injection block
   // (renderFooterInstruction), which is the only place that KNOWS what was injected
   // — instructing Claude to recite `used:` from here induced hallucinated filenames
   // + scores (observed 2026-06-15). Keep these separate: propose here, used there.
-  const base = loadPromptTemplate(mode);
+  let base = loadPromptTemplate(mode);
+
+  // Strip the "emit capture footer" instruction if configured off
+  if (captureFooter === 'off') {
+    base = base.replace(/2\. At the END of your response.*?(?=\n\n|\nOBLIGATION)/s, '');
+  }
+
   if (recent.length === 0) return base;
   const list = recent.slice(-8).join(', ');
   return (
@@ -129,7 +142,7 @@ async function main() {
     return emit({ continue: true });
   }
 
-  const mode = captureMode();
+  const { mode, captureFooter } = captureConfig();
   if (mode === 'silent') return emit({ continue: true });
 
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
@@ -139,7 +152,7 @@ async function main() {
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: buildFooter(mode, recent),
+      additionalContext: buildFooter(mode, recent, captureFooter),
     },
   });
 }

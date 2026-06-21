@@ -70,7 +70,8 @@
   "contextCapture": {
     // Pattern proposal system — how contextus suggests new patterns to capture.
     "enabled": true,
-    "mode": "propose" // propose (suggest, user confirms) | auto (capture without asking) | silent
+    "mode": "propose", // propose (suggest) | staging (write directly, git is gate) | silent
+    "captureFooter": "always" // "always" = emit "Context: captured:" | "off" = no confirmation
   },
 
   "notifications": {

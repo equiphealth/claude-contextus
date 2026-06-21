@@ -15,9 +15,10 @@
  *   GET  /health          → { status, uptime, modelLoaded, lancedbConnected, embeddingModel }
  *   GET  /novelty         → { project, recent: string[] } — recently-injected patterns
  *   GET  /introspect      → live config + corpus stats (Self-doc Layer 1)
- *   POST /query  {project, prompt}        → { continue, hookSpecificOutput?: { additionalContext } }
- *   POST /notify {project, file, cwd?}    → { ok, embedded, id? }
- *   POST /reconcile {project, cwd, check?}→ { state, started? } | { state, embedded, removed }
+ *   POST /query   {project, prompt}                              → { continue, hookSpecificOutput?: { additionalContext } }
+ *   POST /notify  {project, file, cwd?}                          → { ok, embedded, id? }
+ *   POST /capture {category, slug, description, body, cwd, ...}  → { ok, file, embedded, scope }
+ *   POST /reconcile {project, cwd, check?}                       → { state, started? } | { state, embedded, removed }
  *
  * The pipeline on /query is the spine: embedQuery → vector search → rerank →
  * floor → format. Floor-dropped chunks are logged with scores (v2 governance
@@ -501,6 +502,186 @@ async function handleNotify(
   sendJson(res, 200, { ok: true, ...result });
 }
 
+/**
+ * POST /capture — write a context or doc file atomically + embed + update index.
+ * Replaces Write+Edit tool calls in staging mode for lower UI noise.
+ *
+ * target: "context" (default) — structured frontmatter, category dirs, CONTEXT.md index
+ * target: "doc" — free-form markdown, flat in docs/, DOCS.md index
+ */
+async function handleCapture(
+  body: Record<string, unknown>,
+  res: http.ServerResponse
+): Promise<void> {
+  const target = typeof body.target === 'string' ? body.target : 'context';
+  const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
+  const description = typeof body.description === 'string' ? body.description.trim() : '';
+  const content = typeof body.body === 'string' ? body.body : '';
+  const scope = typeof body.scope === 'string' ? body.scope : 'project';
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+  const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+
+  if (target === 'doc') {
+    // Doc mode: free-form markdown, no frontmatter, flat directory
+    if (!slug || !content) {
+      sendJson(res, 400, { error: 'missing required fields for doc: slug, body' });
+      return;
+    }
+
+    const docsDir = scope === 'user' ? expandHome('~/.contextus/docs') : path.join(cwd, 'docs');
+    const filename = `${slug}.md`;
+    const absFile = path.join(docsDir, filename);
+
+    try {
+      fs.mkdirSync(docsDir, { recursive: true });
+      fs.writeFileSync(absFile, content, 'utf-8');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('error', 'capture', 'failed to write doc file', { file: absFile, message: msg });
+      sendJson(res, 500, { error: `write failed: ${msg}` });
+      return;
+    }
+
+    // Update DOCS.md index
+    const indexFile = path.join(docsDir, 'DOCS.md');
+    const indexEntry = `- [${slug}](${filename}) — ${description || slug}\n`;
+    try {
+      if (fs.existsSync(indexFile)) {
+        fs.appendFileSync(indexFile, indexEntry);
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    logCapture(scope, filename, description || slug);
+    logInfo('Doc captured', { scope, file: filename });
+
+    sendJson(res, 200, {
+      ok: true,
+      file: absFile,
+      relPath: filename,
+      target: 'doc',
+      embedded: 'pending',
+      scope
+    });
+
+    // Embed async
+    const projectId = projectHash(cwd);
+    const source = scope === 'user' ? 'userDocs' : 'projectDocs';
+    embedSingleFile(absFile, docsDir, project, source, projectId)
+      .then((result) => {
+        if (result.embedded) invalidateCorpusCache(project);
+        logInfo('Doc embedded', { file: filename, embedded: result.embedded });
+      })
+      .catch((err) => {
+        logError('warn', 'capture', 'async doc embed failed (reconcile will retry)', {
+          file: filename,
+          message: err instanceof Error ? err.message : String(err)
+        });
+      });
+    return;
+  }
+
+  // Context mode (default): structured frontmatter, category dirs
+  const category = typeof body.category === 'string' ? body.category.trim() : '';
+  const tags = Array.isArray(body.tags)
+    ? body.tags.filter((t): t is string => typeof t === 'string')
+    : [];
+
+  if (!category || !slug || !description || !content) {
+    sendJson(res, 400, { error: 'missing required fields: category, slug, description, body' });
+    return;
+  }
+
+  // Build the frontmatter + body
+  const tagsLine =
+    tags.length > 0 ? `\n  tags: [${tags.map((t: string) => `"${t}"`).join(', ')}]` : '';
+  const fileContent = `---
+name: ${slug}
+description: ${description}
+metadata:
+  type: ${category}${tagsLine}
+---
+
+${content}
+`;
+
+  // Resolve target path — folder names follow existing conventions
+  const CATEGORY_DIRS: Record<string, string> = {
+    decision: 'decisions',
+    gotcha: 'gotchas',
+    tradeoff: 'tradeoffs',
+    question: 'questions',
+    arch: 'arch',
+    api: 'api',
+    phase: 'phase',
+    project: 'project',
+    schema: 'schema',
+    security: 'security',
+    perf: 'perf',
+    reference: 'reference',
+    implementation: 'implementation'
+  };
+  const contextDir =
+    scope === 'user' ? expandHome('~/.contextus/context') : path.join(cwd, '.claude', 'context');
+  const dirName = CATEGORY_DIRS[category] || category;
+  const categoryDir = path.join(contextDir, dirName);
+  const filename = `${category}-${slug}.md`;
+  const absFile = path.join(categoryDir, filename);
+
+  // Write the file
+  try {
+    fs.mkdirSync(categoryDir, { recursive: true });
+    fs.writeFileSync(absFile, fileContent, 'utf-8');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logError('error', 'capture', 'failed to write context file', { file: absFile, message: msg });
+    sendJson(res, 500, { error: `write failed: ${msg}` });
+    return;
+  }
+
+  // Update CONTEXT.md index
+  const indexFile = path.join(contextDir, 'CONTEXT.md');
+  const relPath = `${dirName}/${filename}`;
+  const indexEntry = `- [${slug}](${relPath}) — ${description}\n`;
+  try {
+    if (fs.existsSync(indexFile)) {
+      fs.appendFileSync(indexFile, indexEntry);
+    }
+  } catch {
+    // Non-fatal — file is written, index update is best-effort
+  }
+
+  // Log to captures audit trail (sync — fast)
+  logCapture(scope, relPath, description);
+  logInfo('Context captured', { scope, file: relPath });
+
+  // Respond immediately — file is on disk, git can see it
+  sendJson(res, 200, {
+    ok: true,
+    file: absFile,
+    relPath,
+    target: 'context',
+    embedded: 'pending',
+    scope
+  });
+
+  // Embed async (fire-and-forget) — reconcile catches failures
+  const projectId = projectHash(cwd);
+  const source = scope === 'user' ? 'userContext' : 'projectContext';
+  embedSingleFile(absFile, contextDir, project, source, projectId)
+    .then((result) => {
+      if (result.embedded) invalidateCorpusCache(project);
+      logInfo('Capture embedded', { file: relPath, embedded: result.embedded });
+    })
+    .catch((err) => {
+      logError('warn', 'capture', 'async embed failed (reconcile will retry)', {
+        file: relPath,
+        message: err instanceof Error ? err.message : String(err)
+      });
+    });
+}
+
 /* ── Directory watcher — live deletion detection ────────────────────────────── */
 
 /**
@@ -697,11 +878,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (method === 'POST' && (url === '/query' || url === '/notify' || url === '/reconcile')) {
+  if (
+    method === 'POST' &&
+    (url === '/query' || url === '/notify' || url === '/reconcile' || url === '/capture')
+  ) {
     readJsonBody(req)
       .then((body) => {
         if (url === '/query') return handleQuery(body, res);
         if (url === '/notify') return handleNotify(body, res);
+        if (url === '/capture') return handleCapture(body, res);
         return handleReconcile(body, res);
       })
       .catch((err) => {

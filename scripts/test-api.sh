@@ -44,6 +44,23 @@ function test_query() {
     | jq -r '.hookSpecificOutput.additionalContext // "No injection"'
 }
 
+function test_capture() {
+  echo -e "${YELLOW}=== POST /capture ===${NC}"
+  curl -s -X POST "${BASE}/capture" \
+    -H "Content-Type: application/json" \
+    -d "{\"category\":\"reference\",\"slug\":\"test-capture-endpoint\",\"description\":\"Test capture via API\",\"body\":\"This is a test capture created by test-api.sh.\\n\\nIt should be cleaned up after testing.\",\"cwd\":\"${PWD}\",\"project\":\"${PROJECT}\"}" \
+    | jq .
+  echo -e "${GREEN}(Remember to delete .claude/context/reference/reference-test-capture-endpoint.md after testing)${NC}"
+}
+
+function test_capture_validation() {
+  echo -e "${YELLOW}=== POST /capture (missing fields) ===${NC}"
+  curl -s -X POST "${BASE}/capture" \
+    -H "Content-Type: application/json" \
+    -d "{\"category\":\"gotcha\"}" \
+    | jq .
+}
+
 function test_all() {
   test_health
   echo
@@ -70,6 +87,12 @@ case "${1:-all}" in
     ;;
   query)
     test_query "${2:-How does the daemon work?}"
+    ;;
+  capture)
+    test_capture
+    ;;
+  capture-validation)
+    test_capture_validation
     ;;
   all)
     test_all
