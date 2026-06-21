@@ -138,7 +138,7 @@ export async function createTable(
   writeTableMeta(
     {
       provider,
-      embeddingModel: provider === 'ollama' ? ollamaModel : model,
+      embeddingModel: provider === 'ollama' ? (ollamaModel ?? model) : model,
       dimensions: rows[0].vector.length,
       createdAt: new Date().toISOString()
     },

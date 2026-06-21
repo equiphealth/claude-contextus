@@ -23,13 +23,7 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
-import {
-  loadConfig,
-  loadProjectConfig,
-  resolveDBPath,
-  findPluginConfig,
-  projectHash
-} from '../lib/config.js';
+import { loadProjectConfig, resolveDBPath, findPluginConfig, projectHash } from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
 import { embedDocuments } from '../lib/embedding/embedder.js';
