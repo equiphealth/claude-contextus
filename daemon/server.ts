@@ -27,9 +27,15 @@
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
-import { loadConfig, loadProjectConfig, expandHome } from '../lib/config.js';
+import { loadConfig, loadProjectConfig, expandHome, projectHash } from '../lib/config.js';
 import { warmup, embedQuery } from '../lib/embedding/embedder.js';
-import { search, tableExists, readTableMeta, incrementHits } from '../lib/storage/lance-client.js';
+import {
+  search,
+  tableExists,
+  readTableMeta,
+  incrementHits,
+  getContentHashes
+} from '../lib/storage/lance-client.js';
 import { estimateTokens } from '../lib/retrieval/inject-format.js';
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
 import {
@@ -44,7 +50,7 @@ import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { getContentHashes } from '../lib/storage/lance-client.js';
+import { resolveProjectScope } from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
@@ -163,6 +169,14 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
   // cwd = the project repo root, needed for the git-committed tier-3 config override.
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
+  // Compute the project hash for DB scoping (hooks pass absolute path or basename).
+  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : undefined;
+  // Resolve workspace scope: self + siblings + __user__
+  const projectScope = cwd
+    ? resolveProjectScope(cwd)
+    : projectId
+      ? [projectId, '__user__']
+      : undefined;
 
   if (!prompt.trim()) {
     return sendJson(res, 200, { continue: true });
@@ -225,13 +239,13 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     const CHUNK_FANOUT = 4;
     const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
 
-    // Always start with semantic search
+    // Always start with semantic search (workspace-scoped)
     const vec = await embedQuery(prompt);
-    raw = await search(vec, fetchLimit, undefined, project);
+    raw = await search(vec, fetchLimit, undefined, project, projectScope);
 
     if (cfg.retrieval.hybrid === 'always') {
       // Always-on hybrid: fuse keyword + semantic unconditionally
-      const corpus = await loadCorpusForKeyword(project);
+      const corpus = await loadCorpusForKeyword(project, projectScope);
       const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
       if (keywordResults.length > 0) {
         raw = fuseRRF(raw, keywordResults, fetchLimit);
@@ -241,7 +255,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       // Rescues exact-symbol queries ("getLogger") that embed poorly but BM25 nails.
       const semanticBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
       if (semanticBest < cfg.retrieval.injectionFloor) {
-        const corpus = await loadCorpusForKeyword(project);
+        const corpus = await loadCorpusForKeyword(project, projectScope);
         const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
         if (keywordResults.length > 0) {
           raw = fuseRRF(raw, keywordResults, fetchLimit);
@@ -267,7 +281,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     attemptWarmup();
 
     // Try keyword fallback before giving up entirely
-    const corpus = await loadCorpusForKeyword(project);
+    const corpus = await loadCorpusForKeyword(project, projectScope);
     if (corpus.length === 0) {
       return sendJson(res, 200, { continue: true });
     }
@@ -303,7 +317,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       const variantSearches = await Promise.all(
         expanded.variants.map(async (variant) => {
           const vVec = await embedQuery(variant);
-          return search(vVec, variantLimit, undefined, project);
+          return search(vVec, variantLimit, undefined, project, projectScope);
         })
       );
       // Union: merge all results, dedupe by row id (keep highest similarity).
@@ -458,10 +472,11 @@ async function handleNotify(
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
   if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
 
+  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : '';
   const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
   const contextDir = path.join(cwd, '.claude', 'context');
-  watchContextDir(contextDir, project);
-  const result = await embedSingleFile(absFile, contextDir, project);
+  watchContextDir(contextDir, project, 'projectContext', projectId);
+  const result = await embedSingleFile(absFile, contextDir, project, 'projectContext', projectId);
   if (result.embedded) {
     invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
@@ -484,27 +499,48 @@ async function handleNotify(
  */
 const activeWatchers = new Map<string, fs.FSWatcher>();
 
-function watchContextDir(contextDir: string, project: string | undefined): void {
+function watchContextDir(
+  contextDir: string,
+  project: string | undefined,
+  source = 'projectContext',
+  projectId = ''
+): void {
   if (activeWatchers.has(contextDir)) return;
   if (!fs.existsSync(contextDir)) return;
 
   try {
-    const watcher = fs.watch(contextDir, { recursive: true }, (eventType, filename) => {
+    const watcher = fs.watch(contextDir, { recursive: true }, (_eventType, filename) => {
       if (!filename || !filename.endsWith('.md')) return;
-      if (eventType !== 'rename') return; // 'rename' fires on delete + create
+      // Handle both 'rename' (create/delete) and 'change' (in-place edit)
       const absPath = path.join(contextDir, filename);
       // Only act on deletions — file gone from disk
       if (!fs.existsSync(absPath)) {
-        // Debounce: skip if a reconcile is in progress for this project
         const projectLabel = project ?? 'default';
         if (reconcilingProjects.has(projectLabel)) return;
-        embedSingleFile(absPath, contextDir, project)
+        embedSingleFile(absPath, contextDir, project, source, projectId)
           .then((result) => {
             if (result.reason === 'deleted') {
               invalidateCorpusCache(project);
               logInfo('Watcher: context file deleted', {
                 file: result.id,
-                project: projectLabel
+                project: projectLabel,
+                source
+              });
+            }
+          })
+          .catch(() => {});
+      } else {
+        // File created or modified — re-embed it
+        const projectLabel = project ?? 'default';
+        if (reconcilingProjects.has(projectLabel)) return;
+        embedSingleFile(absPath, contextDir, project, source, projectId)
+          .then((result) => {
+            if (result.embedded) {
+              invalidateCorpusCache(project);
+              logInfo('Watcher: context file updated', {
+                file: result.id,
+                project: projectLabel,
+                source
               });
             }
           })
@@ -512,7 +548,7 @@ function watchContextDir(contextDir: string, project: string | undefined): void 
       }
     });
     activeWatchers.set(contextDir, watcher);
-    logInfo('Watching context dir', { dir: contextDir, project: project ?? 'default' });
+    logInfo('Watching context dir', { dir: contextDir, project: project ?? 'default', source });
   } catch {
     // fs.watch can fail on unsupported filesystems — degrade silently
   }
@@ -546,6 +582,7 @@ async function handleReconcile(
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
   const projectLabel = project ?? 'default';
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : '';
   const check = body.check === true;
   const contextDir = path.join(cwd, '.claude', 'context');
 
@@ -559,11 +596,8 @@ async function handleReconcile(
     const quarantined = findPrefixTypeMismatches(allContexts).map((m) => m.relPath);
     const badPaths = new Set(quarantined);
     const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
-    // Scope to projectContext — MUST match runReconcile (which only manages the
-    // context source). Unfiltered, doc/user-pack rows (which refresh on a full
-    // embed, not via reconcile) look like orphans of the context dir → bogus
-    // "stale, removeCount=N" and a nonsense "re-embedding 0" session-start line.
-    const hashes = await getContentHashes(project, 'projectContext');
+    // Scope to projectContext + this project's hash — MUST match runReconcile.
+    const hashes = await getContentHashes(project, 'projectContext', projectId || undefined);
     const diskFiles: DiskFile[] = contexts.map((c) => ({
       id: c.id,
       absPath: c.absPath,
@@ -590,8 +624,8 @@ async function handleReconcile(
   reconcilingProjects.add(projectLabel);
   // Respond immediately; the embed runs detached from the request lifecycle.
   sendJson(res, 200, { state: 'started' });
-  runReconcile(contextDir, project)
-    .then((r) => {
+  runReconcile(contextDir, project, projectId)
+    .then(async (r) => {
       if (r.embedded > 0 || r.removed > 0) {
         invalidateCorpusCache(project);
         logInfo('Reconcile complete', {
@@ -601,7 +635,7 @@ async function handleReconcile(
           removed: r.removed
         });
       }
-      watchContextDir(contextDir, project);
+      watchContextDir(contextDir, project, 'projectContext', projectId);
     })
     .catch((err) =>
       logError('error', 'daemon', 'Reconcile failed', {

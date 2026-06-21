@@ -6,6 +6,7 @@ import type { ContextRow } from '../lib/storage/lance-client.js';
 function makeRow(overrides: Partial<ContextRow> = {}): ContextRow {
   return {
     id: overrides.id ?? 'test-row',
+    project: overrides.project ?? 'abc123def456',
     vector: [],
     document: overrides.document ?? 'default document content',
     filename: overrides.filename ?? 'test.md',

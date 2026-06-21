@@ -22,13 +22,23 @@ A version bump in `package.json`. The workflow compares `HEAD` vs `HEAD^` — if
 
 Escape hatch: `workflow_dispatch` with `force: true` creates a release even without a version change.
 
+## Starting a new feature
+
+Always create a feature branch before implementation work begins:
+```bash
+git checkout -b feat/<feature-name>
+```
+
+Push early, open a draft PR if the work spans sessions. This keeps main clean and gives a place to track incremental progress.
+
 ## PR checklist for release-worthy changes
 
 When a PR includes features/fixes that warrant a release:
 
-1. **Bump `package.json` version** — SemVer, stay 0.x until public 1.0
-2. **Add CHANGELOG.md section** — must be `## [X.Y.Z]` format (see gotcha-changelog-heading-format)
-3. Both go in the same PR as the code changes
+1. **Create a feature branch** (`feat/`, `fix/`, `chore/`)
+2. **Bump `package.json` version** — SemVer, stay 0.x until public 1.0
+3. **Add CHANGELOG.md section** — must be `## [X.Y.Z]` format (see gotcha-changelog-heading-format)
+4. Version bump + changelog go in the same PR as the code changes
 
 If you forget the bump, the merge updates `latest` (pre-release) but creates no versioned release. You'll need a follow-up commit to main with just the bump.
 

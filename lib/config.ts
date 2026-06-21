@@ -8,6 +8,7 @@
  * the model id is config-driven, NOT hardcoded at call sites.
  */
 
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -254,7 +255,7 @@ const DEFAULTS: ContextusConfig = {
   },
   storage: {
     mode: 'file',
-    path: '~/.contextus/data/{project-name}'
+    path: '~/.contextus/data'
   },
   retrieval: {
     topK: 5,
@@ -555,12 +556,21 @@ export function expandHome(p: string): string {
 }
 
 /**
- * Resolve the on-disk DB directory for a project, expanding `~` and
- * `{project-name}`.
+ * Compute the opaque project identifier: sha256(absolutePath).slice(0, 12).
+ * Deterministic, collision-free for realistic project counts, stable across
+ * renames of sibling dirs. All callers (hooks, embed, daemon) produce the same
+ * hash from the same absolute path — kills the basename-vs-absolute mismatch.
  */
-export function resolveDBPath(projectName?: string): string {
-  const { storage } = loadConfig();
-  const name = projectName ?? path.basename(process.cwd());
-  const p = expandHome(storage.path.replace('{project-name}', name));
-  return path.resolve(p);
+export function projectHash(absolutePath: string): string {
+  const normalized = path.resolve(absolutePath);
+  return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 12);
+}
+
+/**
+ * Resolve the on-disk DB directory — a FIXED path for the unified single DB.
+ * The `projectName` param is kept for backward compat during migration but
+ * ignored: all projects share one LanceDB at ~/.contextus/data/.
+ */
+export function resolveDBPath(_projectName?: string): string {
+  return path.resolve(expandHome('~/.contextus/data'));
 }

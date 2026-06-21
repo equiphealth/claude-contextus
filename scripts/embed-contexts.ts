@@ -23,7 +23,7 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
-import { loadConfig, resolveDBPath, findPluginConfig } from '../lib/config.js';
+import { loadConfig, resolveDBPath, findPluginConfig, projectHash } from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
 import { embedDocuments } from '../lib/embedding/embedder.js';
@@ -40,6 +40,8 @@ async function main(): Promise<void> {
   // packs), each relative to the project root (process.cwd()). The daemon's
   // incremental path stays context-only; doc sources refresh here, on a full
   // rebuild — matching their slower-changing, noisier nature.
+  // Unified DB: project identity is a hash of the absolute path.
+  const projectId = projectHash(process.cwd());
   const sources = resolveSources(pluginCfg);
   if (sources.length === 0) {
     console.error(`\n✗ No enabled sources resolved from plugin.json config.sources`);
@@ -113,11 +115,14 @@ async function main(): Promise<void> {
   process.stdout.write('\n');
 
   // Slice the flat vector array back per file and assemble rows.
+  // User-scoped sources (userContext, userDocs) get stamped '__user__' so they're
+  // visible to all projects via resolveProjectScope() which always includes '__user__'.
   let cursor = 0;
   for (const { pending, ctx, source } of planned) {
     const slice = vectors.slice(cursor, cursor + pending.length);
     cursor += pending.length;
-    allRows.push(...buildRows(ctx, pending, slice, source, now));
+    const rowProject = source === 'userContext' || source === 'userDocs' ? '__user__' : projectId;
+    allRows.push(...buildRows(ctx, pending, slice, source, now, rowProject));
   }
 
   if (allRows.length === 0) {

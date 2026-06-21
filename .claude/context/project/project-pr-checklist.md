@@ -6,13 +6,17 @@ metadata:
   tags: [pr, release, workflow, versioning]
 ---
 
+**During development:**
+
+- **Update CHANGELOG.md incrementally** — add changes to `## [Unreleased]` as you implement them (see [[changelog-incremental-updates]])
+
 **Before merging feature PRs:**
 
 1. **Bump version** in ALL THREE version locations (must stay in lockstep):
    - `package.json` → `"version"` field
    - `plugin.jsonc` → `"version"` field (runtime config)
    - `.claude-plugin/plugin.json` → `"version"` field (install manifest)
-2. **Update CHANGELOG.md** with a section for the new version (Added/Changed/Fixed)
+2. **Finalize CHANGELOG.md** — rename `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD` (must match [[changelog-heading-format]]), then add fresh `## [Unreleased]` section above it
 3. **Update README.md** if the feature is user-visible (Features section, config examples, etc.)
 4. **Update `docs/FEATURES.md`** if the feature adds/changes capabilities (skills, retrieval, config options, hooks)
 5. **Update `docs/API.md`** if daemon endpoints were added/changed (see sync points in reference-api-documentation-structure)

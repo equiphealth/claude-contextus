@@ -40,8 +40,10 @@ export interface TableMeta {
 
 /** A row stored in the contextus table. */
 export interface ContextRow {
-  /** stable id, usually source-relative path */
+  /** stable id: '<projectHash>:<relative-path>:<chunk_index>' */
   id: string;
+  /** project identifier: sha256(absolutePath).slice(0, 12) — opaque, stable */
+  project: string;
   /** embedding vector */
   vector: number[];
   /** full markdown content (no frontmatter) */
@@ -76,22 +78,16 @@ export interface SearchResult extends ContextRow {
   similarity: number;
 }
 
-/**
- * Connections are memoized per resolved DB dir, not globally: the daemon is a
- * single shared process serving many projects (DESIGN.md §"Daemon Lifecycle"),
- * so one cached connection would pin every query to the first project seen.
- */
-const _conns = new Map<string, Connection>();
+/** Single memoized connection — unified DB, all projects in one LanceDB. */
+let _conn: Connection | null = null;
 
-/** Open (memoized per-project) the file-based LanceDB connection for a project. */
-export async function getConnection(projectName?: string): Promise<Connection> {
-  const dir = resolveDBPath(projectName);
-  const cached = _conns.get(dir);
-  if (cached) return cached;
+/** Open (memoized) the unified LanceDB connection. */
+export async function getConnection(_projectName?: string): Promise<Connection> {
+  if (_conn) return _conn;
+  const dir = resolveDBPath();
   fs.mkdirSync(dir, { recursive: true });
-  const conn = await lancedb.connect(dir);
-  _conns.set(dir, conn);
-  return conn;
+  _conn = await lancedb.connect(dir);
+  return _conn;
 }
 
 /** Sidecar path holding TableMeta for a given project DB dir. */
@@ -173,18 +169,27 @@ export async function upsertRows(rows: ContextRow[], projectName?: string): Prom
 }
 
 /**
- * Vector search. Returns topK rows with distance + similarity, optionally
- * filtered by a SQL predicate (e.g. `type = 'decision'`).
+ * Vector search. Returns topK rows with distance + similarity, scoped to
+ * projects in `projectScope` (unified DB: WHERE project IN (...)).
+ * Falls back to unscoped if no projectScope given (all rows).
  */
 export async function search(
   vector: number[],
   topK: number,
   where?: string,
-  projectName?: string
+  projectName?: string,
+  projectScope?: string[]
 ): Promise<SearchResult[]> {
   const table = await openTable(projectName);
   let q = table.search(vector).limit(topK);
-  if (where) q = q.where(where);
+  // Build the project scope filter
+  const filters: string[] = [];
+  if (projectScope && projectScope.length > 0) {
+    const inList = projectScope.map((p) => `'${p.replace(/'/g, "''")}'`).join(', ');
+    filters.push(`project IN (${inList})`);
+  }
+  if (where) filters.push(where);
+  if (filters.length > 0) q = q.where(filters.join(' AND '));
   // .toArray() is the public terminal in v0.30 — .execute() is protected.
   const rows = (await q.toArray()) as Array<ContextRow & { _distance: number }>;
   return rows.map((r) => ({
@@ -234,14 +239,23 @@ export async function deleteRows(ids: string[], projectName?: string): Promise<v
 }
 
 /**
- * Delete every chunk row of a file by its `filename` (used when a file is
- * re-embedded into a DIFFERENT chunk count — stale high-index rows must go before
- * the new chunks are upserted, or orphan chunks linger). No-op if no table.
+ * Delete every chunk row of a file by its `filename`, scoped to a project hash.
+ * Used when a file is re-embedded into a DIFFERENT chunk count — stale high-index
+ * rows must go before the new chunks are upserted, or orphan chunks linger.
+ * No-op if no table.
  */
-export async function deleteByFilename(filename: string, projectName?: string): Promise<void> {
+export async function deleteByFilename(
+  filename: string,
+  projectName?: string,
+  projectFilter?: string
+): Promise<void> {
   if (!(await tableExists(projectName))) return;
   const table = await openTable(projectName);
-  await table.delete(`filename = '${filename.replace(/'/g, "''")}'`);
+  const escaped = filename.replace(/'/g, "''");
+  const pred = projectFilter
+    ? `filename = '${escaped}' AND project = '${projectFilter.replace(/'/g, "''")}'`
+    : `filename = '${escaped}'`;
+  await table.delete(pred);
 }
 
 /**
@@ -253,20 +267,26 @@ export async function deleteByFilename(filename: string, projectName?: string): 
  * `sourceFilter` scopes the map to one source pack — the reconcile path uses it so
  * it only manages `projectContext` rows and never treats doc-source rows (which
  * refresh on a full embed, not incrementally) as orphans to delete.
+ *
+ * `projectFilter` scopes to a single project hash (unified DB: each project manages
+ * only its own rows).
  */
 export async function getContentHashes(
   projectName?: string,
-  sourceFilter?: string
+  sourceFilter?: string,
+  projectFilter?: string
 ): Promise<Map<string, string>> {
   if (!(await tableExists(projectName))) return new Map();
   const table = await openTable(projectName);
-  const rows = (await table
-    .query()
-    .select(['filename', 'content_hash', 'source'])
-    .toArray()) as Array<{
+  let query = table.query().select(['filename', 'content_hash', 'source', 'project']);
+  if (projectFilter) {
+    query = query.where(`project = '${projectFilter.replace(/'/g, "''")}'`);
+  }
+  const rows = (await query.toArray()) as Array<{
     filename: string;
     content_hash?: string;
     source?: string;
+    project?: string;
   }>;
   const map = new Map<string, string>();
   for (const r of rows) {
@@ -276,7 +296,26 @@ export async function getContentHashes(
   return map;
 }
 
-/** Reset memoized connections (tests / daemon restart). */
+/**
+ * Delete all rows for a given project hash (workspace cleanup / project removal).
+ * Uses a WHERE predicate pushed to LanceDB — O(matching rows), not O(total).
+ */
+export async function deleteByProject(projectHash: string): Promise<number> {
+  if (!(await tableExists())) return 0;
+  const table = await openTable();
+  const escaped = projectHash.replace(/'/g, "''");
+  // Count first so we can report how many were deleted.
+  const rows = (await table
+    .query()
+    .select(['id'])
+    .where(`project = '${escaped}'`)
+    .toArray()) as Array<{ id: string }>;
+  if (rows.length === 0) return 0;
+  await table.delete(`project = '${escaped}'`);
+  return rows.length;
+}
+
+/** Reset memoized connection (tests / daemon restart). */
 export function resetConnection(): void {
-  _conns.clear();
+  _conn = null;
 }

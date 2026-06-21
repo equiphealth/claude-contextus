@@ -13,6 +13,7 @@ const DEFAULT_CONFIG: PipelineConfig = {
 function makeResult(overrides: Partial<SearchResult> = {}): SearchResult {
   return {
     id: 'test-pattern.md',
+    project: 'abc123def456',
     vector: [],
     document: 'Some context about testing patterns.',
     filename: 'test-pattern.md',

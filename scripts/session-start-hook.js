@@ -41,6 +41,7 @@ import {
   fireReconcile,
   hasContextusStanza,
   hasPopulatedContextDir,
+  checkUpgradeNeeded,
 } from './lib/daemon-control.js';
 import { resolveDaemonStatus } from './lib/daemon-status.js';
 
@@ -163,6 +164,15 @@ async function main() {
       const more = quarantined.length > 3 ? ` (+${quarantined.length - 3} more)` : '';
       lines.push(
         `contextus: ${quarantined.length} context file(s) can't embed — filename prefix disagrees with metadata.type: ${shown}${more}. Fix the prefix or type; they won't inject until then.`
+      );
+    }
+
+    // Upgrade check: cheap (~1ms, two file reads). Notifies if data schema is behind
+    // the installed code version. Never blocks, never auto-migrates.
+    const upgrade = checkUpgradeNeeded();
+    if (upgrade && upgrade.needed) {
+      lines.push(
+        `contextus: upgrade available (${upgrade.dataVersion} → ${upgrade.installedVersion}) — run /contextus-upgrade when ready.`
       );
     }
 

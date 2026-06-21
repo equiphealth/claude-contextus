@@ -17,10 +17,10 @@
  * (same UserPromptSubmit slot). Thin ESM JS; always emits the footer via
  * additionalContext and never blocks the prompt.
  *
- * Capture mode (plugin.json config.contextCapture.mode): 'propose' (default) asks
- * Claude to surface a footer + invoke /create-context; 'silent' suppresses the
- * footer entirely. ('auto' write-without-asking is a v2 concern — treated as
- * 'propose' here.)
+ * Capture modes (plugin.json config.contextCapture.mode):
+ *   'propose' (default) — asks Claude to surface a footer + invoke /create-context
+ *   'staging' — instructs Claude to WRITE files directly (user reviews at git time)
+ *   'silent' — suppresses the footer entirely (no capture prompting)
  */
 
 import fs from 'fs';
@@ -34,6 +34,7 @@ const PLUGIN_JSONC = path.resolve(__dirname, '..', 'plugin.jsonc');
 const PLUGIN_JSON_FALLBACK = path.resolve(__dirname, '..', 'plugin.json');
 const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC) ? PLUGIN_JSONC : PLUGIN_JSON_FALLBACK;
 const PROMPT_FILE = path.resolve(__dirname, '..', 'prompts', 'awareness-footer.txt');
+const STAGING_PROMPT_FILE = path.resolve(__dirname, '..', 'prompts', 'staging-footer.txt');
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -79,9 +80,10 @@ async function recentPatterns(project) {
 }
 
 /** Load the base prompt from external file (editable without code changes). */
-function loadPromptTemplate() {
+function loadPromptTemplate(mode) {
+  const file = mode === 'staging' ? STAGING_PROMPT_FILE : PROMPT_FILE;
   try {
-    return fs.readFileSync(PROMPT_FILE, 'utf8').trim();
+    return fs.readFileSync(file, 'utf8').trim();
   } catch {
     // Fallback if file is missing (e.g. running from dist without prompts/)
     return (
@@ -95,13 +97,13 @@ function loadPromptTemplate() {
 }
 
 /** Build the footer instruction, folding in the novelty signal if we have one. */
-function buildFooter(recent) {
+function buildFooter(mode, recent) {
   // NOTE: this hook handles ONLY the `propose:` (capture) footer. The `used:`
   // (provenance) footer is emitted by the daemon's injection block
   // (renderFooterInstruction), which is the only place that KNOWS what was injected
   // — instructing Claude to recite `used:` from here induced hallucinated filenames
   // + scores (observed 2026-06-15). Keep these separate: propose here, used there.
-  const base = loadPromptTemplate();
+  const base = loadPromptTemplate(mode);
   if (recent.length === 0) return base;
   const list = recent.slice(-8).join(', ');
   return (
@@ -119,7 +121,8 @@ async function main() {
     return emit({ continue: true });
   }
 
-  if (captureMode() === 'silent') return emit({ continue: true });
+  const mode = captureMode();
+  if (mode === 'silent') return emit({ continue: true });
 
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
   const recent = await recentPatterns(projectName(cwd));
@@ -128,7 +131,7 @@ async function main() {
     continue: true,
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: buildFooter(recent),
+      additionalContext: buildFooter(mode, recent),
     },
   });
 }
