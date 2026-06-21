@@ -20,6 +20,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [proactive-ux-positioning](decisions/proactive-ux-positioning.md) — Killer feature is zero-query injection, not search
 - [generic-examples-only](decisions/decision-generic-examples-only.md) — Docs/contexts/examples must use generic placeholders or contextus self-refs, never other real project names
 - [unified-db-workspaces](decisions/decision-unified-db-workspaces.md) — Single shared LanceDB with project-hash column; workspaces for bidirectional cross-project sharing
+- [capture-noise-reduction](decisions/decision-capture-noise-reduction.md) — Reduce staging capture noise: daemon /capture endpoint now, MCP tool later; subagent as zero-code experiment
 - [upgrade-lifecycle](decisions/decision-upgrade-lifecycle.md) — Breaking changes via PR + version bump; SessionStart notifies, never auto-migrates
 
 ## Questions (open)
@@ -37,6 +38,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 ## Tradeoffs
 
 - [embedding-provider-deployment](tradeoffs/tradeoff-embedding-provider-deployment.md) — Transformers.js vs local Ollama vs network Ollama: proxy gotchas, team deployment, decision matrix
+- [staging-capture-visibility](tradeoffs/tradeoff-staging-capture-visibility.md) — Write tool calls are visible in UI; no silent file creation on-platform; accept noise as cost of transparency
 - [empty-project-stamp](gotchas/gotcha-empty-project-stamp.md) — buildRows() defaults project to '' — rows embed fine but are invisible to workspace-scoped queries
 
 ## Implementation
