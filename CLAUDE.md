@@ -64,6 +64,10 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 - Durable patterns → `.claude/context/<category>/` (auto-embedded)
 - Comprehensive guides → `docs/`
 
+**Documentation standards**:
+- Use generic placeholders (`my-project`, `example-app`) or contextus self-references only
+- Never reference other real project names from this machine in docs/contexts/examples
+
 ## Core Principles (do not re-litigate)
 
 1. **Proactive delivery over search** — Context injected automatically, not on-demand
