@@ -235,6 +235,64 @@ Returns `{"continue": true}` (no `hookSpecificOutput`) when:
 
 ---
 
+### `POST /capture`
+
+**Purpose:** Atomically create a context file, update the CONTEXT.md index, and embed it. Designed for staging-mode capture with minimal UI noise — one HTTP call replaces Write + Edit + re-embed.
+
+**Request Body:**
+```json
+{
+  "category": "gotcha",
+  "slug": "my-discovery",
+  "description": "One-line description (gets embedded as the semantic signal)",
+  "body": "Full body content with examples, reasoning, edge cases.",
+  "tags": ["optional", "tag-list"],
+  "scope": "project",
+  "cwd": "/path/to/project",
+  "project": "my-project"
+}
+```
+
+**Parameters:**
+- `category` (required) — One of: `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`
+- `slug` (required) — Kebab-case identifier (becomes the filename and `name:` frontmatter)
+- `description` (required) — One-line summary (embedded for retrieval)
+- `body` (required) — Full markdown content (no frontmatter — the endpoint builds it)
+- `tags` (optional) — Array of tag strings
+- `scope` (optional) — `"project"` (default) writes to `.claude/context/`; `"user"` writes to `~/.contextus/context/`
+- `cwd` (optional) — Project root directory (defaults to daemon's cwd)
+- `project` (optional) — Project name for embedding scope
+
+**Response (success):**
+```json
+{
+  "ok": true,
+  "file": "/absolute/path/to/decisions/decision-my-discovery.md",
+  "relPath": "decisions/decision-my-discovery.md",
+  "embedded": true,
+  "scope": "project"
+}
+```
+
+**Response (validation error):**
+```json
+{
+  "error": "missing required fields: category, slug, description, body"
+}
+```
+
+**Behavior:**
+- Builds frontmatter from structured params (guaranteed valid format)
+- Creates category directory if missing
+- Appends one-line entry to CONTEXT.md (best-effort, non-fatal if missing)
+- Embeds immediately via `embedSingleFile()`
+- Logs to `~/.contextus/captures.log` audit trail
+- Invalidates keyword corpus cache for immediate availability
+
+**Used by:** Staging-mode capture (staging footer instructs Claude to POST here instead of using Write + Edit tool calls).
+
+---
+
 ### `POST /notify`
 
 **Purpose:** Incremental re-embed when a context file changes. Triggered by FileWrite hook watching `.claude/context/**/*.md`.

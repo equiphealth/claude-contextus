@@ -15,9 +15,10 @@
  *   GET  /health          → { status, uptime, modelLoaded, lancedbConnected, embeddingModel }
  *   GET  /novelty         → { project, recent: string[] } — recently-injected patterns
  *   GET  /introspect      → live config + corpus stats (Self-doc Layer 1)
- *   POST /query  {project, prompt}        → { continue, hookSpecificOutput?: { additionalContext } }
- *   POST /notify {project, file, cwd?}    → { ok, embedded, id? }
- *   POST /reconcile {project, cwd, check?}→ { state, started? } | { state, embedded, removed }
+ *   POST /query   {project, prompt}                              → { continue, hookSpecificOutput?: { additionalContext } }
+ *   POST /notify  {project, file, cwd?}                          → { ok, embedded, id? }
+ *   POST /capture {category, slug, description, body, cwd, ...}  → { ok, file, embedded, scope }
+ *   POST /reconcile {project, cwd, check?}                       → { state, started? } | { state, embedded, removed }
  *
  * The pipeline on /query is the spine: embedQuery → vector search → rerank →
  * floor → format. Floor-dropped chunks are logged with scores (v2 governance
@@ -501,6 +502,110 @@ async function handleNotify(
   sendJson(res, 200, { ok: true, ...result });
 }
 
+/**
+ * POST /capture — write a context file atomically + embed + update index.
+ * Replaces Write+Edit tool calls in staging mode for lower UI noise.
+ */
+async function handleCapture(
+  body: Record<string, unknown>,
+  res: http.ServerResponse
+): Promise<void> {
+  const category = typeof body.category === 'string' ? body.category.trim() : '';
+  const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
+  const description = typeof body.description === 'string' ? body.description.trim() : '';
+  const content = typeof body.body === 'string' ? body.body : '';
+  const tags = Array.isArray(body.tags)
+    ? body.tags.filter((t): t is string => typeof t === 'string')
+    : [];
+  const scope = typeof body.scope === 'string' ? body.scope : 'project';
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+  const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+
+  if (!category || !slug || !description || !content) {
+    sendJson(res, 400, { error: 'missing required fields: category, slug, description, body' });
+    return;
+  }
+
+  // Build the frontmatter + body
+  const tagsLine = tags.length > 0 ? `\n  tags: [${tags.join(', ')}]` : '';
+  const fileContent = `---
+name: ${slug}
+description: ${description}
+metadata:
+  type: ${category}${tagsLine}
+---
+
+${content}
+`;
+
+  // Resolve target path — folder names follow existing conventions
+  const CATEGORY_DIRS: Record<string, string> = {
+    decision: 'decisions',
+    gotcha: 'gotchas',
+    tradeoff: 'tradeoffs',
+    question: 'questions',
+    arch: 'arch',
+    api: 'api',
+    phase: 'phase',
+    project: 'project',
+    schema: 'schema',
+    security: 'security',
+    perf: 'perf',
+    reference: 'reference',
+    implementation: 'implementation'
+  };
+  const contextDir =
+    scope === 'user' ? expandHome('~/.contextus/context') : path.join(cwd, '.claude', 'context');
+  const dirName = CATEGORY_DIRS[category] || category;
+  const categoryDir = path.join(contextDir, dirName);
+  const filename = `${category}-${slug}.md`;
+  const absFile = path.join(categoryDir, filename);
+
+  // Write the file
+  try {
+    fs.mkdirSync(categoryDir, { recursive: true });
+    fs.writeFileSync(absFile, fileContent, 'utf-8');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logError('error', 'capture', 'failed to write context file', { file: absFile, message: msg });
+    sendJson(res, 500, { error: `write failed: ${msg}` });
+    return;
+  }
+
+  // Update CONTEXT.md index
+  const indexFile = path.join(contextDir, 'CONTEXT.md');
+  const relPath = `${dirName}/${filename}`;
+  const indexEntry = `- [${slug}](${relPath}) — ${description}\n`;
+  try {
+    if (fs.existsSync(indexFile)) {
+      fs.appendFileSync(indexFile, indexEntry);
+    }
+  } catch {
+    // Non-fatal — file is written, index update is best-effort
+  }
+
+  // Embed the file
+  const projectId = projectHash(cwd);
+  const source = scope === 'user' ? 'userContext' : 'projectContext';
+  const embedResult = await embedSingleFile(absFile, contextDir, project, source, projectId);
+
+  // Log to captures audit trail
+  logCapture(scope, relPath, description);
+  logInfo('Context captured', { scope, file: relPath, embedded: embedResult.embedded });
+
+  if (embedResult.embedded) {
+    invalidateCorpusCache(project);
+  }
+
+  sendJson(res, 200, {
+    ok: true,
+    file: absFile,
+    relPath,
+    embedded: embedResult.embedded,
+    scope
+  });
+}
+
 /* ── Directory watcher — live deletion detection ────────────────────────────── */
 
 /**
@@ -697,11 +802,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (method === 'POST' && (url === '/query' || url === '/notify' || url === '/reconcile')) {
+  if (
+    method === 'POST' &&
+    (url === '/query' || url === '/notify' || url === '/reconcile' || url === '/capture')
+  ) {
     readJsonBody(req)
       .then((body) => {
         if (url === '/query') return handleQuery(body, res);
         if (url === '/notify') return handleNotify(body, res);
+        if (url === '/capture') return handleCapture(body, res);
         return handleReconcile(body, res);
       })
       .catch((err) => {
