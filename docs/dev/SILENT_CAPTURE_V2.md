@@ -8,7 +8,9 @@
 
 Current capture workflow interrupts mid-session with "Should I capture this?" prompts. This violates the zero-interruption principle that makes contextus valuable for retrieval.
 
-Opus's critique: "If you have to ask me every time, you're not being proactive — you're being a chatbot."
+**Opus's position**: User should gate each capture. No auto-capture. Keep the prompt.
+
+**This design intentionally diverges from Opus's recommendation** based on discussion with another LLM that reframed the problem: git review can be the quality gate instead of mid-session prompts.
 
 ## Core Insight
 
@@ -275,18 +277,24 @@ Team-visible: colleagues see Claude's reasoning evolution.
 - PR template includes "Review captured contexts" checklist
 - Git diff shows context changes prominently
 
-## Why This Addresses Opus's Critique
+## Why This Diverges from Opus's Recommendation
 
-**Opus's concern**: "Asking mid-session breaks flow. If you're asking, you're not being proactive."
+**Opus's recommendation**: Keep the prompt. User should explicitly approve each capture.
 
-**This design**:
-- Zero mid-session interruptions (auto-commit mode)
-- Review happens async in existing workflow (PR review)
-- Git audit trail shows learning over time
-- False positives are cheap to fix (revert/edit in PR)
-- Shifts burden from "be perfectly conservative" to "be useful enough that review isn't painful"
+**Why we're diverging**:
+- Opus focused on quality control → mid-session gating prevents bad captures
+- This design argues: **git review is a better quality gate**
+  - Review happens async (doesn't break flow)
+  - Existing workflow (no new process to learn)
+  - Team-visible (colleagues see captures)
+  - Easy to fix (revert/edit in PR)
+  
+**Trade-off accepted**:
+- More false positives (some bad captures make it to git)
+- Less interruption (zero mid-session prompts)
+- Quality maintained via PR review instead of pre-capture approval
 
-Opus wanted proactive context delivery. This enables proactive context **capture** to match.
+Opus prioritized quality over flow. This design prioritizes flow over quality, trusting PR review to catch issues.
 
 ## Related Work
 
