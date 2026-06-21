@@ -115,7 +115,20 @@ async function main(): Promise<void> {
     }
     config.linkedProjects = filtered;
     writeConfig(configPath, config);
-    console.log(`Unlinked "${name}". Orphan rows will be cleaned on next reconcile.`);
+    console.log(`Unlinked "${name}".`);
+
+    // Ask daemon to purge orphan rows immediately
+    try {
+      const res = await fetch('http://127.0.0.1:37800/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, cwd: process.cwd() }),
+        signal: AbortSignal.timeout(3000)
+      });
+      if (res.ok) console.log('  Orphan rows will be cleaned in background.');
+    } catch {
+      console.log('  Daemon not running — orphan rows will be cleaned on next session start.');
+    }
     process.exit(0);
   }
 

@@ -276,6 +276,24 @@ export async function getContentHashes(
   return map;
 }
 
+/**
+ * Delete all rows matching a source label (e.g. 'linkedContext:my-project').
+ * Used when a linked project is removed or its path disappears.
+ */
+export async function deleteBySource(source: string, projectName?: string): Promise<number> {
+  if (!(await tableExists(projectName))) return 0;
+  const table = await openTable(projectName);
+  const rows = (await table.query().select(['id', 'source']).toArray()) as Array<{
+    id: string;
+    source?: string;
+  }>;
+  const toDelete = rows.filter((r) => r.source === source).map((r) => r.id);
+  if (toDelete.length === 0) return 0;
+  const inList = toDelete.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
+  await table.delete(`id IN (${inList})`);
+  return toDelete.length;
+}
+
 /** Reset memoized connections (tests / daemon restart). */
 export function resetConnection(): void {
   _conns.clear();

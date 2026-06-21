@@ -125,7 +125,12 @@ export function readLinkedProjects(projectName: string): LinkedProjectEntry[] {
 
 /**
  * Resolve linked projects into ResolvedSource entries.
- * Each linked project's `.claude/context/` becomes a source with name='linkedContext'.
+ * Each linked project's `.claude/context/` becomes a source named
+ * 'linkedContext:<name>' — the suffix disambiguates rows per link so
+ * orphan cleanup can target a single removed project without nuking all
+ * linked rows. The reranker's weight() resolves the prefix ('linkedContext')
+ * for ranking purposes.
+ *
  * Skips entries that are disabled or whose context dir doesn't exist.
  */
 export function resolveLinkedSources(projectName: string): ResolvedSource[] {
@@ -136,10 +141,23 @@ export function resolveLinkedSources(projectName: string): ResolvedSource[] {
     const dir = path.resolve(expandHome(entry.path), '.claude', 'context');
     if (!fs.existsSync(dir)) continue;
     out.push({
-      name: 'linkedContext',
+      name: `linkedContext:${entry.name}`,
       dir,
       exclude: ['**/CONTEXT.md', '**/README.md']
     });
   }
   return out;
+}
+
+/**
+ * Return linked entries whose context directory no longer exists.
+ * Used by reconcile to clean up orphan rows from removed/moved projects.
+ */
+export function findMissingLinkedProjects(projectName: string): LinkedProjectEntry[] {
+  const linked = readLinkedProjects(projectName);
+  return linked.filter((entry) => {
+    if (entry.enabled === false) return false;
+    const dir = path.resolve(expandHome(entry.path), '.claude', 'context');
+    return !fs.existsSync(dir);
+  });
 }

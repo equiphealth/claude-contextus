@@ -5,7 +5,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rerank, freshnessDecay, hitCountBoost, TYPE_BOOSTS } from '../lib/retrieval/reranker.js';
+import {
+  rerank,
+  freshnessDecay,
+  hitCountBoost,
+  TYPE_BOOSTS,
+  SOURCE_WEIGHTS
+} from '../lib/retrieval/reranker.js';
 import type { SearchResult } from '../lib/storage/lance-client.js';
 
 /** Build a minimal SearchResult with sane defaults. */
@@ -83,4 +89,26 @@ test('rerank: returns a new sorted array (descending finalScore)', () => {
   );
   // original array untouched
   assert.equal(input[0].id, 'low');
+});
+
+test('rerank: prefixed source resolves to base weight (linkedContext:foo → 0.85)', () => {
+  const plain = rerank([row({ id: 'a', source: 'linkedContext', similarity: 0.8 })], FIXED_NOW);
+  const prefixed = rerank(
+    [row({ id: 'b', source: 'linkedContext:my-project', similarity: 0.8 })],
+    FIXED_NOW
+  );
+  assert.equal(plain[0].finalScore, prefixed[0].finalScore);
+  assert.ok(prefixed[0].finalScore < 0.8 * 1.0); // weighted below raw similarity
+  assert.ok(Math.abs(prefixed[0].finalScore - 0.8 * SOURCE_WEIGHTS.linkedContext) < 1e-9);
+});
+
+test('rerank: linked context ranked below project context at equal similarity', () => {
+  const out = rerank(
+    [
+      row({ id: 'linked', source: 'linkedContext:other-repo', similarity: 0.7 }),
+      row({ id: 'own', source: 'projectContext', similarity: 0.7 })
+    ],
+    FIXED_NOW
+  );
+  assert.equal(out[0].id, 'own');
 });

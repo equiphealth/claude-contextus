@@ -8,34 +8,32 @@
 
 Current capture workflow interrupts mid-session with "Should I capture this?" prompts. This violates the zero-interruption principle that makes contextus valuable for retrieval.
 
-**Opus's position**: User should gate each capture. No auto-capture. Keep the prompt.
-
-**This design intentionally diverges from Opus's recommendation** based on discussion with another LLM that reframed the problem: git review can be the quality gate instead of mid-session prompts.
-
 ## Core Insight
 
-**Git review IS the review mechanism.** We already review code changes in PRs. Context captures are just specialized code changes. Use the existing workflow instead of inventing a new one.
+**Git IS the quality gate.** Context captures are just files in `.claude/context/`. They get reviewed the same way code does — at `git add` time, at commit time, at PR review time. No new process needed.
 
-## Design Principle
+This means the CAE doesn't need to be perfectly conservative. False positives are cheap (drop a file from your commit). False negatives are expensive (pattern lost, re-discovered later). So the CAE can be liberal.
 
-The CAE doesn't need to be perfectly conservative. It needs to be **good enough that PR review isn't painful**. False positives get reverted; false negatives get manually captured later.
+## Design
 
-## Capture Flow
+During work, Claude writes context files silently to `.claude/context/<category>/`. No prompt, no interruption. The files appear in `git status` as untracked/modified. You decide what to commit, same as any other file.
 
 ```
 During work:
-  Claude identifies something to capture
+  Claude identifies something worth capturing
   ↓
-  Background subagent writes to .claude/context/<category>/
+  Writes .claude/context/<category>/<file>.md
   ↓
-  Git commit (if auto-commit enabled for current branch)
+  Updates CONTEXT.md index
   ↓
   Continue work (zero interruption)
 
-At PR time:
-  Review git diff .claude/context/
+At commit/PR time:
+  git status shows new context files
   ↓
-  Keep / Edit / Revert like any code change
+  You decide what to git add (the gate)
+  ↓
+  Context ships with the code it documents
 ```
 
 ## Configuration
@@ -43,140 +41,79 @@ At PR time:
 ```jsonc
 {
   "contextCapture": {
-    "mode": "auto-commit",  // auto-commit | staging | disabled
-    "autoCommitBranches": ["!main", "!master"],  // Patterns: auto-commit on feature branches, not main
-    "includeIndexUpdate": true,  // Also update CONTEXT.md in same commit
-    "backgroundExecution": true,  // Use subagent to minimize latency
-    "commitMessage": "context: add {topic}",  // Template
-    "batchCommits": true  // Multiple captures in one commit (edited/removed during review)
+    "mode": "staging",           // auto-commit | staging | disabled
+    "autoCommitBranches": ["!main", "!master"],
+    "commitMessage": "context: add {topic}",
+    "batchCommits": true
   }
 }
 ```
 
-### Capture Modes
+### Modes
 
-**`auto-commit`** (default on feature branches):
-- Write context file
-- Update CONTEXT.md index
-- Commit immediately
-- Zero user interaction
+**`staging`** (default):
+- Claude writes context files silently
+- Files show up in `git status` as untracked
+- You `git add` what belongs with the current work
+- Leftovers carry forward to the next commit naturally
+- The gate is your normal staging workflow
 
-**`staging`** (default on main/master):
-- Write context file
-- Update CONTEXT.md index
-- Leave uncommitted (`git status` shows changes)
-- User commits manually
+**`auto-commit`** (for repos/users who prefer it):
+- Claude writes + commits immediately
+- Commit message uses `context:` prefix
+- Context shows up in PR diff alongside code
+- Review happens at PR time — drop what doesn't belong
+- Good for: solo devs, repos where context always relates to the branch work
 
 **`disabled`** (conservative teams):
 - Footer proposes: `Context: propose: topic-name`
 - No auto-write
-- User explicitly invokes `/create-context` if desired
+- User explicitly invokes `/create-context`
+- Current v1 behavior preserved
 
-### Branch Detection
+### Branch Detection (auto-commit mode)
 
 `autoCommitBranches` uses glob patterns:
 - `["!main", "!master"]` — Auto-commit everywhere EXCEPT main/master (default)
-- `["feat/*", "feature/*"]` — Auto-commit only on feature branches
-- `["*"]` — Auto-commit on all branches
-- `[]` — Never auto-commit (always staging mode)
+- `["feat/*", "feature/*"]` — Only on feature branches
+- `["*"]` — All branches
+- `[]` — Never (falls back to staging)
 
-## Implementation Details
+## Why Context Belongs in PRs
 
-### Background Execution
+Context captured during a feature branch documents the decisions of that feature:
 
-Capture runs in background subagent to minimize latency:
-
-```typescript
-// In UserPromptSubmit hook (after main response)
-if (shouldCapture(topic)) {
-  // Non-blocking
-  Agent({
-    prompt: `Create context for ${topic}`,
-    run_in_background: true,
-    isolation: 'worktree' // Avoid conflicts with main session
-  });
-}
+```
+src/auth/token-refresh.ts          +142
+src/auth/token-refresh.test.ts      +87
+.claude/context/decisions/decision-token-refresh-strategy.md  +23
 ```
 
-User sees: work continues immediately. Subagent writes + commits asynchronously.
+The context file explains *why* the code looks the way it does. Reviewers get more signal, not noise.
 
-**Worktree isolation**: Prevents file conflicts when user and capture agent both edit `.claude/context/` simultaneously.
+For captures that don't relate to the PR's work — drop them from the commit. They stay untracked, waiting for the right PR. Same workflow as dropping an unrelated refactor that snuck in.
 
-### Batch Commits
+## CAE Role Shift
 
-Multiple captures in one session → one commit with multiple files:
+**v1 (conservative)**: Filter aggressively to avoid interrupting user. Low recall, high precision.
 
-```bash
-context: add generic-examples-only, injection-floor-rationale, lancedb-api-notes
+**v2 (liberal)**: Capture anything plausibly useful. High recall, accept false positives.
 
-- decisions/decision-generic-examples-only.md
-- implementation/implementation-injection-floor.md
-- reference/reference-lancedb-api-surface.md
-- CONTEXT.md (index updates)
-```
+**Why this works**: The cost of a false positive drops from "broke my flow" (mid-session prompt) to "I don't `git add` one file." The quality bar shifts from "definitely worth capturing" to "probably worth capturing" — corpus fills faster, retrieval has more to work with sooner.
 
-Acceptable because:
-- PR review happens anyway (can edit/remove individual files)
-- Git history stays manageable (not one commit per minor insight)
-- Easy to bisect if needed (`git show` reveals all captures in that session)
+### Confidence Threshold
 
-### Index Updates
+Start with ≥0.7 confidence for auto-capture. Tune based on:
+- How often users drop captured files (too aggressive → lower threshold generates noise)
+- How often users manually `/create-context` something the CAE missed (too conservative)
 
-`includeIndexUpdate: true` → also edit `CONTEXT.md`:
+## Embedding Behavior
 
-```diff
-## Decisions
+The daemon can embed from working tree regardless of commit status. A captured file is retrievable immediately — it doesn't need to be committed first. This means:
 
-+ - [generic-examples-only](decisions/decision-generic-examples-only.md) — Docs must use generic placeholders, not real project names
-```
-
-Keeps index in sync without manual maintenance.
-
-### No Session-End Batching
-
-**Rejected design**: Collect proposals during session, commit all at end.
-
-**Why rejected**:
-- Adds complexity (track proposals across session)
-- Delayed commits harder to attribute to specific conversations
-- Session-end hooks are best-effort (user can `/clear` or exit without triggering)
-
-**Chosen design**: Immediate capture (auto-commit) or prompt each time (disabled mode). No middle ground.
-
-## Review Workflow
-
-### Solo Dev (contextus dogfooding)
-
-```bash
-# Auto-commit on feature branch
-git log --oneline .claude/context/
-# 3f8a2c1 context: add generic-examples-only
-# 7d4e5f2 context: add injection-floor-rationale
-
-# Quick scan of diffs
-git show 3f8a2c1
-
-# Keep, edit, or revert
-git revert 3f8a2c1  # if wrong
-```
-
-### Team PR Review
-
-```bash
-# Context captures show in PR diff
-Files changed:
-  .claude/context/decisions/decision-generic-examples-only.md  +47
-  .claude/context/CONTEXT.md                                    +1
-
-# Reviewer comments on PR:
-"Looks good, but let's clarify the 'Why' section"
-
-# Author edits in next commit:
-git add .claude/context/decisions/decision-generic-examples-only.md
-git commit --amend
-```
-
-Context changes reviewed alongside code changes. No separate review process needed.
+- Staging mode: captured context helps the current session even before commit
+- Auto-commit mode: same, but also persisted in git immediately
+- Disabled mode: nothing to embed until user runs `/create-context`
 
 ## Audit Trail
 
@@ -184,120 +121,50 @@ Git becomes the audit trail for Claude's learning:
 
 ```bash
 # What did Claude learn this week?
-git log --since="1 week ago" .claude/context/
+git log --since="1 week ago" -- .claude/context/
 
 # When did we decide X?
-git log --all --grep="generic-examples" .claude/context/
+git log --all --grep="context:" -- .claude/context/
 
-# Who captured this pattern?
-git blame .claude/context/decisions/decision-generic-examples-only.md
+# Which captures shipped with which feature?
+git log --oneline -- .claude/context/ src/feature/
 ```
-
-Team-visible: colleagues see Claude's reasoning evolution.
-
-## CAE Role Shift
-
-**Current (conservative)**: Filter aggressively to avoid interrupting user. Low recall, high precision.
-
-**v2 (liberal)**: Capture anything plausibly useful. High recall, accept some false positives.
-
-**Why this works**: PR review catches noise. False positives are cheap (revert one file). False negatives are expensive (pattern lost, re-discovered later).
-
-## Open Questions (Pre-Implementation)
-
-1. **Conflict resolution**: If background capture agent and user both edit same file, who wins?
-   - **Answer**: Worktree isolation prevents this. Capture agent merges its worktree back only if no conflicts.
-
-2. **Capture latency**: Background agent takes 10-30s. What if user `/clear` before it finishes?
-   - **Answer**: Agent continues in background. Commit appears in git history after session ends. User sees it on next `git status`.
-
-3. **CAE confidence threshold**: Capture everything, or only high-confidence proposals?
-   - **Answer**: TBD. Start with "high confidence only" (≥0.7), tune based on PR review noise.
-
-4. **Index update failures**: What if CONTEXT.md has merge conflicts?
-   - **Answer**: Capture file still writes. Index update skipped, manual fix required. Log warning.
-
-5. **Commit attribution**: Git author is user, but content written by Claude. How to indicate?
-   - **Answer**: Commit message prefix `context:` signals Claude-captured. Git author stays user (they approved via config).
-
-## Implementation Phases
-
-**Phase 1** (minimal viable):
-- `mode: "staging"` — Write files, don't commit
-- Manual `git add` / `git commit`
-- Validate end-to-end workflow
-
-**Phase 2** (auto-commit):
-- `mode: "auto-commit"`
-- Branch detection (`autoCommitBranches`)
-- Commit message templating
-
-**Phase 3** (background execution):
-- Subagent with `run_in_background: true`
-- Worktree isolation
-- Latency measurement
-
-**Phase 4** (hardening):
-- Conflict resolution
-- Index update failure handling
-- CAE confidence tuning
 
 ## Success Metrics
 
-**Adoption**: % of users with `mode: "auto-commit"` enabled
-
-**Quality**: 
-- PR revert rate (% of auto-captured contexts reverted during review)
-- Target: <10% revert rate (90% of captures are keeper or edited, not deleted)
+**Quality**:
+- Drop rate: % of auto-captured files that users don't commit
+- Target: <20% drop rate (80%+ of captures are keepers)
 
 **Interruptions**:
 - Zero mid-session prompts for capture decisions
-- Background latency <30s (p95)
+
+**Corpus growth**:
+- Rate of new context files vs. v1 (expect 3-5x with liberal CAE)
 
 ## Risks
 
-**Risk**: CAE captures too aggressively → noisy PRs → users disable feature
+**Risk**: CAE captures too aggressively → cluttered `git status`
 
-**Mitigation**:
-- Start conservative (high confidence threshold)
-- Tune based on revert rate metrics
-- Easy to disable per-project (`mode: "disabled"`)
+**Mitigation**: Start conservative (0.7 threshold), tune down. Easy to `git clean` context files if it gets noisy. Users can switch to `disabled` mode per-project.
 
-**Risk**: Background agent conflicts with user edits
+**Risk**: Users forget captured files exist, never commit them
 
-**Mitigation**:
-- Worktree isolation by default
-- Agent checks for conflicts before merging back
-- Falls back to staging mode on conflict
+**Mitigation**: Not a problem — they still get embedded and help retrieval. Eventually they get committed with related work or cleaned up. No urgency.
 
-**Risk**: Users forget to review captured contexts in PRs
+**Risk**: Stale captures accumulate in working tree
 
-**Mitigation**:
-- Pre-commit hook highlights new `.claude/context/` files
-- PR template includes "Review captured contexts" checklist
-- Git diff shows context changes prominently
+**Mitigation**: `/audit-context` already handles staleness detection. Untracked files that sit for weeks without being committed are candidates for deletion.
 
 ## Why This Diverges from Opus's Recommendation
 
-**Opus's recommendation**: Keep the prompt. User should explicitly approve each capture.
+**Opus said**: Keep the prompt. User should explicitly approve each capture.
 
-**Why we're diverging**:
-- Opus focused on quality control → mid-session gating prevents bad captures
-- This design argues: **git review is a better quality gate**
-  - Review happens async (doesn't break flow)
-  - Existing workflow (no new process to learn)
-  - Team-visible (colleagues see captures)
-  - Easy to fix (revert/edit in PR)
-  
-**Trade-off accepted**:
-- More false positives (some bad captures make it to git)
-- Less interruption (zero mid-session prompts)
-- Quality maintained via PR review instead of pre-capture approval
+**This design says**: Git workflow is a better gate than mid-session prompts because:
+- Review happens async (doesn't break flow)
+- Uses existing workflow (no new process)
+- Team-visible in PRs (colleagues see and review captures)
+- Easy to fix (don't add, or revert)
+- Zero new tooling required (it's just files and git)
 
-Opus prioritized quality over flow. This design prioritizes flow over quality, trusting PR review to catch issues.
-
-## Related Work
-
-- `implementation-proactive-capture.md` — Current CAE-based proposal system (v1)
-- `V2_ROADMAP.md` — Backlog placement for this feature
-- `reference-opus-metrics-critique.md` — Original critique that motivated rethinking capture flow
+**Trade-off accepted**: More false positives in the working tree, zero interruptions during work, quality maintained via normal git staging/review.

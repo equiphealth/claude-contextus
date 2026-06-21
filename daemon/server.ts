@@ -44,8 +44,8 @@ import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { resolveLinkedSources } from '../lib/embedding/sources.js';
-import { getContentHashes } from '../lib/storage/lance-client.js';
+import { resolveLinkedSources, findMissingLinkedProjects } from '../lib/embedding/sources.js';
+import { getContentHashes, deleteBySource } from '../lib/storage/lance-client.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
@@ -624,11 +624,25 @@ async function handleReconcile(
         });
       }
       watchContextDir(contextDir, project);
+      // Clean up rows from linked projects whose directories no longer exist
+      const missingLinks = findMissingLinkedProjects(projectLabel);
+      for (const missing of missingLinks) {
+        const removed = await deleteBySource(`linkedContext:${missing.name}`, project);
+        if (removed > 0) {
+          invalidateCorpusCache(project);
+          logInfo('Cleaned orphan linked rows', {
+            project: projectLabel,
+            linkedName: missing.name,
+            removedRows: removed
+          });
+        }
+      }
+
       // Reconcile and watch linked project sources
       const linkedSources = resolveLinkedSources(projectLabel);
       for (const ls of linkedSources) {
         const linkedContexts = await loadContexts(ls.dir);
-        const hashes = await getContentHashes(project, 'linkedContext');
+        const hashes = await getContentHashes(project, ls.name);
         const diskFiles: DiskFile[] = linkedContexts.map((c) => ({
           id: c.id,
           absPath: c.absPath,
@@ -638,7 +652,7 @@ async function handleReconcile(
         const plan = planReconcile(diskFiles, hashes, exists);
         if (plan.embedPaths.length > 0) {
           for (const absPath of plan.embedPaths) {
-            await embedSingleFile(absPath, ls.dir, project, 'linkedContext');
+            await embedSingleFile(absPath, ls.dir, project, ls.name);
           }
           invalidateCorpusCache(project);
           logInfo('Linked reconcile complete', {
@@ -647,7 +661,7 @@ async function handleReconcile(
             embedded: plan.embedPaths.length
           });
         }
-        watchContextDir(ls.dir, project, 'linkedContext');
+        watchContextDir(ls.dir, project, ls.name);
       }
     })
     .catch((err) =>

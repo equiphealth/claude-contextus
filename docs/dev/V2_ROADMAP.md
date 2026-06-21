@@ -35,10 +35,14 @@ Two tracks below. CAE is the keystone either way — most of Track A's later ite
 
 ### Track A — buildable now (no usage data required)
 
-Roughly in build order; CAE first because it unblocks the most.
+Roughly in build order; silent capture first because it's simplest and independent.
 
 | Item | Source | Depends On | Notes |
 |------|--------|------------|-------|
+| **Silent capture** — Claude writes context files directly (no mid-session prompt). Three modes: `staging` (default, files appear in `git status`, user decides at `git add` time), `auto-commit` (writes + commits immediately on feature branches), `disabled` (v1 propose-footer behavior). Git workflow IS the quality gate — CAE not required. See `SILENT_CAPTURE_V2.md`. | SILENT_CAPTURE_V2.md | v1 capture footer | Independent of CAE. Simplest v2 feature — just write files instead of proposing in footer. |
+| **Transcript mining at setup** — During `/contextus-setup`, scan recent Claude Code session logs (~1 week of `~/.claude/projects/<slug>/*.jsonl`), extract pattern candidates with Haiku, write directly to `.claude/context/` (staging mode — user commits what's useful). No proposals queue, no review skill — just files in the working tree. ~$0.03 cost, runs in background. | user idea 2026-06-18 | `/contextus-setup` skill | Unblocked by silent capture philosophy: extract liberally, git is the gate. Moved from Track B — usage-data gating dissolved. |
+| **Git log as setup source** — Extract patterns from commit history (diffs, not messages). Harder extraction problem than transcripts — needs Haiku-on-diffs to identify recurring patterns (e.g. "always wraps DB calls in transactions") rather than restating commit messages. **Needs design doc** — what makes a diff-derived pattern useful vs a restatement of what's already in the code? | idea 2026-06-20 | transcript mining (proves the extraction→files pipeline) | Design TBD. Separate from transcripts because the signal type is fundamentally different. |
+| **Linked project orphan cleanup** — When a linked project is removed (`--remove`) or its path disappears, delete all LanceDB rows sourced from that link. Currently stale rows persist until... never. Also: warn at session-start if a linked path is missing. | PR #10 gap | linked projects (PR #10) | Bug in current implementation — should ship with or shortly after PR #10. |
 | **CAE gate** — Haiku applicability sub-agent per candidate, scoring rubric (§4), hard overrides, conflict priority. Slots in as `… → floor → CAE → inject`. | CAE spec | v1 floor + rejection logging | The keystone — tag-gating, removal, and the relevance-gate all hang off it. (Its *cost model* is Track B.) |
 | ~~**Deletion detection**~~ | ~~(discovered 2026-06-14)~~ | ~~Phase 6 auto-reconcile~~ | **SHIPPED** PR #9 — fs.watch live deletion (macOS/Windows only; Linux falls back to reconcile-on-start). See "Corpus Reconciliation" section below. |
 | ~~**`/contextus-setup` skill**~~ | ~~user idea 2026-06-18~~ | ~~floor-calibration, config-write~~ | **SHIPPED** PR #9 — two-track wizard (Quick/Power User), `setup-detect.ts` state gathering, `--tune` calibration, provider detection, legacy migration offer, cross-project awareness. Remaining: transcript mining offer (Track B, gated on usage data). |
@@ -63,7 +67,7 @@ A fast build week should leave these *open on purpose*, not rush them.
 | **Removal / governance** — soft (CAE demotion) / hard (deletion) / replacement (supersession), driven by accumulated rejection evidence. | CAE §7 | rejection logging (v1 has this) | Needs accumulated rejection evidence to act on |
 | **Tag backfill maturity** — v1 ships `/tag-context` (subagent proposes, user approves). v2: auto-tagging confidence + bulk apply, once tags are load-bearing. | Phase 6 tag-context | tag-driven gating | Tags inert until CAE consumes them — no point maturing before then |
 | **claude-mem → context promotion** (user idea, 2026-06-15) — detect claude-mem as a *content source* and graduate worthwhile observations into `.claude/context/`. claude-mem is reactive (searched on trigger patterns, returns observations); contextus is proactive (auto-injects). The bridge: when a claude-mem observation is surfaced in a search AND actually *used* in a response, promote it to a curated context pattern so it injects proactively next time instead of waiting to be searched. Closes the CLAUDE.md "normative vs observational, they complement" gap with a one-way ratchet: observed history → usage signal → proactive pattern. | user idea 2026-06-15 | usage signal (calibration), `novelty.ts` (dedup), `SOURCE_WEIGHTS` (provenance), reclassify heuristic (memory-migrate) | **Gated**: "worthwhile" = the same use_count-not-hit_count signal as opus-metrics-critique — undefinable without real usage data. On promotion: an observation has no category (run the reclassify judgment), must dedup vs existing context (`novelty.ts`), and should be stamped `source: claude-mem` (new SOURCE_WEIGHTS key, likely down-ranked below hand-authored) so governance/removal can reason about promoted-vs-authored. Overlaps the **Hard-override provenance** open question. Promotion should be *proposed* (awareness-footer / skill), not silent — same propose-not-auto stance as capture mode. |
-| **Optional transcript mining during `/contextus-setup`** (user idea, 2026-06-18) — offer to bootstrap corpus from recent session transcripts on first-run. After scaffolding `.claude/context/`, prompt user: "Found 45 recent sessions. Run pattern discovery? Scans last 30 days, extracts ~5-10 proposals, uses Haiku (~$0.03), 2-5min background." If yes: scan `~/.claude/projects/<slug>/*.jsonl`, extract candidates (Haiku), store proposals, notify when done, user reviews via `/review-proposals` before commit. Benefits: new users start with 5-10 patterns vs 0; opt-in (no surprise cost); scoped (30 days, not exhaustive); quality gate (user reviews); background (doesn't block setup); cheap (~$0.03 = 100k input + 5k output @ Haiku rates). Implementation: incremental (last N days), keyword clustering first (cheap pre-filter), Haiku for extraction/structuring, temp proposals area. Complements `/migrate-memory` (different source). | user idea 2026-06-18 | usage signal (what patterns are "worthwhile"?), transcript schema (stable JSONL format) | **Gated**: "worthwhile" signals are the same issue as claude-mem promotion — undefinable cold. Needs real usage data to know which extracted patterns are valuable vs noise. The extraction mechanics are buildable now (transcripts are well-structured); the JUDGMENT (keep vs discard) needs evidence. Related: this is the cold-start half of transcript mining; claude-mem promotion is the ongoing/incremental half. |
+| ~~**Optional transcript mining during `/contextus-setup`**~~ | ~~user idea 2026-06-18~~ | — | **MOVED TO TRACK A** (2026-06-20). Silent capture philosophy removes the usage-data gate — extract liberally, git is the quality gate. |
 
 ### Track C — performance & reliability (buildable now, no data needed)
 
@@ -84,17 +88,15 @@ These need design decisions before implementation:
 
 ### Settled (recorded so they aren't re-litigated)
 
-- **Three orthogonal footer/capture axes — don't conflate them** (clarified 2026-06-15).
-  (a) `retrieval.provenanceFooter` (built, per-project): show/hide the `Context: used:`
-  line — pure display, default on. (b) `contextCapture.mode = propose|silent`: whether
-  the `Context: propose:` *capture* footer appears — this is LOAD-BEARING (it's how new
-  patterns get saved; without it the plugin has no capture path), so it stays always-on
-  by default. (c) `contextCapture.mode = auto` (v2, **recommended OFF**): write context
-  files without asking — auto-capturing un-vetted patterns is worse than manual capture
-  of good ones, so gate on the CAE first. **Coupling:** the axes are independent in code,
-  but when `auto` is on the `propose:` footer is moot (nothing to ask) → it should
-  suppress itself or downgrade to a terse "created:" receipt. So: propose-footer display
-  follows from capture mode; the `used:` footer is fully independent.
+- **Silent capture replaces propose-footer as default capture path** (revised 2026-06-20, originally 2026-06-15).
+  Three modes: `staging` (default) — Claude writes context files silently, they appear in
+  `git status`, user decides what to `git add`. `auto-commit` — writes + commits on feature
+  branches, review at PR time. `disabled` — v1 propose-footer behavior preserved.
+  **Key insight**: git workflow IS the quality gate. CAE not required as pre-capture filter.
+  The cost of a false positive dropped from "interrupted my flow" (mid-session prompt) to
+  "I don't `git add` one file." This lets the CAE be liberal (high recall) instead of
+  conservative (high precision). `retrieval.provenanceFooter` (`Context: used:`) remains
+  independent — pure display of what was injected. See `SILENT_CAPTURE_V2.md`.
 
 - **No closed-loop auto-adjusting floor.** A background loop that watches usage and continuously nudges `injectionFloor` without a human is **deliberately not planned** (decision 2026-06-14). The two-signal model covers the need: floor-replay sets the cold-start value, usage-eval *recommends* refinements that a human applies. The longer-term bet is to *replace* the absolute floor with the CAE/relative-separation gate, not auto-tune it — so an auto-floor only makes sense (if ever) as a v3 idea *after* CAE exists, by which point the absolute floor is just a cheap pre-filter.
 
