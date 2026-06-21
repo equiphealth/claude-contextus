@@ -254,14 +254,27 @@ Returns `{"continue": true}` (no `hookSpecificOutput`) when:
 ```
 
 **Parameters:**
-- `category` (required) — One of: `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`
+- `target` (optional) — `"context"` (default) or `"doc"`. Controls file format and destination.
+- `category` (required for context) — One of: `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`
 - `slug` (required) — Kebab-case identifier (becomes the filename and `name:` frontmatter)
-- `description` (required) — One-line summary (embedded for retrieval)
-- `body` (required) — Full markdown content (no frontmatter — the endpoint builds it)
-- `tags` (optional) — Array of tag strings
-- `scope` (optional) — `"project"` (default) writes to `.claude/context/`; `"user"` writes to `~/.contextus/context/`
+- `description` (required for context, optional for doc) — One-line summary (embedded for retrieval)
+- `body` (required) — Full markdown content (no frontmatter — the endpoint builds it for context; raw markdown for doc)
+- `tags` (optional, context only) — Array of tag strings
+- `scope` (optional) — `"project"` (default) or `"user"`. For context: project writes to `.claude/context/`, user to `~/.contextus/context/`. For doc: project writes to `docs/`, user to `~/.contextus/docs/`.
 - `cwd` (optional) — Project root directory (defaults to daemon's cwd)
 - `project` (optional) — Project name for embedding scope
+
+**Doc mode** (`target: "doc"`):
+```json
+{
+  "target": "doc",
+  "slug": "api-patterns",
+  "description": "Common API patterns in this project",
+  "body": "# API Patterns\n\nFull markdown content here...",
+  "scope": "project"
+}
+```
+Writes free-form markdown (no frontmatter) to `docs/<slug>.md`, appends to `DOCS.md` index.
 
 **Response (success):**
 ```json

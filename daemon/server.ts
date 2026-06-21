@@ -503,23 +503,90 @@ async function handleNotify(
 }
 
 /**
- * POST /capture — write a context file atomically + embed + update index.
+ * POST /capture — write a context or doc file atomically + embed + update index.
  * Replaces Write+Edit tool calls in staging mode for lower UI noise.
+ *
+ * target: "context" (default) — structured frontmatter, category dirs, CONTEXT.md index
+ * target: "doc" — free-form markdown, flat in docs/, DOCS.md index
  */
 async function handleCapture(
   body: Record<string, unknown>,
   res: http.ServerResponse
 ): Promise<void> {
-  const category = typeof body.category === 'string' ? body.category.trim() : '';
+  const target = typeof body.target === 'string' ? body.target : 'context';
   const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
   const description = typeof body.description === 'string' ? body.description.trim() : '';
   const content = typeof body.body === 'string' ? body.body : '';
-  const tags = Array.isArray(body.tags)
-    ? body.tags.filter((t): t is string => typeof t === 'string')
-    : [];
   const scope = typeof body.scope === 'string' ? body.scope : 'project';
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+
+  if (target === 'doc') {
+    // Doc mode: free-form markdown, no frontmatter, flat directory
+    if (!slug || !content) {
+      sendJson(res, 400, { error: 'missing required fields for doc: slug, body' });
+      return;
+    }
+
+    const docsDir = scope === 'user' ? expandHome('~/.contextus/docs') : path.join(cwd, 'docs');
+    const filename = `${slug}.md`;
+    const absFile = path.join(docsDir, filename);
+
+    try {
+      fs.mkdirSync(docsDir, { recursive: true });
+      fs.writeFileSync(absFile, content, 'utf-8');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('error', 'capture', 'failed to write doc file', { file: absFile, message: msg });
+      sendJson(res, 500, { error: `write failed: ${msg}` });
+      return;
+    }
+
+    // Update DOCS.md index
+    const indexFile = path.join(docsDir, 'DOCS.md');
+    const indexEntry = `- [${slug}](${filename}) — ${description || slug}\n`;
+    try {
+      if (fs.existsSync(indexFile)) {
+        fs.appendFileSync(indexFile, indexEntry);
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    logCapture(scope, filename, description || slug);
+    logInfo('Doc captured', { scope, file: filename });
+
+    sendJson(res, 200, {
+      ok: true,
+      file: absFile,
+      relPath: filename,
+      target: 'doc',
+      embedded: 'pending',
+      scope
+    });
+
+    // Embed async
+    const projectId = projectHash(cwd);
+    const source = scope === 'user' ? 'userDocs' : 'projectDocs';
+    embedSingleFile(absFile, docsDir, project, source, projectId)
+      .then((result) => {
+        if (result.embedded) invalidateCorpusCache(project);
+        logInfo('Doc embedded', { file: filename, embedded: result.embedded });
+      })
+      .catch((err) => {
+        logError('warn', 'capture', 'async doc embed failed (reconcile will retry)', {
+          file: filename,
+          message: err instanceof Error ? err.message : String(err)
+        });
+      });
+    return;
+  }
+
+  // Context mode (default): structured frontmatter, category dirs
+  const category = typeof body.category === 'string' ? body.category.trim() : '';
+  const tags = Array.isArray(body.tags)
+    ? body.tags.filter((t): t is string => typeof t === 'string')
+    : [];
 
   if (!category || !slug || !description || !content) {
     sendJson(res, 400, { error: 'missing required fields: category, slug, description, body' });
@@ -593,6 +660,7 @@ ${content}
     ok: true,
     file: absFile,
     relPath,
+    target: 'context',
     embedded: 'pending',
     scope
   });
