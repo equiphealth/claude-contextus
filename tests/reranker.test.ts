@@ -5,13 +5,20 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rerank, freshnessDecay, hitCountBoost, TYPE_BOOSTS } from '../lib/retrieval/reranker.js';
+import {
+  rerank,
+  freshnessDecay,
+  hitCountBoost,
+  TYPE_BOOSTS,
+  SOURCE_WEIGHTS
+} from '../lib/retrieval/reranker.js';
 import type { SearchResult } from '../lib/storage/lance-client.js';
 
 /** Build a minimal SearchResult with sane defaults. */
 function row(overrides: Partial<SearchResult>): SearchResult {
   return {
     id: 'x',
+    project: 'abc123def456',
     vector: [],
     document: 'doc',
     filename: 'x.md',
@@ -83,4 +90,21 @@ test('rerank: returns a new sorted array (descending finalScore)', () => {
   );
   // original array untouched
   assert.equal(input[0].id, 'low');
+});
+
+test('rerank: sibling context weighted at 0.85', () => {
+  const result = rerank([row({ id: 'a', source: 'siblingContext', similarity: 0.8 })], FIXED_NOW);
+  assert.ok(result[0].finalScore < 0.8 * 1.0); // weighted below raw similarity
+  assert.ok(Math.abs(result[0].finalScore - 0.8 * SOURCE_WEIGHTS.siblingContext) < 1e-9);
+});
+
+test('rerank: sibling context ranked below project context at equal similarity', () => {
+  const out = rerank(
+    [
+      row({ id: 'sibling', source: 'siblingContext', similarity: 0.7 }),
+      row({ id: 'own', source: 'projectContext', similarity: 0.7 })
+    ],
+    FIXED_NOW
+  );
+  assert.equal(out[0].id, 'own');
 });

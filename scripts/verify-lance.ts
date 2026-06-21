@@ -44,6 +44,7 @@ async function main() {
 
   const row: ContextRow = {
     id: 'decisions/decision-foo.md',
+    project: 'abc123def456',
     vector: vec(1),
     document: '# Foo\nAlways use the Logger helper for errors.',
     filename: 'decisions/decision-foo.md',

@@ -317,18 +317,28 @@ retrieval-optimized frontmatter. The migration is:
   [2] Skip — I'll do /migrate-memory later
 ```
 
-### P9: Cross-Project Awareness (only if `existingProjects` has entries)
-
-No question — just informational:
+### P9: Cross-Project Linking (only if `existingProjects` has entries)
 
 ```
 Cross-project awareness: contextus is active in {N} other projects:
   {list of project names}
 
-Your user-scoped sources (~/.claude/memory/, ~/.claude/context/) are shared
-across all of them automatically. Per-project calibration (floor, topK) is
-independent — tuning one never changes another.
+Would you like to link any of these? Linked projects share their
+.claude/context/ patterns into your corpus (ranked below your own).
+
+  [Link all]  [Pick specific ones]  [Skip]
 ```
+
+If user chooses to link:
+```bash
+pnpm link-project <path-for-each-selected>
+```
+
+Explain: linked context ranks at 0.85 (below own patterns at 1.0), refreshes
+automatically on macOS/Win, and can be managed later with `pnpm link-project --list`
+or `/link-project`.
+
+If no `existingProjects`, skip silently.
 
 ### Execute (Power User Track)
 

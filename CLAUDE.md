@@ -63,6 +63,11 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 **When documenting discoveries**:
 - Durable patterns → `.claude/context/<category>/` (auto-embedded)
 - Comprehensive guides → `docs/`
+- **You MUST propose context capture** (`Context: propose: <topic>`) after implementation work that surfaces new patterns, decisions, gotchas, or workflow knowledge. Don't wait to be asked — insights that aren't proposed die with the session.
+
+**Documentation standards**:
+- Use generic placeholders (`my-project`, `example-app`) or contextus self-references only
+- Never reference other real project names from this machine in docs/contexts/examples
 
 ## Core Principles (do not re-litigate)
 

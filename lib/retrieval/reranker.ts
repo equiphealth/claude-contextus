@@ -27,6 +27,7 @@ import type { SearchResult } from '../storage/lance-client.js';
 export const SOURCE_WEIGHTS: Record<string, number> = {
   projectContext: 1.0,
   projectDocs: 0.9,
+  siblingContext: 0.85,
   userContext: 0.8,
   parentContext: 0.7,
   userDocs: 0.7,
@@ -66,7 +67,10 @@ export interface RankedResult extends SearchResult {
 /** Look up a multiplicative weight, defaulting to neutral 1.0 for unknowns. */
 function weight(table: Record<string, number>, key: string | undefined): number {
   if (!key) return 1.0;
-  return table[key] ?? 1.0;
+  if (key in table) return table[key];
+  const prefix = key.split(':')[0];
+  if (prefix !== key && prefix in table) return table[prefix];
+  return 1.0;
 }
 
 /**

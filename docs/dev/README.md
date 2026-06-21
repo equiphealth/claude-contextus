@@ -10,6 +10,8 @@ roadmap, and design reviews. For **using** contextus, see [../DOCS.md](../DOCS.m
 - **[DESIGN_QUESTIONS.md](DESIGN_QUESTIONS.md)** — Pre-implementation decisions + status.
 - **[CONTEXT_APPLICABILITY_EVALUATOR.md](CONTEXT_APPLICABILITY_EVALUATOR.md)** — CAE spec
   (the v2 semantic gating layer).
+- **[SILENT_CAPTURE_V2.md](SILENT_CAPTURE_V2.md)** — v2 auto-capture design: git review as
+  the gate, zero mid-session interruptions.
 - **[CATEGORIES_AND_TAGS.md](CATEGORIES_AND_TAGS.md)** — Category vs tag ontology rules.
 - **[LOGGING.md](LOGGING.md)** — Dual-format logging schema.
 - **[DECISION-embedding-footprint.md](DECISION-embedding-footprint.md)** — Embedding
