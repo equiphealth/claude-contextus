@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-06-21
+
+### Added
+- **Staging capture mode** — default capture mode flipped from `propose` to `staging` (Claude writes context files directly; user reviews at git-staging time)
+- **Captures log** — append-only audit trail at `~/.contextus/captures.log`
+- **Provider injection** — `createTable()` accepts caller-provided providerInfo, decoupling from static config
+- **Warmup failure cascade gotcha** — documented the daemon stuck-state failure mode and workaround
+- **Embedding provider deployment tradeoff** — documented Transformers.js vs Ollama vs network Ollama decision matrix
+
+### Changed
+- **CLAUDE.md stanza** — no longer tells models to "wait for the awareness footer to invite" capture; now says to follow the per-prompt injected footer exactly (mode-aware)
+- **Staging footer** — rewritten for stronger model compliance: capture-first sequencing, explicit DO-NOT-PROPOSE instruction, self-test rule
+- **embed-contexts.ts** — uses `loadProjectConfig()` for proper 3-tier config merge
+
+### Fixed
+- **Awareness hook `captureMode()`** — now reads project-level `.claude/contextus.jsonc` (was only reading plugin.jsonc, silently ignoring project overrides)
+
 ## [0.8.0] - 2026-06-21
 
 ### Added

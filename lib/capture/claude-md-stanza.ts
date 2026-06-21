@@ -16,7 +16,7 @@
  * in scripts/contextus-setup.ts).
  *
  * The stanza's purpose: tell a fresh Claude instance that context is injected in
- * this project and that new patterns can be proposed via the awareness footer —
+ * this project and that capture behavior is controlled by the per-prompt footer —
  * making the Phase-3 awareness loop legible rather than mysterious.
  */
 
@@ -31,9 +31,9 @@ relevant patterns from \`.claude/context/\` are **retrieved and injected automat
 on each prompt — you don't need to search for them. Injected blocks are tagged
 \`[contextus — …]\`.
 
-When you discover a durable pattern, decision, or gotcha worth keeping, you'll see
-an awareness footer inviting you to propose it; new context files live under
-\`.claude/context/<category>/\` and are embedded automatically when edited.`;
+Context capture behavior is controlled by the per-prompt injected footer — follow
+its instructions exactly (it may tell you to propose, write directly, or stay silent).
+New context files live under \`.claude/context/<category>/\` and are embedded automatically.`;
 
 /** A complete marked stanza block (markers + body). */
 export function renderStanza(body: string = STANZA_BODY): string {

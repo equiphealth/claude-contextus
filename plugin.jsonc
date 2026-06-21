@@ -111,7 +111,7 @@
     "autoRebuild": true,
     "contextCapture": {
       "enabled": true,
-      "mode": "propose"
+      "mode": "staging"
     },
     "calibration": {
       // Quality evaluation (LOGGING.md calibration_eval). Provider judges whether
