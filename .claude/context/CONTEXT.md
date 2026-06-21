@@ -62,3 +62,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [lancedb-connect-parent-dir](reference/reference-lancedb-connect-parent-dir.md) — LanceDB connect() takes the DB parent dir, not the .lance table dir
 - [opus-metrics-critique](reference/reference-opus-metrics-critique.md) — Opus design feedback: tokens-saved is a vanity metric, measure real usage
 - [migration-system](reference/reference-migration-system.md) — How to add a breaking change: MIGRATIONS.md + upgrade-detect + version.ts + skill coordination
+- [setup-provider-cascade](decisions/decision-setup-provider-cascade.md) — Setup wizard tries transformers.js first, falls back to Ollama with assisted install
+- [capture-async-embed](decisions/decision-capture-async-embed.md) — POST /capture should write file synchronously but embed asynchronously for instant response
+- [setup-wizard-ollama-flow](phase/phase-setup-wizard-ollama-flow.md) — Setup wizard Ollama install flow: detect failure, link to download, wait for install, pull model from menu, start server
+- [docs-as-retrieval-incentive](project/project-docs-as-retrieval-incentive.md) — Tags and categories in docs create a behavioral nudge — engineers write more structured docs when retrieval rewards it
