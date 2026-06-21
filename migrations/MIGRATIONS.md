@@ -30,10 +30,12 @@ should perform.
 - Rows without a `project` column in an existing corpus
 
 **Steps:**
-1. Delete old per-project DB directories (`~/.contextus/data/<name>/`)
-2. Convert `linkedProjects` config entries → workspace JSONC files
-3. Remove `linkedProjects` key from tier-2 config files
-4. Re-embed all known projects (rows now get `project` column stamped)
+1. Stop the daemon (holds memoized connection to old DB path; respawns on next session)
+2. Delete old per-project DB directories and `__manifest` artifacts (`~/.contextus/data/<name>/`)
+3. Convert `linkedProjects` config entries → workspace JSONC files
+4. Remove `linkedProjects` key from tier-2 config files
+5. Re-embed the current project (rows now get `project` column stamped)
+6. Other projects re-embed on their next session start (reconcile detects empty corpus)
 
 **Scripts:**
 - `pnpm upgrade-detect` — reports what needs migrating (JSON output)
