@@ -75,7 +75,7 @@ export function buildRows(
 ): ContextRow[] {
   const hash = contentHash(ctx.content);
   return pending.map((p, i) => ({
-    id: p.id,
+    id: project ? `${project}:${p.id}` : p.id,
     project,
     vector: vectors[i],
     document: p.document,

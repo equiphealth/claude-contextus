@@ -91,10 +91,11 @@ export async function runReconcile(
   // chunks + replaces per file; orphans (files gone from disk) delete all their chunks.
   let embedded = 0;
   for (const absPath of plan.embedPaths) {
-    const r = await embedSingleFile(absPath, contextDir, projectName);
+    const r = await embedSingleFile(absPath, contextDir, projectName, 'projectContext', projectId);
     if (r.embedded) embedded++;
   }
-  for (const filename of plan.toRemove) await deleteByFilename(filename, projectName);
+  for (const filename of plan.toRemove)
+    await deleteByFilename(filename, projectName, projectId || undefined);
   return {
     state: plan.state,
     embedded,

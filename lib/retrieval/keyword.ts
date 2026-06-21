@@ -154,12 +154,16 @@ export function invalidateCorpusCache(projectName?: string): void {
 }
 
 /**
- * Load all rows from the corpus for keyword scanning. Cached in memory and
- * invalidated on file changes (notify/reconcile). Without caching, this was
- * the primary latency bottleneck (~5s to read 1207 rows from LanceDB on every query).
+ * Load rows from the corpus for keyword scanning, scoped to `projectScope`.
+ * Cached in memory and invalidated on file changes (notify/reconcile). Without
+ * caching, this was the primary latency bottleneck (~5s to read 1207 rows from
+ * LanceDB on every query).
  */
-export async function loadCorpusForKeyword(projectName?: string): Promise<ContextRow[]> {
-  const cacheKey = projectName ?? '__default__';
+export async function loadCorpusForKeyword(
+  projectName?: string,
+  projectScope?: string[]
+): Promise<ContextRow[]> {
+  const cacheKey = projectScope ? projectScope.sort().join(',') : (projectName ?? '__default__');
   const cached = _corpusCache.get(cacheKey);
   if (cached) return cached.rows;
 
@@ -167,10 +171,11 @@ export async function loadCorpusForKeyword(projectName?: string): Promise<Contex
   const { openTable, tableExists } = await import('../storage/lance-client.js');
   if (!(await tableExists(projectName))) return [];
   const table = await openTable(projectName);
-  const rows = (await table
+  let query = table
     .query()
     .select([
       'id',
+      'project',
       'document',
       'filename',
       'chunk_index',
@@ -182,8 +187,12 @@ export async function loadCorpusForKeyword(projectName?: string): Promise<Contex
       'last_hit',
       'updated_at',
       'content_hash'
-    ])
-    .toArray()) as ContextRow[];
+    ]);
+  if (projectScope && projectScope.length > 0) {
+    const inList = projectScope.map((p) => `'${p.replace(/'/g, "''")}'`).join(', ');
+    query = query.where(`project IN (${inList})`);
+  }
+  const rows = (await query.toArray()) as ContextRow[];
   _corpusCache.set(cacheKey, { rows, loadedAt: Date.now() });
   return rows;
 }

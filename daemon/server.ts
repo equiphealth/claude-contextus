@@ -245,7 +245,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
 
     if (cfg.retrieval.hybrid === 'always') {
       // Always-on hybrid: fuse keyword + semantic unconditionally
-      const corpus = await loadCorpusForKeyword(project);
+      const corpus = await loadCorpusForKeyword(project, projectScope);
       const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
       if (keywordResults.length > 0) {
         raw = fuseRRF(raw, keywordResults, fetchLimit);
@@ -255,7 +255,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       // Rescues exact-symbol queries ("getLogger") that embed poorly but BM25 nails.
       const semanticBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
       if (semanticBest < cfg.retrieval.injectionFloor) {
-        const corpus = await loadCorpusForKeyword(project);
+        const corpus = await loadCorpusForKeyword(project, projectScope);
         const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
         if (keywordResults.length > 0) {
           raw = fuseRRF(raw, keywordResults, fetchLimit);
@@ -281,7 +281,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     attemptWarmup();
 
     // Try keyword fallback before giving up entirely
-    const corpus = await loadCorpusForKeyword(project);
+    const corpus = await loadCorpusForKeyword(project, projectScope);
     if (corpus.length === 0) {
       return sendJson(res, 200, { continue: true });
     }

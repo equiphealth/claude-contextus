@@ -82,11 +82,12 @@ function findLinkedProjectConfigs(): DetectionResult['details']['linkedProjectCo
   return results;
 }
 
-function detectMigrations(dataVersion: string): MigrationNeeded[] {
+function detectMigrations(dataVersion: string, installedVersion: string): MigrationNeeded[] {
   const migrations: MigrationNeeded[] = [];
 
   // 0.8.0: Unified DB + Workspaces
-  if (compareSemver(dataVersion, '0.8.0') < 0) {
+  // Only propose if installed version is >= 0.8.0 (otherwise the code doesn't support it yet)
+  if (compareSemver(dataVersion, '0.8.0') < 0 && compareSemver(installedVersion, '0.8.0') >= 0) {
     const perProjectDbs = findPerProjectDbs();
     const linkedConfigs = findLinkedProjectConfigs();
     if (perProjectDbs.length > 0 || linkedConfigs.length > 0) {
@@ -128,7 +129,7 @@ function main(): void {
     dataVersion,
     installedVersion,
     needsUpgrade: needsUpgrade(),
-    migrations: detectMigrations(dataVersion),
+    migrations: detectMigrations(dataVersion, installedVersion),
     details: {
       perProjectDbs,
       linkedProjectConfigs,

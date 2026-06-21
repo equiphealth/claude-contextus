@@ -115,11 +115,14 @@ async function main(): Promise<void> {
   process.stdout.write('\n');
 
   // Slice the flat vector array back per file and assemble rows.
+  // User-scoped sources (userContext, userDocs) get stamped '__user__' so they're
+  // visible to all projects via resolveProjectScope() which always includes '__user__'.
   let cursor = 0;
   for (const { pending, ctx, source } of planned) {
     const slice = vectors.slice(cursor, cursor + pending.length);
     cursor += pending.length;
-    allRows.push(...buildRows(ctx, pending, slice, source, now, projectId));
+    const rowProject = source === 'userContext' || source === 'userDocs' ? '__user__' : projectId;
+    allRows.push(...buildRows(ctx, pending, slice, source, now, rowProject));
   }
 
   if (allRows.length === 0) {

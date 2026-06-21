@@ -52,9 +52,11 @@ export async function embedSingleFile(
   // File deleted: remove its rows from the corpus (orphan cleanup).
   if (!fs.existsSync(normFile)) {
     const relPath = path.relative(normDir, normFile).replace(/\\/g, '/');
-    const stored = (await getContentHashes(projectName, source)).get(relPath);
+    const stored = (await getContentHashes(projectName, source, projectId || undefined)).get(
+      relPath
+    );
     if (stored !== undefined) {
-      await deleteByFilename(relPath, projectName);
+      await deleteByFilename(relPath, projectName, projectId || undefined);
       return { embedded: false, id: relPath, reason: 'deleted' };
     }
     return { embedded: false, reason: 'not_found' };
@@ -73,7 +75,9 @@ export async function embedSingleFile(
 
   // Staleness gate: a save that didn't change the body shouldn't pay for a
   // re-embed. Compare the new content hash against the stored (file-level) one.
-  const stored = (await getContentHashes(projectName, source)).get(ctx.relPath);
+  const stored = (await getContentHashes(projectName, source, projectId || undefined)).get(
+    ctx.relPath
+  );
   if (!isStale(stored, ctx.content)) {
     return { embedded: false, id: ctx.id, reason: 'unchanged' };
   }

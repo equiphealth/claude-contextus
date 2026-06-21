@@ -11,6 +11,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { expandHome } from './config.js';
 
 const VERSION_PATH = path.resolve(expandHome('~/.contextus/version.json'));
@@ -39,7 +40,7 @@ export function writeVersionState(version: string): void {
 export function getInstalledVersion(): string {
   try {
     const pkgPath = path.resolve(
-      path.dirname(new URL(import.meta.url).pathname),
+      path.dirname(fileURLToPath(import.meta.url)),
       '..',
       'package.json'
     );

@@ -298,19 +298,21 @@ export async function getContentHashes(
 
 /**
  * Delete all rows for a given project hash (workspace cleanup / project removal).
+ * Uses a WHERE predicate pushed to LanceDB — O(matching rows), not O(total).
  */
 export async function deleteByProject(projectHash: string): Promise<number> {
   if (!(await tableExists())) return 0;
   const table = await openTable();
-  const rows = (await table.query().select(['id', 'project']).toArray()) as Array<{
-    id: string;
-    project?: string;
-  }>;
-  const toDelete = rows.filter((r) => r.project === projectHash).map((r) => r.id);
-  if (toDelete.length === 0) return 0;
-  const inList = toDelete.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
-  await table.delete(`id IN (${inList})`);
-  return toDelete.length;
+  const escaped = projectHash.replace(/'/g, "''");
+  // Count first so we can report how many were deleted.
+  const rows = (await table
+    .query()
+    .select(['id'])
+    .where(`project = '${escaped}'`)
+    .toArray()) as Array<{ id: string }>;
+  if (rows.length === 0) return 0;
+  await table.delete(`project = '${escaped}'`);
+  return rows.length;
 }
 
 /** Reset memoized connection (tests / daemon restart). */
