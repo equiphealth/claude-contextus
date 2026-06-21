@@ -584,26 +584,33 @@ ${content}
     // Non-fatal — file is written, index update is best-effort
   }
 
-  // Embed the file
-  const projectId = projectHash(cwd);
-  const source = scope === 'user' ? 'userContext' : 'projectContext';
-  const embedResult = await embedSingleFile(absFile, contextDir, project, source, projectId);
-
-  // Log to captures audit trail
+  // Log to captures audit trail (sync — fast)
   logCapture(scope, relPath, description);
-  logInfo('Context captured', { scope, file: relPath, embedded: embedResult.embedded });
+  logInfo('Context captured', { scope, file: relPath });
 
-  if (embedResult.embedded) {
-    invalidateCorpusCache(project);
-  }
-
+  // Respond immediately — file is on disk, git can see it
   sendJson(res, 200, {
     ok: true,
     file: absFile,
     relPath,
-    embedded: embedResult.embedded,
+    embedded: 'pending',
     scope
   });
+
+  // Embed async (fire-and-forget) — reconcile catches failures
+  const projectId = projectHash(cwd);
+  const source = scope === 'user' ? 'userContext' : 'projectContext';
+  embedSingleFile(absFile, contextDir, project, source, projectId)
+    .then((result) => {
+      if (result.embedded) invalidateCorpusCache(project);
+      logInfo('Capture embedded', { file: relPath, embedded: result.embedded });
+    })
+    .catch((err) => {
+      logError('warn', 'capture', 'async embed failed (reconcile will retry)', {
+        file: relPath,
+        message: err instanceof Error ? err.message : String(err)
+      });
+    });
 }
 
 /* ── Directory watcher — live deletion detection ────────────────────────────── */
