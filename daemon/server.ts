@@ -69,8 +69,19 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 /** Daemon/protocol version reported by /introspect (keep in sync with plugin.json). */
 const DAEMON_VERSION = '0.1.0';
 const RUNTIME_DIR = expandHome('~/.contextus/runtime');
+const CAPTURES_LOG = expandHome('~/.contextus/captures.log');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
 const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
+
+/** Append a capture event to the audit log (best-effort, never blocks). */
+function logCapture(scope: string, file: string, description: string): void {
+  const line = `${new Date().toISOString()} | ${scope} | ${file} | ${JSON.stringify(description)}\n`;
+  try {
+    fs.appendFileSync(CAPTURES_LOG, line);
+  } catch {
+    // Best-effort — never fail a capture on log I/O
+  }
+}
 
 /** Set true once the embedding model has warm-loaded; /health gates on it. */
 let modelLoaded = false;
@@ -542,6 +553,11 @@ function watchContextDir(
                 project: projectLabel,
                 source
               });
+              const scope =
+                source === 'userContext' || source === 'userDocs'
+                  ? 'user'
+                  : `project:${projectLabel}`;
+              logCapture(scope, result.id ?? filename, 'auto-captured via watcher');
             }
           })
           .catch(() => {});

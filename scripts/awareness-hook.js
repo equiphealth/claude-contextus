@@ -54,15 +54,23 @@ function projectName(cwd) {
   return cwd ? path.basename(cwd) : path.basename(process.cwd());
 }
 
-/** Read contextCapture.mode from plugin config (plain JS can't import config.ts). */
+/** Read contextCapture.mode with config precedence: project > plugin. */
 function captureMode() {
+  let mode = 'propose';
+  // Plugin defaults (lowest precedence)
   try {
     const text = fs.readFileSync(PLUGIN_JSON, 'utf8');
     const cfg = JSON.parse(stripJsonComments(text));
-    return cfg?.config?.contextCapture?.mode ?? 'propose';
-  } catch {
-    return 'propose';
-  }
+    if (cfg?.config?.contextCapture?.mode) mode = cfg.config.contextCapture.mode;
+  } catch {}
+  // Project-level override (highest precedence)
+  const projectConfig = path.resolve(process.cwd(), '.claude', 'contextus.jsonc');
+  try {
+    const text = fs.readFileSync(projectConfig, 'utf8');
+    const cfg = JSON.parse(stripJsonComments(text));
+    if (cfg?.contextCapture?.mode) mode = cfg.contextCapture.mode;
+  } catch {}
+  return mode;
 }
 
 /** Ask the daemon what it has recently injected for this project (best-effort). */

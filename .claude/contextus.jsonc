@@ -54,7 +54,7 @@
   "autoRebuild": true,
   "contextCapture": {
     "enabled": true,
-    "mode": "propose"
+    "mode": "staging"
   },
   "calibration": {
     "targetSamples": 100,
