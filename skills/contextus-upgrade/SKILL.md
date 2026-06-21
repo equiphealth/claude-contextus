@@ -63,6 +63,17 @@ contextus-upgrade: 1 migration(s) pending
 Proceed? (--dry-run stops here)
 ```
 
+### Step 2.5: Stop the Daemon
+
+The daemon must be stopped before applying migrations — it holds a memoized
+LanceDB connection and won't pick up new code (DB path changes, workspace
+scoping) without a restart. It respawns automatically on the next session start.
+
+```bash
+# Stop the daemon (safe — SessionStart hook restarts it)
+kill $(cat ~/.contextus/runtime/daemon.pid) 2>/dev/null && echo "Daemon stopped" || echo "No daemon running"
+```
+
 ### Step 3: Apply Migrations (in version order)
 
 Read `migrations/MIGRATIONS.md` for the steps of each pending migration. Apply
@@ -77,14 +88,19 @@ For 0.8.0 (Unified DB & Workspaces):
 # 1. Convert linkedProjects → workspaces
 $TSX ~/src/claude-contextus/scripts/migrate-workspaces.ts
 
-# 2. Delete old per-project DBs
+# 2. Delete old per-project DBs and stale artifacts
 rm -rf ~/.contextus/data/*/contextus.lance
 rm -rf ~/.contextus/data/*/contextus.meta.json
-find ~/.contextus/data -maxdepth 1 -type d -empty -delete 2>/dev/null
+rm -rf ~/.contextus/data/*/__manifest
+# Remove dirs left empty after DB deletion (keep those with config.json)
+find ~/.contextus/data -maxdepth 1 -type d -exec sh -c '[ -z "$(ls -A "$1")" ] && rmdir "$1"' _ {} \; 2>/dev/null
+# Remove stale dirs from old absolute-path-as-key bug
+rm -rf ~/.contextus/data/Users 2>/dev/null
 
-# 3. Re-embed (rebuilds with project column in unified DB)
+# 3. Re-embed the CURRENT project (builds with project column in unified DB)
 cd <project-dir>
 $TSX ~/src/claude-contextus/scripts/embed-contexts.ts
+# Other projects will re-embed on their next session start (reconcile handles it)
 ```
 
 ### Step 4: Stamp Version
