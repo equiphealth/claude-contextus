@@ -42,18 +42,18 @@
         "indexFile": "DOCS.md",
         "exclude": ["**/DOCS.md", "**/README.md"]
       },
-      "userMemory": {
-        "type": "memory",
+      "userContext": {
+        "type": "context",
         "scope": "user",
-        "path": "~/.claude/memory",
+        "path": "~/.contextus/context",
         "enabled": true,
-        "indexFile": "MEMORY.md",
-        "exclude": ["**/MEMORY.md", "**/README.md"]
+        "indexFile": "CONTEXT.md",
+        "exclude": ["**/CONTEXT.md", "**/README.md"]
       },
       "userDocs": {
         "type": "doc",
         "scope": "user",
-        "path": "~/.claude/docs",
+        "path": "~/.contextus/docs",
         "enabled": true,
         "indexFile": "DOCS.md",
         "exclude": ["**/DOCS.md", "**/README.md"]

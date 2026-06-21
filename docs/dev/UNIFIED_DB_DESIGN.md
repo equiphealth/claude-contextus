@@ -22,8 +22,12 @@ makes workspace-style grouping trivial (just a WHERE clause on query).
 ### Single DB
 
 ```
-~/.contextus/data/contextus.lance    ← one DB for all projects
-~/.contextus/workspaces/             ← workspace definitions (one file each)
+~/.contextus/
+  data/contextus.lance    ← one DB for all projects
+  workspaces/             ← workspace definitions (one file each)
+  context/                ← global user patterns (cross-project)
+  docs/                   ← global user docs
+  logs/                   ← daemon logs (already here)
 ```
 
 Every row includes a `project` field — a short hash of the project's absolute
@@ -78,8 +82,8 @@ Proximity-based, relative to the active project:
 |--------|--------|
 | Own project's patterns | `projectContext` (1.0) |
 | Sibling project patterns | `siblingContext` (0.85 default) |
-| Personal context (`~/.claude/memory`) | `userContext` (0.8) |
-| Personal docs (`~/.claude/docs`) | `userDocs` (0.7) |
+| Personal context (`~/.contextus/context`) | `userContext` (0.8) |
+| Personal docs (`~/.contextus/docs`) | `userDocs` (0.7) |
 
 `siblingWeight` is configurable globally or per-project in `.claude/contextus.jsonc`:
 
