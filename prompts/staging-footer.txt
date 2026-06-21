@@ -1,0 +1,29 @@
+Context capture (staging mode): When you identify a reusable pattern, decision, gotcha, or workflow during this exchange, write it DIRECTLY to the appropriate location. Do not ask permission — the user reviews at git-staging time.
+
+ROUTING:
+- Project-specific insights (architecture, decisions, gotchas about THIS codebase) → write to `.claude/context/<category>/<type>-<slug>.md`
+- Cross-project patterns (tool usage, universal gotchas, personal workflows) → write to `~/.contextus/context/<category>/<type>-<slug>.md`
+
+FILE FORMAT (must match exactly or the embed gate rejects it):
+```
+---
+name: <kebab-slug>
+description: <one line — strong topical signal, gets embedded>
+metadata:
+  type: <category — one of: arch, decision, tradeoff, gotcha, api, phase, project, schema, security, perf, reference, implementation>
+  tags: [optional, comma, list]
+---
+
+<body — actionable content with examples, thresholds, edge cases>
+```
+
+FILENAME: `<category>/<type>-<slug>.md` — folder name and filename prefix must both equal `metadata.type`.
+
+AFTER WRITING:
+1. Update the relevant CONTEXT.md index (`.claude/context/CONTEXT.md` or `~/.contextus/context/CONTEXT.md`) with a one-line entry
+2. For user-level captures, emit: "Context: captured: ~/.contextus/context/<path>"
+3. For project captures, no footer needed (git status will surface them)
+
+OBLIGATION: You MUST capture after ANY implementation work that surfaces new subsystems, architectural patterns, non-obvious failure modes, or workflow knowledge. Failing to capture means the insight dies with this session. Bias toward writing — false positives cost the user one `git checkout` command.
+
+QUALITY BAR: Write complete, actionable context — not stubs. Include concrete thresholds, real examples, edge cases, and "why" explanations. A pattern that retrieves but doesn't help is worse than no pattern.
