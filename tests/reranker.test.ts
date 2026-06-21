@@ -18,6 +18,7 @@ import type { SearchResult } from '../lib/storage/lance-client.js';
 function row(overrides: Partial<SearchResult>): SearchResult {
   return {
     id: 'x',
+    project: 'abc123def456',
     vector: [],
     document: 'doc',
     filename: 'x.md',
@@ -91,21 +92,16 @@ test('rerank: returns a new sorted array (descending finalScore)', () => {
   assert.equal(input[0].id, 'low');
 });
 
-test('rerank: prefixed source resolves to base weight (linkedContext:foo → 0.85)', () => {
-  const plain = rerank([row({ id: 'a', source: 'linkedContext', similarity: 0.8 })], FIXED_NOW);
-  const prefixed = rerank(
-    [row({ id: 'b', source: 'linkedContext:my-project', similarity: 0.8 })],
-    FIXED_NOW
-  );
-  assert.equal(plain[0].finalScore, prefixed[0].finalScore);
-  assert.ok(prefixed[0].finalScore < 0.8 * 1.0); // weighted below raw similarity
-  assert.ok(Math.abs(prefixed[0].finalScore - 0.8 * SOURCE_WEIGHTS.linkedContext) < 1e-9);
+test('rerank: sibling context weighted at 0.85', () => {
+  const result = rerank([row({ id: 'a', source: 'siblingContext', similarity: 0.8 })], FIXED_NOW);
+  assert.ok(result[0].finalScore < 0.8 * 1.0); // weighted below raw similarity
+  assert.ok(Math.abs(result[0].finalScore - 0.8 * SOURCE_WEIGHTS.siblingContext) < 1e-9);
 });
 
-test('rerank: linked context ranked below project context at equal similarity', () => {
+test('rerank: sibling context ranked below project context at equal similarity', () => {
   const out = rerank(
     [
-      row({ id: 'linked', source: 'linkedContext:other-repo', similarity: 0.7 }),
+      row({ id: 'sibling', source: 'siblingContext', similarity: 0.7 }),
       row({ id: 'own', source: 'projectContext', similarity: 0.7 })
     ],
     FIXED_NOW

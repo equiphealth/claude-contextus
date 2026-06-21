@@ -8,6 +8,7 @@ import type { ContextRow } from '../lib/storage/lance-client.js';
 function makeSearchResult(id: string, similarity: number): SearchResult {
   return {
     id,
+    project: 'abc123def456',
     vector: [],
     document: `content for ${id}`,
     filename: `${id}.md`,
@@ -35,6 +36,7 @@ function makeKeywordResult(id: string, score: number, similarity: number): Keywo
 function makeRow(id: string, document: string): ContextRow {
   return {
     id,
+    project: 'abc123def456',
     vector: [],
     document,
     filename: `${id}.md`,

@@ -28,6 +28,8 @@
     "setup-detect": "tsx scripts/setup-detect.ts",
     "link-project": "tsx scripts/link-project.ts",
     "unlink-project": "tsx scripts/link-project.ts --remove",
+    "upgrade-detect": "tsx scripts/upgrade-detect.ts",
+    "migrate-workspaces": "tsx scripts/migrate-workspaces.ts",
     "lint": "eslint lib scripts daemon --ext .ts",
     "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\" \"*.jsonc\"",
     "format:all": "prettier --write \"**/*.{ts,json,jsonc}\"",

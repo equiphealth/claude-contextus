@@ -30,6 +30,7 @@ export interface EmbedFileResult {
  * Re-embed a single context file and upsert it into the project table.
  * `absFile` is the changed file; `contextDir` is the project's `.claude/context`.
  * `source` identifies the source label for reranking (default: projectContext).
+ * `projectId` is the sha256 hash stamped on rows (unified DB).
  * Returns `embedded: false` (no throw) when the file is outside the context dir,
  * missing, or fails the prefix↔type gate — those are skips, not failures.
  */
@@ -37,7 +38,8 @@ export async function embedSingleFile(
   absFile: string,
   contextDir: string,
   projectName?: string,
-  source = 'projectContext'
+  source = 'projectContext',
+  projectId = ''
 ): Promise<EmbedFileResult> {
   const normFile = path.resolve(absFile);
   const normDir = path.resolve(contextDir);
@@ -83,8 +85,8 @@ export async function embedSingleFile(
   if (pending.length === 0) return { embedded: false, id: ctx.id, reason: 'empty' };
   const vectors = [];
   for (const p of pending) vectors.push(await embedDocument(p.embedText));
-  const rows = buildRows(ctx, pending, vectors, source, new Date().toISOString());
-  await deleteByFilename(ctx.relPath, projectName);
+  const rows = buildRows(ctx, pending, vectors, source, new Date().toISOString(), projectId);
+  await deleteByFilename(ctx.relPath, projectName, projectId || undefined);
   await upsertRows(rows, projectName);
   return { embedded: true, id: ctx.id };
 }

@@ -27,9 +27,15 @@
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
-import { loadConfig, loadProjectConfig, expandHome } from '../lib/config.js';
+import { loadConfig, loadProjectConfig, expandHome, projectHash } from '../lib/config.js';
 import { warmup, embedQuery } from '../lib/embedding/embedder.js';
-import { search, tableExists, readTableMeta, incrementHits } from '../lib/storage/lance-client.js';
+import {
+  search,
+  tableExists,
+  readTableMeta,
+  incrementHits,
+  getContentHashes
+} from '../lib/storage/lance-client.js';
 import { estimateTokens } from '../lib/retrieval/inject-format.js';
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
 import {
@@ -44,8 +50,7 @@ import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { resolveLinkedSources, findMissingLinkedProjects } from '../lib/embedding/sources.js';
-import { getContentHashes, deleteBySource } from '../lib/storage/lance-client.js';
+import { resolveProjectScope } from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
@@ -164,6 +169,14 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
   // cwd = the project repo root, needed for the git-committed tier-3 config override.
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
+  // Compute the project hash for DB scoping (hooks pass absolute path or basename).
+  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : undefined;
+  // Resolve workspace scope: self + siblings + __user__
+  const projectScope = cwd
+    ? resolveProjectScope(cwd)
+    : projectId
+      ? [projectId, '__user__']
+      : undefined;
 
   if (!prompt.trim()) {
     return sendJson(res, 200, { continue: true });
@@ -226,9 +239,9 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     const CHUNK_FANOUT = 4;
     const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
 
-    // Always start with semantic search
+    // Always start with semantic search (workspace-scoped)
     const vec = await embedQuery(prompt);
-    raw = await search(vec, fetchLimit, undefined, project);
+    raw = await search(vec, fetchLimit, undefined, project, projectScope);
 
     if (cfg.retrieval.hybrid === 'always') {
       // Always-on hybrid: fuse keyword + semantic unconditionally
@@ -304,7 +317,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       const variantSearches = await Promise.all(
         expanded.variants.map(async (variant) => {
           const vVec = await embedQuery(variant);
-          return search(vVec, variantLimit, undefined, project);
+          return search(vVec, variantLimit, undefined, project, projectScope);
         })
       );
       // Union: merge all results, dedupe by row id (keep highest similarity).
@@ -459,10 +472,11 @@ async function handleNotify(
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
   if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
 
+  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : '';
   const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
   const contextDir = path.join(cwd, '.claude', 'context');
-  watchContextDir(contextDir, project);
-  const result = await embedSingleFile(absFile, contextDir, project);
+  watchContextDir(contextDir, project, 'projectContext', projectId);
+  const result = await embedSingleFile(absFile, contextDir, project, 'projectContext', projectId);
   if (result.embedded) {
     invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
@@ -488,7 +502,8 @@ const activeWatchers = new Map<string, fs.FSWatcher>();
 function watchContextDir(
   contextDir: string,
   project: string | undefined,
-  source = 'projectContext'
+  source = 'projectContext',
+  projectId = ''
 ): void {
   if (activeWatchers.has(contextDir)) return;
   if (!fs.existsSync(contextDir)) return;
@@ -500,10 +515,9 @@ function watchContextDir(
       const absPath = path.join(contextDir, filename);
       // Only act on deletions — file gone from disk
       if (!fs.existsSync(absPath)) {
-        // Debounce: skip if a reconcile is in progress for this project
         const projectLabel = project ?? 'default';
         if (reconcilingProjects.has(projectLabel)) return;
-        embedSingleFile(absPath, contextDir, project, source)
+        embedSingleFile(absPath, contextDir, project, source, projectId)
           .then((result) => {
             if (result.reason === 'deleted') {
               invalidateCorpusCache(project);
@@ -519,7 +533,7 @@ function watchContextDir(
         // File created or modified — re-embed it
         const projectLabel = project ?? 'default';
         if (reconcilingProjects.has(projectLabel)) return;
-        embedSingleFile(absPath, contextDir, project, source)
+        embedSingleFile(absPath, contextDir, project, source, projectId)
           .then((result) => {
             if (result.embedded) {
               invalidateCorpusCache(project);
@@ -568,6 +582,7 @@ async function handleReconcile(
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
   const projectLabel = project ?? 'default';
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : '';
   const check = body.check === true;
   const contextDir = path.join(cwd, '.claude', 'context');
 
@@ -581,11 +596,8 @@ async function handleReconcile(
     const quarantined = findPrefixTypeMismatches(allContexts).map((m) => m.relPath);
     const badPaths = new Set(quarantined);
     const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
-    // Scope to projectContext — MUST match runReconcile (which only manages the
-    // context source). Unfiltered, doc/user-pack rows (which refresh on a full
-    // embed, not via reconcile) look like orphans of the context dir → bogus
-    // "stale, removeCount=N" and a nonsense "re-embedding 0" session-start line.
-    const hashes = await getContentHashes(project, 'projectContext');
+    // Scope to projectContext + this project's hash — MUST match runReconcile.
+    const hashes = await getContentHashes(project, 'projectContext', projectId || undefined);
     const diskFiles: DiskFile[] = contexts.map((c) => ({
       id: c.id,
       absPath: c.absPath,
@@ -612,7 +624,7 @@ async function handleReconcile(
   reconcilingProjects.add(projectLabel);
   // Respond immediately; the embed runs detached from the request lifecycle.
   sendJson(res, 200, { state: 'started' });
-  runReconcile(contextDir, project)
+  runReconcile(contextDir, project, projectId)
     .then(async (r) => {
       if (r.embedded > 0 || r.removed > 0) {
         invalidateCorpusCache(project);
@@ -623,46 +635,7 @@ async function handleReconcile(
           removed: r.removed
         });
       }
-      watchContextDir(contextDir, project);
-      // Clean up rows from linked projects whose directories no longer exist
-      const missingLinks = findMissingLinkedProjects(projectLabel);
-      for (const missing of missingLinks) {
-        const removed = await deleteBySource(`linkedContext:${missing.name}`, project);
-        if (removed > 0) {
-          invalidateCorpusCache(project);
-          logInfo('Cleaned orphan linked rows', {
-            project: projectLabel,
-            linkedName: missing.name,
-            removedRows: removed
-          });
-        }
-      }
-
-      // Reconcile and watch linked project sources
-      const linkedSources = resolveLinkedSources(projectLabel);
-      for (const ls of linkedSources) {
-        const linkedContexts = await loadContexts(ls.dir);
-        const hashes = await getContentHashes(project, ls.name);
-        const diskFiles: DiskFile[] = linkedContexts.map((c) => ({
-          id: c.id,
-          absPath: c.absPath,
-          content: c.content
-        }));
-        const exists = await tableExists(project);
-        const plan = planReconcile(diskFiles, hashes, exists);
-        if (plan.embedPaths.length > 0) {
-          for (const absPath of plan.embedPaths) {
-            await embedSingleFile(absPath, ls.dir, project, ls.name);
-          }
-          invalidateCorpusCache(project);
-          logInfo('Linked reconcile complete', {
-            project: projectLabel,
-            linkedDir: ls.dir,
-            embedded: plan.embedPaths.length
-          });
-        }
-        watchContextDir(ls.dir, project, ls.name);
-      }
+      watchContextDir(contextDir, project, 'projectContext', projectId);
     })
     .catch((err) =>
       logError('error', 'daemon', 'Reconcile failed', {

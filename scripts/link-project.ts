@@ -1,72 +1,60 @@
 #!/usr/bin/env node
 /**
- * link-project — Add another project's context to your corpus.
+ * link-project — Add another project to your workspace for shared context.
  *
  * Usage:
- *   pnpm link-project <path>              # link by path (name derived from basename)
- *   pnpm link-project <path> --name foo   # explicit name
- *   pnpm link-project --list              # show current links
- *   pnpm link-project --remove <name>     # unlink a project
+ *   pnpm link-project <path>                     # link (auto-creates workspace)
+ *   pnpm link-project <path> --workspace foo     # explicit workspace name
+ *   pnpm link-project --list                     # show workspaces for this project
+ *   pnpm link-project --remove <path>            # unlink a project from workspace
  *   pnpm link-project --help
  */
 
 import fs from 'fs';
 import path from 'path';
-import { projectLocalConfigPath } from '../lib/config.js';
+import { expandHome, projectHash } from '../lib/config.js';
+import {
+  workspacesForProject,
+  addProjectToWorkspace,
+  removeProjectFromWorkspace
+} from '../lib/workspace.js';
 
-interface LinkedProjectEntry {
-  name: string;
-  path: string;
-  enabled: boolean;
-}
-
-const USAGE = `link-project — share context across projects
+const USAGE = `link-project — share context across projects via workspaces
 
 Usage:
-  pnpm link-project <path>              Link a project's .claude/context/
-  pnpm link-project <path> --name foo   Link with explicit name
-  pnpm link-project --list              Show linked projects
-  pnpm link-project --remove <name>     Unlink a project
-  pnpm link-project --help              Show this help
+  pnpm link-project <path>                     Link a project (creates workspace if needed)
+  pnpm link-project <path> --workspace foo     Link to a named workspace
+  pnpm link-project --list                     Show workspaces containing this project
+  pnpm link-project --remove <path>            Remove a project from shared workspace
+  pnpm link-project --help                     Show this help
 
-The linked project's .claude/context/ patterns become searchable in
-your current project's corpus, ranked just below your own context.
-Changes in the linked project refresh automatically (macOS/Win).`;
+Projects in the same workspace share context bidirectionally — all context
+patterns from sibling projects are searchable, ranked slightly below your own.
+No duplicate data: each project embeds once, queries span all siblings.`;
 
-function currentProject(): string {
-  return path.basename(process.cwd());
+function currentProjectPath(): string {
+  return process.cwd();
 }
 
-function readConfig(configPath: string): Record<string, unknown> {
-  try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-function writeConfig(configPath: string, config: Record<string, unknown>): void {
-  const dir = path.dirname(configPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
-}
-
-function getLinked(config: Record<string, unknown>): LinkedProjectEntry[] {
-  return Array.isArray(config.linkedProjects) ? config.linkedProjects : [];
-}
-
-async function triggerReconcile(project: string): Promise<void> {
+async function triggerReconcile(): Promise<void> {
+  const project = projectHash(currentProjectPath());
   try {
     const res = await fetch('http://127.0.0.1:37800/reconcile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project, cwd: process.cwd() }),
+      body: JSON.stringify({ project, cwd: currentProjectPath() }),
       signal: AbortSignal.timeout(3000)
     });
     if (res.ok) console.log('  Triggered re-embed (daemon will process in background)');
   } catch {
-    console.log('  Daemon not running — linked context will embed on next session start');
+    console.log('  Daemon not running — context will merge on next session start');
   }
+}
+
+function deriveWorkspaceName(path1: string, path2: string): string {
+  const base1 = path.basename(path1);
+  const base2 = path.basename(path2);
+  return `${base1}-${base2}`;
 }
 
 async function main(): Promise<void> {
@@ -77,62 +65,56 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const project = currentProject();
-  const configPath = projectLocalConfigPath(project);
-  const config = readConfig(configPath);
+  const cwd = currentProjectPath();
 
   // --list
   if (argv.includes('--list')) {
-    const linked = getLinked(config);
-    if (linked.length === 0) {
-      console.log('No linked projects.');
+    const workspaces = workspacesForProject(cwd);
+    if (workspaces.length === 0) {
+      console.log('Not in any workspace. Link a project to create one.');
     } else {
-      console.log(`Linked projects (${project}):\n`);
-      for (const entry of linked) {
-        const status = entry.enabled !== false ? '✓' : '✗';
-        const contextDir = path.join(entry.path, '.claude', 'context');
-        const exists = fs.existsSync(contextDir);
-        console.log(`  ${status} ${entry.name} → ${entry.path}${exists ? '' : ' (missing!)'}`);
+      console.log(`Workspaces for ${path.basename(cwd)}:\n`);
+      for (const ws of workspaces) {
+        console.log(`  ${ws.name}:`);
+        for (const p of ws.projects) {
+          const resolved = path.resolve(expandHome(p.path));
+          const isSelf = resolved === cwd;
+          const exists = fs.existsSync(resolved);
+          const label = isSelf ? ' (this project)' : exists ? '' : ' (missing!)';
+          console.log(`    ${path.basename(resolved)} → ${p.path}${label}`);
+        }
       }
     }
     process.exit(0);
   }
 
-  // --remove <name>
+  // --remove <path>
   const removeIdx = argv.indexOf('--remove');
   if (removeIdx !== -1) {
-    const name = argv[removeIdx + 1];
-    if (!name) {
-      console.error('Error: --remove requires a project name');
+    const targetRaw = argv[removeIdx + 1];
+    if (!targetRaw) {
+      console.error('Error: --remove requires a project path');
       process.exit(1);
     }
-    const linked = getLinked(config);
-    const filtered = linked.filter((e) => e.name !== name);
-    if (filtered.length === linked.length) {
-      console.error(`Error: no linked project named "${name}"`);
-      console.log('Run: pnpm link-project --list');
-      process.exit(1);
+    const targetPath = path.resolve(targetRaw.replace(/^~/, process.env.HOME || '~'));
+    const workspaces = workspacesForProject(cwd);
+    let removed = false;
+    for (const ws of workspaces) {
+      if (removeProjectFromWorkspace(ws.name, targetPath)) {
+        console.log(`Removed "${path.basename(targetPath)}" from workspace "${ws.name}".`);
+        removed = true;
+      }
     }
-    config.linkedProjects = filtered;
-    writeConfig(configPath, config);
-    console.log(`Unlinked "${name}".`);
-
-    // Ask daemon to purge orphan rows immediately
-    try {
-      const res = await fetch('http://127.0.0.1:37800/reconcile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project, cwd: process.cwd() }),
-        signal: AbortSignal.timeout(3000)
-      });
-      if (res.ok) console.log('  Orphan rows will be cleaned in background.');
-    } catch {
-      console.log('  Daemon not running — orphan rows will be cleaned on next session start.');
+    if (!removed) {
+      console.error(
+        `Error: "${path.basename(targetPath)}" not found in any workspace with this project`
+      );
+      process.exit(1);
     }
     process.exit(0);
   }
 
-  // link <path> [--name <name>]
+  // link <path> [--workspace <name>]
   const targetPathRaw = argv.find((a) => !a.startsWith('--'));
   if (!targetPathRaw) {
     console.error('Error: provide the path to the project to link');
@@ -151,34 +133,36 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const nameIdx = argv.indexOf('--name');
-  const name = nameIdx !== -1 && argv[nameIdx + 1] ? argv[nameIdx + 1] : path.basename(targetPath);
-
-  const linked = getLinked(config);
-  const existing = linked.find((e) => e.name === name);
-  if (existing) {
-    console.log(`"${name}" already linked → ${existing.path}`);
-    if (existing.path !== targetPath) {
-      existing.path = targetPath;
-      writeConfig(configPath, config);
-      console.log(`  Updated path to ${targetPath}`);
+  // Determine workspace name
+  const wsIdx = argv.indexOf('--workspace');
+  let workspaceName: string;
+  if (wsIdx !== -1 && argv[wsIdx + 1]) {
+    workspaceName = argv[wsIdx + 1];
+  } else {
+    // Use existing workspace if this project is already in one, else derive a name
+    const existing = workspacesForProject(cwd);
+    if (existing.length > 0) {
+      workspaceName = existing[0].name;
+    } else {
+      workspaceName = deriveWorkspaceName(cwd, targetPath);
     }
-    process.exit(0);
   }
 
-  linked.push({ name, path: targetPath, enabled: true });
-  config.linkedProjects = linked;
-  writeConfig(configPath, config);
+  // Add both projects to the workspace (self + target)
+  addProjectToWorkspace(workspaceName, cwd);
+  const ws = addProjectToWorkspace(workspaceName, targetPath);
 
   const mdCount = fs
     .readdirSync(contextDir, { recursive: true })
     .filter((f) => String(f).endsWith('.md')).length;
 
-  console.log(`Linked "${name}" (${mdCount} context files)`);
-  console.log(`  Source: ${contextDir}`);
-  console.log(`  Config: ${configPath}`);
+  console.log(`Linked "${path.basename(targetPath)}" (${mdCount} context files)`);
+  console.log(`  Workspace: ${workspaceName}`);
+  console.log(
+    `  Members: ${ws.projects.map((p) => path.basename(path.resolve(expandHome(p.path)))).join(', ')}`
+  );
 
-  await triggerReconcile(project);
+  await triggerReconcile();
 }
 
 main();

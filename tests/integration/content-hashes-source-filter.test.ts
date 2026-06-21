@@ -38,6 +38,7 @@ function vec(seed: number): number[] {
 function row(id: string, filename: string, source: string): ContextRow {
   return {
     id,
+    project: PROJECT,
     vector: vec(id.length),
     document: `doc for ${id}`,
     filename,

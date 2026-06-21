@@ -168,3 +168,53 @@ git log --oneline -- .claude/context/ src/feature/
 - Zero new tooling required (it's just files and git)
 
 **Trade-off accepted**: More false positives in the working tree, zero interruptions during work, quality maintained via normal git staging/review.
+
+## User-Level Capture (cross-project patterns)
+
+User-level context (`~/.contextus/context/`) isn't in a git repo by default, so the
+"git is the gate" principle doesn't apply. Three complementary mechanisms provide the
+quality gate instead:
+
+### 1. Visibility footer
+
+After writing a user-level capture, Claude emits:
+```
+Context: captured: ~/.contextus/context/reference/reference-foo.md
+```
+This ensures the user sees what was written even though there's no `git status` to surface it.
+
+### 2. Captures log
+
+Every silent capture (project or user-level) appends to `~/.contextus/captures.log`:
+```
+2026-06-21T14:32:00Z | user | reference/reference-foo.md | "cross-project auth pattern"
+2026-06-21T14:35:00Z | project:my-app | gotcha/gotcha-bar.md | "timezone footgun"
+```
+Gives an audit trail without git. `/audit-context` can review periodically.
+
+### 3. Git-init recommended at setup
+
+`/contextus-setup` offers `git init ~/.contextus/context/` as an optional step during
+first-run onboarding. Users who opt in get the full git-gate workflow for user-level
+captures too (stage, commit, review). Users who don't still get (1) + (2).
+
+### Future: probation via usage tracking (v2 Track-B)
+
+When calibration-mode usage evaluation lands, new user-level captures can be tagged
+provisional. If retrieved but never *used* across N sessions, `/audit-stale` flags them
+for review. This requires the usage signal infrastructure — deferred until then.
+
+## Routing: project vs. user-level
+
+The model decides where to write based on the insight's scope:
+
+| Signal | Route to |
+|--------|----------|
+| Specific to this codebase (architecture, decisions, gotchas) | `.claude/context/` (project) |
+| Applies across projects (tool patterns, personal workflows, universal gotchas) | `~/.contextus/context/` (user) |
+| Team convention that colleagues should see | `.claude/context/` (project, committed) |
+| Personal preference (editor config, style choices) | `~/.contextus/context/` (user) |
+
+The staging footer instruction makes this routing explicit. The model already makes this
+judgment (same reasoning as "global memory vs. project memory?"), it just needs the
+instruction to act on it.

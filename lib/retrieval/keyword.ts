@@ -86,6 +86,7 @@ export function keywordSearch(
   rows: Pick<
     ContextRow,
     | 'id'
+    | 'project'
     | 'document'
     | 'filename'
     | 'chunk_index'

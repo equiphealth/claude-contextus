@@ -19,7 +19,7 @@
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
-import { expandHome, projectLocalConfigPath } from '../config.js';
+import { expandHome } from '../config.js';
 import { loadContext, type LoadedContext } from './context-loader.js';
 
 /** One resolved, enabled source ready to load. */
@@ -99,65 +99,4 @@ export async function loadAllSources(sources: ResolvedSource[]): Promise<Sourced
     out.push(...(await loadSource(src)));
   }
   return out;
-}
-
-/* ── Linked Projects ─────────────────────────────────────────────────────────── */
-
-export interface LinkedProjectEntry {
-  name: string;
-  path: string;
-  enabled?: boolean;
-}
-
-/**
- * Read linked projects from the tier-2 config (machine-local).
- * Returns an empty array if no config or no linkedProjects key.
- */
-export function readLinkedProjects(projectName: string): LinkedProjectEntry[] {
-  const configPath = projectLocalConfigPath(projectName);
-  try {
-    const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    return Array.isArray(raw.linkedProjects) ? raw.linkedProjects : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Resolve linked projects into ResolvedSource entries.
- * Each linked project's `.claude/context/` becomes a source named
- * 'linkedContext:<name>' — the suffix disambiguates rows per link so
- * orphan cleanup can target a single removed project without nuking all
- * linked rows. The reranker's weight() resolves the prefix ('linkedContext')
- * for ranking purposes.
- *
- * Skips entries that are disabled or whose context dir doesn't exist.
- */
-export function resolveLinkedSources(projectName: string): ResolvedSource[] {
-  const linked = readLinkedProjects(projectName);
-  const out: ResolvedSource[] = [];
-  for (const entry of linked) {
-    if (entry.enabled === false) continue;
-    const dir = path.resolve(expandHome(entry.path), '.claude', 'context');
-    if (!fs.existsSync(dir)) continue;
-    out.push({
-      name: `linkedContext:${entry.name}`,
-      dir,
-      exclude: ['**/CONTEXT.md', '**/README.md']
-    });
-  }
-  return out;
-}
-
-/**
- * Return linked entries whose context directory no longer exists.
- * Used by reconcile to clean up orphan rows from removed/moved projects.
- */
-export function findMissingLinkedProjects(projectName: string): LinkedProjectEntry[] {
-  const linked = readLinkedProjects(projectName);
-  return linked.filter((entry) => {
-    if (entry.enabled === false) return false;
-    const dir = path.resolve(expandHome(entry.path), '.claude', 'context');
-    return !fs.existsSync(dir);
-  });
 }
