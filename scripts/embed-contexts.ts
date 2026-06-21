@@ -23,7 +23,13 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
-import { loadConfig, resolveDBPath, findPluginConfig, projectHash } from '../lib/config.js';
+import {
+  loadConfig,
+  loadProjectConfig,
+  resolveDBPath,
+  findPluginConfig,
+  projectHash
+} from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
 import { embedDocuments } from '../lib/embedding/embedder.js';
@@ -31,8 +37,12 @@ import { createTable, type ContextRow } from '../lib/storage/lance-client.js';
 import { planChunks, buildRows, type PendingChunk } from '../lib/embedding/file-to-rows.js';
 
 async function main(): Promise<void> {
-  const cfg = loadConfig();
   const pluginCfg = findPluginConfig();
+  // Unified DB: project identity is a hash of the absolute path.
+  const projectId = projectHash(process.cwd());
+
+  // Load config with 3-tier merge (plugin.json → ~/.contextus/data/<project>/config.json → .claude/contextus.jsonc)
+  const cfg = loadProjectConfig(projectId, process.cwd());
   const { provider, model, ollamaModel } = cfg.embedding;
   const modelId = provider === 'ollama' ? ollamaModel : model;
 
@@ -40,8 +50,6 @@ async function main(): Promise<void> {
   // packs), each relative to the project root (process.cwd()). The daemon's
   // incremental path stays context-only; doc sources refresh here, on a full
   // rebuild — matching their slower-changing, noisier nature.
-  // Unified DB: project identity is a hash of the absolute path.
-  const projectId = projectHash(process.cwd());
   const sources = resolveSources(pluginCfg);
   if (sources.length === 0) {
     console.error(`\n✗ No enabled sources resolved from plugin.json config.sources`);
@@ -129,7 +137,10 @@ async function main(): Promise<void> {
     console.error('\n✗ No embeddable chunks produced');
     process.exit(1);
   }
-  await createTable(allRows, { replace: true });
+  await createTable(allRows, {
+    replace: true,
+    providerInfo: { provider, model, ollamaModel }
+  });
 
   // Summary: counts by source + type so the corpus shape is visible at a glance.
   const bySource = new Map<string, number>();

@@ -115,7 +115,12 @@ export function writeTableMeta(meta: TableMeta, projectName?: string): void {
  */
 export async function createTable(
   rows: ContextRow[],
-  opts: { projectName?: string; replace?: boolean } = {}
+  opts: {
+    projectName?: string;
+    replace?: boolean;
+    /** Embedding provider info for metadata (falls back to loadConfig() if omitted) */
+    providerInfo?: { provider: string; model: string; ollamaModel?: string };
+  } = {}
 ): Promise<Table> {
   if (rows.length === 0) {
     throw new Error('createTable needs at least one row to infer schema');
@@ -128,8 +133,8 @@ export async function createTable(
   }
   const table = await conn.createTable(TABLE_NAME, rows as unknown as Record<string, unknown>[]);
 
-  const cfg = loadConfig();
-  const { provider, model, ollamaModel } = cfg.embedding;
+  // Use provided providerInfo (from caller's 3-tier config) or fall back to loadConfig()
+  const { provider, model, ollamaModel } = opts.providerInfo || loadConfig().embedding;
   writeTableMeta(
     {
       provider,
