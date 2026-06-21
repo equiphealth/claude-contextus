@@ -449,3 +449,43 @@ export async function waitForModel({ attempts, intervalMs } = {}) {
   }
   return false;
 }
+
+/**
+ * Lightweight upgrade check — compares data schema version against installed code.
+ * Returns { needed, dataVersion, installedVersion } or null on error.
+ * Pure filesystem reads (~1ms), no network, safe to call on every session start.
+ */
+export function checkUpgradeNeeded() {
+  try {
+    const versionPath = path.join(os.homedir(), '.contextus', 'version.json');
+    const pkgPath = path.join(REPO_ROOT, 'package.json');
+
+    let dataVersion = '0.0.0';
+    try {
+      const raw = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
+      dataVersion = raw.version ?? '0.0.0';
+    } catch {
+      // No version.json = fresh install, version is 0.0.0
+    }
+
+    let installedVersion = '0.0.0';
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      installedVersion = pkg.version ?? '0.0.0';
+    } catch {
+      return null;
+    }
+
+    const pa = dataVersion.split('.').map(Number);
+    const pb = installedVersion.split('.').map(Number);
+    let needed = false;
+    for (let i = 0; i < 3; i++) {
+      if ((pa[i] ?? 0) < (pb[i] ?? 0)) { needed = true; break; }
+      if ((pa[i] ?? 0) > (pb[i] ?? 0)) break;
+    }
+
+    return { needed, dataVersion, installedVersion };
+  } catch {
+    return null;
+  }
+}
