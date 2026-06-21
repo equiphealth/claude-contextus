@@ -92,9 +92,9 @@ function main(): void {
   // idempotent.
   for (const cfg of configs) {
     const workspaceName = cfg.dirName;
-    // We don't have the absolute path of the project itself from the old config,
-    // so we can only add the linked entries. The project will be added to the
-    // workspace on its next link-project or contextus-setup invocation.
+    // The old config only stores linked entries, not the project's own absolute path.
+    // The project itself gets added to the workspace on its next session start
+    // (when the daemon computes projectHash from cwd and sees the workspace file).
     for (const lp of cfg.linkedProjects) {
       if (lp.enabled === false) continue;
       addProjectToWorkspace(workspaceName, lp.path);

@@ -143,12 +143,13 @@ metadata:
 #### Multi-Source Architecture
 - **Project context** — `.claude/context/` (team patterns, git-committed)
 - **Project docs** — `docs/` (long-form documentation, indexed by DOCS.md)
-- **Linked projects** — other projects' `.claude/context/` (via `pnpm link-project`, machine-local)
-- **User context** — `~/.claude/context/` (personal patterns, cross-project)
-- **User docs** — `~/.claude/docs/` (personal documentation)
+- **Workspace siblings** — other projects' `.claude/context/` (via `pnpm link-project`, shared bidirectionally)
+- **User context** — `~/.contextus/context/` (personal patterns, cross-project)
+- **User docs** — `~/.contextus/docs/` (personal documentation)
 
 #### Storage
-- **Embeddings** — `~/.contextus/data/<project-name>/` (per-user, per-project LanceDB)
+- **Embeddings** — `~/.contextus/data/contextus.lance` (unified LanceDB, all projects in one table with `project` column)
+- **Workspaces** — `~/.contextus/workspaces/` (JSONC files defining project groups)
 - **Logs** — `~/.contextus/logs/` (usage.jsonl, errors.jsonl, paranoid.jsonl, daemon.log)
 - **Runtime state** — `~/.contextus/runtime/` (daemon.pid, daemon.port)
 

@@ -101,12 +101,12 @@ weight siblings differently.
 
 ### Personal Context (Implicit Cross-Project)
 
-User-level sources (`~/.claude/memory`, `~/.claude/docs`) are NOT workspace-gated.
+User-level sources (`~/.contextus/context/`, `~/.contextus/docs/`) are NOT workspace-gated.
 They're always included in queries regardless of workspace membership — same as
 today. They get their own SOURCE_WEIGHTS and don't need explicit linking.
 
-Stored with `project: '__user__'` (or similar sentinel) so they're always in
-the query scope without workspace membership.
+Stored with `project: '__user__'` so they're always in the query scope without
+workspace membership.
 
 ## Row Schema Changes
 

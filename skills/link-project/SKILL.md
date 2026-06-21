@@ -1,6 +1,6 @@
 # Link Project
 
-Share another project's context patterns with the current project.
+Share context bidirectionally with another project via workspaces.
 
 ## When to use
 
@@ -33,30 +33,31 @@ pnpm link-project <path>
 ```
 
 Options:
-- `--name <name>` — override the default name (basename of path)
+- `--workspace <name>` — explicit workspace name (default: auto-derived from project basenames)
 
 ### 3. Confirm
 
 Show the user:
 - How many context files are now available from the linked project
 - That the daemon will re-embed in the background
-- That changes in the linked project refresh automatically (macOS/Win)
+- That both projects now share context bidirectionally (same workspace)
 
 ### 4. Explain ranking
 
-Linked context is ranked at 0.85 — below your project's own patterns (1.0) and docs (0.9), but above personal user context (0.8). This means your project's patterns always win when both match, but linked context surfaces when your project doesn't have relevant coverage.
+Workspace sibling context is ranked at 0.85 — below your project's own patterns (1.0) and docs (0.9), but above personal user context (0.8). This means your project's patterns always win when both match, but sibling context surfaces when your project doesn't have relevant coverage.
 
 ## Commands Reference
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm link-project <path>` | Link a project |
-| `pnpm link-project <path> --name foo` | Link with custom name |
-| `pnpm link-project --list` | Show current links |
-| `pnpm link-project --remove <name>` | Unlink a project |
+| `pnpm link-project <path>` | Link a project (creates/joins workspace) |
+| `pnpm link-project <path> --workspace foo` | Link to a named workspace |
+| `pnpm link-project --list` | Show workspaces for this project |
+| `pnpm link-project --remove <path>` | Remove a project from workspace |
 
 ## Notes
 
-- Linked project config is stored in tier-2 (machine-local: `~/.contextus/data/<project>/config.json`) because paths are absolute and machine-specific
+- Workspace definitions stored in `~/.contextus/workspaces/<name>.jsonc` (machine-local, paths are absolute)
+- Linking is bidirectional — both projects join the same workspace and see each other's context
 - On unlink, orphan rows are cleaned on next reconcile (session start or manual)
 - Linux: no live watcher — changes picked up on next session start

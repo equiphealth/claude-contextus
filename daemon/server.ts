@@ -509,9 +509,9 @@ function watchContextDir(
   if (!fs.existsSync(contextDir)) return;
 
   try {
-    const watcher = fs.watch(contextDir, { recursive: true }, (eventType, filename) => {
+    const watcher = fs.watch(contextDir, { recursive: true }, (_eventType, filename) => {
       if (!filename || !filename.endsWith('.md')) return;
-      if (eventType !== 'rename') return; // 'rename' fires on delete + create
+      // Handle both 'rename' (create/delete) and 'change' (in-place edit)
       const absPath = path.join(contextDir, filename);
       // Only act on deletions — file gone from disk
       if (!fs.existsSync(absPath)) {
