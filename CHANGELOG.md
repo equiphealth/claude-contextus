@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.1] - 2026-06-21
 
 ### Added
+- **POST /capture endpoint** — daemon-mediated file writes for context and docs, replacing noisy Write+Edit tool calls with a single HTTP request. Supports `target: "context"` (structured frontmatter, category dirs) and `target: "doc"` (raw markdown, flat). File writes are synchronous (<10ms); embedding fires async (fire-and-forget with reconcile safety net).
+- **Configurable `captureFooter`** — `"always"` (default) emits "Context: captured:" confirmation lines; `"off"` suppresses them. Config in `contextCapture` block.
 - **Staging capture mode** — default capture mode flipped from `propose` to `staging` (Claude writes context files directly; user reviews at git-staging time)
 - **Captures log** — append-only audit trail at `~/.contextus/captures.log`
 - **Provider injection** — `createTable()` accepts caller-provided providerInfo, decoupling from static config
@@ -16,11 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **CLAUDE.md stanza** — no longer tells models to "wait for the awareness footer to invite" capture; now says to follow the per-prompt injected footer exactly (mode-aware)
-- **Staging footer** — rewritten for stronger model compliance: capture-first sequencing, explicit DO-NOT-PROPOSE instruction, self-test rule
+- **Staging footer** — rewritten for stronger model compliance: capture-first sequencing, explicit DO-NOT-PROPOSE instruction, self-test rule; emits capture confirmation for all scopes (project + user)
 - **embed-contexts.ts** — uses `loadProjectConfig()` for proper 3-tier config merge
 
 ### Fixed
 - **Awareness hook `captureMode()`** — now reads project-level `.claude/contextus.jsonc` (was only reading plugin.jsonc, silently ignoring project overrides)
+- **Tag YAML quoting** — `/capture` now produces `tags: ["foo", "bar"]` instead of `tags: [foo, bar]` for valid YAML
+- **lance-client.ts type error** — `ollamaModel ?? model` fallback for `string | undefined`
+- **embed-contexts.ts unused import** — removed dead `loadConfig` import
 
 ## [0.8.0] - 2026-06-21
 
