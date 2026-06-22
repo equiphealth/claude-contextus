@@ -18,6 +18,8 @@ export interface EvalModelConfig {
   endpoint?: string;
   /** bedrock region (resolved from providers.bedrock.region if omitted) */
   region?: string;
+  /** max output tokens (default: 256 for calibration, higher for extraction) */
+  maxTokens?: number;
 }
 
 export const DEFAULT_EVAL_MODEL: EvalModelConfig = {
@@ -41,7 +43,7 @@ async function callAnthropic(prompt: string, cfg: EvalModelConfig): Promise<stri
     },
     body: JSON.stringify({
       model: cfg.model ?? DEFAULT_EVAL_MODEL.model,
-      max_tokens: 256,
+      max_tokens: cfg.maxTokens ?? 256,
       messages: [{ role: 'user', content: prompt }]
     }),
     signal: AbortSignal.timeout(30_000)
@@ -74,7 +76,7 @@ async function callBedrock(prompt: string, cfg: EvalModelConfig): Promise<string
   const client = new BedrockRuntimeClient({ region: cfg.region ?? 'us-east-1' });
   const body = JSON.stringify({
     anthropic_version: 'bedrock-2023-05-31',
-    max_tokens: 256,
+    max_tokens: cfg.maxTokens ?? 256,
     messages: [{ role: 'user', content: prompt }]
   });
   const command = new InvokeModelCommand({
