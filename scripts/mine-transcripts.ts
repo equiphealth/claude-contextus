@@ -49,7 +49,7 @@ interface CliArgs {
 
 function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
-  const result: CliArgs = { all: false, dryRun: false, list: false, maxSessions: 10, help: false };
+  const result: CliArgs = { all: false, dryRun: false, list: false, maxSessions: 3, help: false };
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -92,8 +92,8 @@ function parseSince(since: string | undefined, watermark: Date | null): Date | u
     const d = new Date(since);
     if (!isNaN(d.getTime())) return d;
   }
-  // Use watermark if available, otherwise default to 7 days
-  return watermark ?? new Date(Date.now() - 7 * 86400000);
+  // Use watermark if available, otherwise default to 1 day (things move fast)
+  return watermark ?? new Date(Date.now() - 1 * 86400000);
 }
 
 function buildExtractionConfig(): ExtractionConfig {
@@ -107,11 +107,50 @@ function buildExtractionConfig(): ExtractionConfig {
   };
 }
 
+const DEDUP_THRESHOLD = 0.82;
+
+/** Check if a similar pattern already exists in the corpus. */
+async function isDuplicate(pattern: ExtractedPattern, projectPath: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        project: projectPath,
+        prompt: `${pattern.description} ${pattern.body.slice(0, 200)}`
+      }),
+      signal: AbortSignal.timeout(5_000)
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      hookSpecificOutput?: { additionalContext?: string };
+    };
+    // Parse similarity scores from the response — look for score in provenance footer
+    const ctx = data.hookSpecificOutput?.additionalContext ?? '';
+    const scoreMatch = ctx.match(/similarity: ([\d.]+)/);
+    if (scoreMatch) {
+      const bestScore = parseFloat(scoreMatch[1]);
+      return bestScore >= DEDUP_THRESHOLD;
+    }
+    // If context was injected at all, there's likely overlap
+    return ctx.length > 200;
+  } catch {
+    return false; // On error, allow the write (false negative is cheaper than false positive)
+  }
+}
+
 async function writePattern(
   pattern: ExtractedPattern,
   projectPath: string,
   dryRun: boolean
 ): Promise<boolean> {
+  // Dedup check — skip if similar pattern already exists
+  const duplicate = await isDuplicate(pattern, projectPath);
+  if (duplicate) {
+    console.log(`  [dedup] Skipped: ${pattern.slug} (similar pattern exists)`);
+    return false;
+  }
+
   if (dryRun) {
     console.log(
       `  [dry-run] Would write: ${pattern.category}/${pattern.category}-${pattern.slug}.md`
