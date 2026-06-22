@@ -66,3 +66,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [capture-async-embed](decisions/decision-capture-async-embed.md) — POST /capture should write file synchronously but embed asynchronously for instant response
 - [setup-wizard-ollama-flow](phase/phase-setup-wizard-ollama-flow.md) — Setup wizard Ollama install flow: detect failure, link to download, wait for install, pull model from menu, start server
 - [docs-as-retrieval-incentive](project/project-docs-as-retrieval-incentive.md) — Tags and categories in docs create a behavioral nudge — engineers write more structured docs when retrieval rewards it
+- [transcript-mining-recurring](decisions/decision-transcript-mining-recurring.md) — Transcript mining runs on a schedule (not just setup), with watermark tracking for incremental scans
+- [telemetry-transparency-requirement](decisions/decision-telemetry-transparency-requirement.md) — Telemetry must be opt-in during setup with complete transparency; treat user data as high-trust asset
+- [telemetry-expansion-provider-tracking](api/api-telemetry-expansion-provider-tracking.md) — Track which LLM provider (ollama/bedrock/anthropic) handles query expansion, not hardcode fallback chains
+- [telemetry-environment-filtering](implementation/implementation-telemetry-environment-filtering.md) — Exclude dev/test/maintainer usage from production telemetry metrics to avoid data pollution
