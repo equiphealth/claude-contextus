@@ -1,0 +1,93 @@
+That actually changes my assessment quite a bit.
+If Contextus already does:
+Ollama available?
+  -> Use semantic retrieval
+
+Transformers.js available?
+  -> Use semantic retrieval
+
+Neither available?
+  -> Fall back to lexical retrieval
+then I think you’ve already solved the biggest adoption problem I was worried about.
+The question becomes:
+Do users realize that’s what happens?
+Because there is a huge difference between:
+Requires Ollama
+and
+Works without Ollama, works better with Ollama
+From an adoption standpoint those are almost opposite messages.
+ 
+⸻
+ 
+I’d actually lean into that in the README.
+Something like:
+Retrieval Modes
+
+✓ Keyword search only (zero setup)
+✓ Local embeddings via Ollama
+✓ Local embeddings via Transformers.js
+✓ Automatic fallback when embeddings unavailable
+A lot of people stop reading after “Ollama required.”
+ 
+⸻
+ 
+After looking through the repo, I think your bigger challenge is not setup complexity.
+It’s discoverability of the value.
+For example, if I ask:
+Why should I install Contextus?
+The answer shouldn’t be:
+Hybrid retrieval
+RRF ranking
+LanceDB
+Query expansion
+Calibration
+The answer should be:
+Claude automatically remembers architecture decisions,
+coding patterns, project conventions, and related project
+knowledge while you work.
+The first answer excites infrastructure nerds (like us).
+The second answer gets users.
+ 
+⸻
+ 
+Another thing I noticed while reviewing the project:
+You may be underestimating how much of the complexity is already hidden.
+A new user can basically think:
+Context files go here
+
+Contextus indexes them
+
+Claude sees them automatically
+That’s actually a pretty simple mental model.
+The fact that behind the scenes there is:
+hybrid search
+semantic retrieval
+lexical retrieval
+query expansion
+calibration
+replay analysis
+doesn’t really matter unless they want to dive deeper.
+ 
+⸻
+ 
+If I were worried about adoption today, I’d be more concerned about this:
+Contextus sounds like infrastructure.
+People install solutions.
+Not infrastructure.
+For example:
+Problem:
+Claude forgets architecture decisions.
+
+Install Contextus.
+is a much stronger pitch than:
+Install a context orchestration platform.
+Even though the second description is technically more accurate.
+ 
+⸻
+ 
+One thing that actually reassured me during the review was seeing the fallback behavior, the daemon, and the retrieval architecture already in place.
+My reaction wasn’t:
+This is too complicated.
+It was:
+This is more mature than I expected.
+The challenge now is making users experience the simple part first and discover the sophisticated part later. That’s usually a documentation and onboarding problem, not an architecture problem.

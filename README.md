@@ -21,17 +21,34 @@
 
 ## Overview
 
-**claude-contextus** makes your knowledge base work for you instead of the other way around. Store patterns, decisions, and documentation in markdown — the plugin **automatically** surfaces relevant context on every prompt AND captures new patterns as you discover them. No manual queries, no "remember to search," no "did I write that down?" — just proactive retrieval and capture.
+**Problem**: Claude forgets your architecture decisions, coding patterns, and project conventions between sessions. You spend time re-explaining the same context, or worse — Claude gives advice that contradicts decisions you made last week.
 
-**Unlike other RAG tools**, claude-contextus doesn't wait for you to act. It:
+**Solution**: claude-contextus automatically captures and surfaces project knowledge as you work. When you discover a pattern or make a decision, Contextus proposes capturing it. On future prompts, Claude sees that context automatically — no manual searching, no "remember to look this up."
 
-- **Surfaces relevant context** automatically on every prompt (no queries needed)
-- **Proposes new patterns** as you work, calibrating to what matters in your project
-- **Searches semantically** across project + user context patterns and docs
-- **Learns what's useful** by tracking which patterns actually help (retrieval quality feedback loop)
-- **Rebuilds embeddings** automatically when files change
+**How it works**:
+1. You work with Claude as normal
+2. Contextus captures patterns you discover (decisions, gotchas, conventions)
+3. Claude sees them automatically when relevant
 
-Think of it as a context system that reads your mind — captures what you learn, surfaces what you need, tunes itself to your workflow.
+The system stores everything as markdown files (git-trackable, human-readable, merge-friendly) — you *can* edit them directly, but most users let the capture flow handle it.
+
+## Why Contextus?
+
+**Captures knowledge as you discover it.**
+
+Most RAG tools require you to write documentation upfront. Contextus learns from your work — when you debug an issue, make an architectural choice, or discover a gotcha, it offers to capture that knowledge. No separate "documentation time," no context-switching.
+
+**Works without Ollama, works better with Ollama.**
+
+Starts with keyword search (zero setup), upgrades to semantic embeddings when you add Ollama or Transformers.js. No infrastructure gate blocking day-one value.
+
+**Proactive, not reactive.**
+
+Injects relevant context automatically on every prompt. You capture patterns once, Claude sees them forever — no manual "check the docs" step.
+
+**One file per pattern, all in git.**
+
+Markdown files, human-readable, merge-friendly, version-controlled. No vendor lock-in, no binary formats. Your knowledge is YOUR data, editable in any text editor.
 
 ## Features
 
@@ -67,13 +84,21 @@ Think of it as a context system that reads your mind — captures what you learn
 
 ## Requirements
 
+### Retrieval Modes
+
+✓ **Keyword search only** (zero setup — works immediately)  
+✓ **Local embeddings via Ollama** (recommended: `ollama pull nomic-embed-text`)  
+✓ **Local embeddings via Transformers.js** (in-process, one-time model download)  
+✓ **Automatic fallback** when embeddings unavailable
+
+**Start with keyword search, add semantic search later if you want better recall.** The system works without Ollama — it just works *better* with it.
+
+### Other Requirements
+
 - **Claude Code** (CLI, desktop, or IDE extension)
 - **Node 22+** — the daemon runs on it (`engine-strict` enforces this on install)
 - **A C/C++ build toolchain** on the target machine — the native `@lancedb` bindings
   build during install (Xcode CLT on macOS; `build-essential` on Linux)
-- **An embedding provider**: [Ollama](https://ollama.com) (recommended, local, private —
-  `ollama pull nomic-embed-text`) or Transformers.js (in-process; needs a one-time
-  Hugging Face model download, which some corporate networks block)
 
 ## Installation
 
