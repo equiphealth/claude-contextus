@@ -72,9 +72,71 @@ For each merged PR (recent N or since watermark):
   5. Write to .claude/context/ in staging mode
 ```
 
+## Configuration model
+
+External sources need explicit configuration (unlike transcripts which are autodetected from local files).
+
+```jsonc
+// .claude/contextus.jsonc — per-project extraction sources
+{
+  "extraction": {
+    "pr": {
+      "repo": "auto",              // autodetect from git remote; override: "org/repo"
+      "filters": {
+        "titleMatch": ["feat:", "fix:", "refactor:"],  // only mine PRs matching these
+        "excludeLabels": ["dependencies", "chore"]
+      },
+      "lookback": "6m",            // PRs age well — 6 months default
+      "watermark": "pr:last-mined" // stored in ~/.contextus/transcript-state.json
+    },
+    "jira": {
+      "project": "JN",             // required — Jira project key
+      "filters": {
+        "titleMatch": ["bug", "decision", "architecture"],
+        "issueTypes": ["Bug", "Story"],
+        "excludeLabels": ["wontfix"]
+      },
+      "lookback": "3m"
+    }
+  }
+}
+```
+
+**Autodetection:** PR repo URL parsed from `git remote get-url origin` (handles HTTPS and SSH formats). Override for forks or when the remote doesn't match the PR target.
+
+**Filters:** Both title patterns (glob) and labels (exact match) supported as include AND exclude for all source types. Exclude wins over include. Keeps the mining focused — you don't want to extract patterns from dependency-bump PRs or wontfix tickets. See `arch-unified-extraction-pipeline.md` for the full filter shape.
+
+## Source provenance in context files
+
+Extracted context files carry a `source` metadata field tracking where they came from:
+
+```yaml
+metadata:
+  type: gotcha
+  tags: ["auth", "session"]
+  source: "pr:org/repo#142"        # or "jira:JN-456" or "confluence:page-id"
+  extractedAt: "2026-06-23"
+```
+
+**Why this matters:**
+- Dedup: same PR mined twice → skip (watermark + source field check)
+- Provenance: user can trace why a pattern exists back to the original discussion
+- Staleness: if the source is updated/closed/reverted, the extracted pattern may need review
+- Governance: `source: pr:*` patterns could be treated differently than hand-authored ones (lower confidence, auto-expire)
+
+## Dedup strategy (must be excellent)
+
+External sources have HIGH overlap risk — a PR discussion often restates what's already in the codebase or corpus. Dedup layers:
+
+1. **Watermark** — Never re-process the same PR/issue (PR number or issue key as dedup key)
+2. **Corpus similarity check** — Before writing, query daemon `/query` with the extracted text. Threshold: 0.82 (same as transcript mining). If a near-match exists, SKIP.
+3. **Source-field dedup** — If a context file with `source: pr:org/repo#142` already exists, skip even if content diverged (the original extraction stands unless user deletes it)
+4. **Cross-source dedup** — A Jira ticket and its linked PR may surface the same pattern. The second extraction should detect the first and skip. Similarity check handles this naturally.
+5. **Self-dedup within batch** — Mining 20 PRs in one run may produce 5 patterns about the same convention. Cluster before writing: if 3 extractions are >0.82 similar to each other, merge into one.
+
 ## Open questions
 
-- Should PR mining be per-repo or cross-repo (mine PRs from linked projects)?
-- What's the lookback window? (PRs age better than transcripts — a 6-month-old PR decision is still valid)
-- Should we weight reviewer comments higher than author description?
+- Should extracted patterns have lower `SOURCE_WEIGHTS` than hand-authored? (Probably yes — auto-extracted = lower confidence until validated)
 - How to handle PRs with 50+ review comments? (Chunk by thread? Summarize?)
+- ~~Should filters support regex or just substring match?~~ → **Decided: glob patterns for titles, exact match for labels.** Same shape for all sources (PRs, Jira). Glob is human-readable; regex is overkill for title matching.
+- Jira: mine comments thread or just description + resolution?
