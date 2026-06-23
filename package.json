@@ -33,8 +33,7 @@
     "mine-transcripts": "tsx scripts/mine-transcripts.ts",
     "check-release": "tsx scripts/check-release.ts",
     "lint": "eslint lib scripts daemon --ext .ts",
-    "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\" \"*.jsonc\"",
-    "format:all": "prettier --write \"**/*.{ts,json,jsonc}\"",
+    "format": "prettier --write .",
     "type-check": "tsc --noEmit",
     "prepare": "git config core.hooksPath .githooks"
   },

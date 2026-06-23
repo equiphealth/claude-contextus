@@ -94,10 +94,7 @@ check('ESLint', () => {
 // 5. Prettier
 check('Prettier', () => {
   try {
-    execSync(
-      'npx prettier --check "lib/**/*.ts" "scripts/**/*.ts" "daemon/**/*.ts" "tests/**/*.ts"',
-      { cwd: ROOT, stdio: 'pipe', shell: '/bin/bash' }
-    );
+    execSync('npx prettier --check .', { cwd: ROOT, stdio: 'pipe' });
     return true;
   } catch (err: unknown) {
     const stdout = (err as { stdout?: Buffer }).stdout?.toString() ?? '';
