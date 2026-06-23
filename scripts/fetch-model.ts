@@ -20,7 +20,7 @@
  * the file list.
  */
 
-import path from 'path';
+import path from 'node:path';
 import { env, pipeline } from '@xenova/transformers';
 import { loadConfig } from '../lib/config.js';
 

@@ -12,7 +12,7 @@
  * a blocked prompt. Bounded 10s timeout (hook also has a 10s timeout in hooks.json).
  */
 
-import path from 'path';
+import path from 'node:path';
 import { BASE_URL, ensureDaemonRunning } from './lib/daemon-control.js';
 
 /** Read all of stdin as a string (the hook payload JSON). */

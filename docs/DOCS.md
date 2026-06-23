@@ -26,3 +26,4 @@ Design specs, build history, roadmap, and AI design reviews live under
 **[dev/](dev/)** — see **[dev/README.md](dev/README.md)** for the index. This split
 keeps the user docs above uncluttered: `docs/` is for *using* contextus, `docs/dev/` is
 for *building* it.
+- [long-running-turn-capture](long-running-turn-capture.md) — Exploration: improving context/doc capture during long implementation sessions

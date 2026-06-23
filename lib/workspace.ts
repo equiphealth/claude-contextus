@@ -7,8 +7,8 @@
  * return them so the search can scope: WHERE project IN (self + siblings).
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome, projectHash, stripJsonComments } from './config.js';
 
 const WORKSPACES_DIR = expandHome('~/.contextus/workspaces');

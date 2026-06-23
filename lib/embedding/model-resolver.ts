@@ -16,8 +16,8 @@
  * opaque `fetch failed` into either a working local path or an actionable error.
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { env } from '@xenova/transformers';
 import { expandHome, loadConfig, type TransformersConfig } from '../config.js';
 

@@ -5,8 +5,8 @@
  * Paranoid log: delete after paranoidDays, never archive (privacy-sensitive).
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import zlib from 'node:zlib';
 import { expandHome, loadConfig } from './config.js';
 

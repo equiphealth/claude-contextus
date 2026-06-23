@@ -10,7 +10,7 @@
  * just hashes and compares so it's trivially unit-testable.
  */
 
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 /** Stable content fingerprint: full SHA-256 hex of the (trimmed) body. */
 export function contentHash(text: string): string {

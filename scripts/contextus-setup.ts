@@ -21,8 +21,8 @@
  *   pnpm contextus-setup --no-embed      # scaffold + stanza only, skip embedding
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { upsertStanza, hasStanza } from '../lib/capture/claude-md-stanza.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { tableExists, countRows } from '../lib/storage/lance-client.js';

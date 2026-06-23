@@ -15,9 +15,9 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 // Type-only import is erased at runtime (no DB load from this line).
 import type { ContextRow } from '../../lib/storage/lance-client.js';
 

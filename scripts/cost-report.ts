@@ -12,8 +12,8 @@
  * Invoked by /context-status --cost (the skill runs this and reports the output).
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome } from '../lib/config.js';
 
 const LOG_DIR = process.env.CONTEXTUS_LOG_DIR || expandHome('~/.contextus/logs');

@@ -21,7 +21,7 @@
  *   pnpm calibrate-floor --json               # machine-readable output
  */
 
-import path from 'path';
+import path from 'node:path';
 import { loadConfig } from '../lib/config.js';
 import {
   runFloorReplay,
