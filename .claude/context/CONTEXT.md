@@ -25,6 +25,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [node-protocol-imports](decisions/decision-node-protocol-imports.md) — Always use `node:` prefix for built-in imports; keep `async function main()` pattern (reject S7785)
 - [activity-triggered-retrieval](decisions/decision-activity-triggered-retrieval.md) — Design: inject context based on file-edit activity signals, not just prompt text similarity
 - [extraction-source-candidates](decisions/decision-extraction-source-candidates.md) — Ranked inventory of context extraction sources: PRs, issues, CI logs, review comments, chat
+- [unified-extraction-pipeline](arch/arch-unified-extraction-pipeline.md) — One extraction system with pluggable source adapters; shared pipeline for all sources
 
 ## Questions (open)
 
