@@ -13,8 +13,8 @@
  * volume here (≤1 job per Claude response).
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome } from '../config.js';
 import {
   buildEvalPrompt,

@@ -6,8 +6,8 @@
  * File: ~/.contextus/captures.log
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const LOG_PATH = path.resolve(
   process.env.HOME || '~',

@@ -29,9 +29,9 @@
  * since `config.sources` is global and resolved against cwd at embed time.
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { glob } from 'glob';
 import matter from 'gray-matter';
 import { stripJsonComments } from '../lib/config.js';

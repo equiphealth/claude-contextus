@@ -10,8 +10,8 @@
  *   pnpm link-project --help
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome, projectHash } from '../lib/config.js';
 import {
   workspacesForProject,

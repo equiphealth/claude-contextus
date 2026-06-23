@@ -8,8 +8,8 @@
  * Outputs JSON for the upgrade skill to parse.
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome, stripJsonComments } from '../lib/config.js';
 import {
   readVersionState,

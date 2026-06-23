@@ -25,8 +25,8 @@
  *   /context-calibrate --stop               # cancel the campaign early
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { loadProjectConfig, projectLocalConfigPath, expandHome } from '../lib/config.js';
 import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js';
 import { printFloorReport } from '../lib/calibration/floor-report.js';

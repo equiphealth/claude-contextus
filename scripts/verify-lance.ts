@@ -10,9 +10,9 @@
  * them, and confirm the provenance sidecar (LanceDB has no collection metadata).
  */
 
-import os from 'os';
-import path from 'path';
-import fs from 'fs';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
 import {
   createTable,
   upsertRows,

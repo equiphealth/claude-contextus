@@ -14,7 +14,7 @@
  * respawn and move on (the file gets picked up by the next full embed or edit).
  */
 
-import path from 'path';
+import path from 'node:path';
 import { BASE_URL, ensureDaemonRunning } from './lib/daemon-control.js';
 
 function readStdin() {

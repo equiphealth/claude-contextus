@@ -16,8 +16,8 @@
  * docs as a supporting signal, not a primary one, until v2 chunking lands.
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { glob } from 'glob';
 import { expandHome } from '../config.js';
 import { loadContext, type LoadedContext } from './context-loader.js';

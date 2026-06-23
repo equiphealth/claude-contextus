@@ -10,8 +10,8 @@
  * preference) that /context-calibrate --start writes and the eval worker updates.
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome, loadConfig } from '../config.js';
 import type { EvalModelConfig } from './eval-model.js';
 import { DEFAULT_EVAL_MODEL } from './eval-model.js';

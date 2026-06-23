@@ -3,10 +3,10 @@
  * structured conversation turns for downstream extraction.
  */
 
-import fs from 'fs';
-import path from 'path';
-import { homedir } from 'os';
-import readline from 'readline';
+import fs from 'node:fs';
+import path from 'node:path';
+import { homedir } from 'node:os';
+import readline from 'node:readline';
 
 export interface ToolCall {
   name: string;

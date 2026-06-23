@@ -8,8 +8,8 @@
  * incremental row is identical to a full-rebuild row.
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { loadContext, categoryPrefix } from './context-loader.js';
 import { embedDocument } from './embedder.js';
 import { upsertRows, deleteByFilename, getContentHashes } from '../storage/lance-client.js';

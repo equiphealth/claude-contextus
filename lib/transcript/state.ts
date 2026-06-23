@@ -3,8 +3,8 @@
  * recurring runs only process the delta.
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome } from '../config.js';
 
 const STATE_FILE = expandHome('~/.contextus/transcript-state.json');

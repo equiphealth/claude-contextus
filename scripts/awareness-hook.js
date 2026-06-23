@@ -23,9 +23,9 @@
  *   'silent' — suppresses the footer entirely (no capture prompting)
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BASE_URL } from './lib/daemon-control.js';
 import { stripJsonComments } from './lib/parse-jsonc.js';
 

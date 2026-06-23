@@ -13,8 +13,8 @@
  *   {{#variable}}...{{/variable}}   — conditional (render block only if truthy)
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome } from '../config.js';
 
 export const DEFAULT_TEMPLATE = `[contextus — {{count}} patterns]

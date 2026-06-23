@@ -11,11 +11,11 @@
  * works regardless of cwd or how $PLUGIN_PATH expands.
  */
 
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import { spawn, execSync } from 'child_process';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { spawn, execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** repo root = two levels up from scripts/lib/ */
