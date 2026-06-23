@@ -3,8 +3,22 @@ name: Test
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '.claude/context/**'
+      - '.claude/memory/**'
+      - '*.md'
+      - 'CHANGELOG.md'
+      - 'examples/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '.claude/context/**'
+      - '.claude/memory/**'
+      - '*.md'
+      - 'CHANGELOG.md'
+      - 'examples/**'
 
 jobs:
   lint-and-typecheck:
