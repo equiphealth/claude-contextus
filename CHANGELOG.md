@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-06-23
+
+### Added
+- **Transcript mining** — Extract reusable patterns from Claude Code session logs (`.jsonl`). Mines thinking blocks, text, and tool calls to surface decisions, gotchas, and conventions that weren't captured during the session. Uses Bedrock Haiku (Ollama fallback) with 0.6 confidence threshold.
+- **Incremental scanning** — Watermark-based state (`~/.contextus/transcript-state.json`) tracks what's been processed per project. Recurring runs only scan the delta.
+- **Dedup check** — Before writing a mined pattern, queries the daemon `/query` endpoint for corpus similarity (threshold: 0.82). Prevents duplicate captures.
+- **`pnpm mine-transcripts` CLI** — Flags: `--project`, `--all`, `--since`, `--dry-run`, `--list`, `--max-sessions`. Defaults to 1-day lookback, 3 sessions max.
+- **Transcript parser tests** — 24 unit tests covering slug derivation, session parsing, turn filtering, window chunking, and extraction response validation.
+
+### Changed
+- **Package version**: 0.8.1 → 0.9.0
+
 ## [0.8.1] - 2026-06-21
 
 ### Added

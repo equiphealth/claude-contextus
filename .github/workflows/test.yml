@@ -37,6 +37,34 @@ jobs:
       - name: Check formatting
         run: pnpm exec prettier --check "lib/**/*.ts" "scripts/**/*.ts" "daemon/**/*.ts" "*.json" "*.jsonc"
 
+      - name: Verify version lockstep
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          MANIFEST_VERSION=$(node -p "require('./.claude-plugin/plugin.json').version")
+          # plugin.jsonc has inline comments — strip them with a simple state machine
+          PLUGIN_VERSION=$(node -e "
+            const fs = require('fs');
+            const text = fs.readFileSync('plugin.jsonc', 'utf8');
+            let r = '', i = 0;
+            while (i < text.length) {
+              if (text[i] === '\"') { r += '\"'; i++;
+                while (i < text.length && text[i] !== '\"') { if (text[i] === '\\\\') r += text[i++]; r += text[i++]; }
+                if (i < text.length) r += text[i++];
+              } else if (text[i] === '/' && text[i+1] === '/') { i += 2; while (i < text.length && text[i] !== '\n') i++;
+              } else if (text[i] === '/' && text[i+1] === '*') { i += 2; while (i < text.length && !(text[i] === '*' && text[i+1] === '/')) i++; i += 2;
+              } else { r += text[i++]; }
+            }
+            console.log(JSON.parse(r).version);
+          ")
+          echo "package.json:               $PKG_VERSION"
+          echo "plugin.jsonc:               $PLUGIN_VERSION"
+          echo ".claude-plugin/plugin.json: $MANIFEST_VERSION"
+          if [ "$PKG_VERSION" != "$PLUGIN_VERSION" ] || [ "$PKG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Version mismatch! All three files must have the same version."
+            exit 1
+          fi
+          echo "✓ All versions in sync: $PKG_VERSION"
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest

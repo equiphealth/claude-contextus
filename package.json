@@ -1,6 +1,6 @@
 {
   "name": "claude-contextus",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Context-aware knowledge system: markdown-based pattern storage with automatic semantic retrieval for Claude Code",
   "main": "dist/scripts/query-hook.js",
   "type": "module",
@@ -31,6 +31,7 @@
     "upgrade-detect": "tsx scripts/upgrade-detect.ts",
     "migrate-workspaces": "tsx scripts/migrate-workspaces.ts",
     "mine-transcripts": "tsx scripts/mine-transcripts.ts",
+    "check-release": "tsx scripts/check-release.ts",
     "lint": "eslint lib scripts daemon --ext .ts",
     "format": "prettier --write \"lib/**/*.ts\" \"scripts/**/*.ts\" \"daemon/**/*.ts\" \"*.json\" \"*.jsonc\"",
     "format:all": "prettier --write \"**/*.{ts,json,jsonc}\"",
