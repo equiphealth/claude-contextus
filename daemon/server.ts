@@ -25,9 +25,9 @@
  * groundwork). No-inject is a first-class, logged success.
  */
 
-import http from 'http';
-import path from 'path';
-import fs from 'fs';
+import http from 'node:http';
+import path from 'node:path';
+import fs from 'node:fs';
 import { loadConfig, loadProjectConfig, expandHome, projectHash } from '../lib/config.js';
 import { warmup, embedQuery } from '../lib/embedding/embedder.js';
 import {

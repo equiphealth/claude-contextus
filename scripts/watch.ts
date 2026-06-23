@@ -14,10 +14,10 @@
  *   contextus watch --json             # tail usage.jsonl raw (for piping)
  */
 
-import fs from 'fs';
-import path from 'path';
-import readline from 'readline';
-import os from 'os';
+import fs from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
+import os from 'node:os';
 
 const LOG_DIR = path.join(os.homedir(), '.contextus', 'logs');
 const DAEMON_LOG = path.join(LOG_DIR, 'daemon.log');

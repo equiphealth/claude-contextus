@@ -29,7 +29,7 @@
  *   verbose — the above PLUS a heartbeat when an existing warm daemon is found
  */
 
-import path from 'path';
+import path from 'node:path';
 import {
   ensureDaemonRunning,
   ensureDepsInstalled,

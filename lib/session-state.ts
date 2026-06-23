@@ -11,8 +11,8 @@
  * retained, which is all the Stop hook needs (it fires once per response).
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome } from './config.js';
 import type { InjectedPattern } from './calibration/eval-calibration.js';
 

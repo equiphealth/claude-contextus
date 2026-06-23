@@ -14,9 +14,9 @@
  * 5. Increment sample counter, auto-disable after targetSamples
  */
 
-const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 // Configuration paths
 const CONFIG_PATH = path.join(process.env.HOME, '.contextus/config.json');

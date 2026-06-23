@@ -6,9 +6,9 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 // Set HOME before importing workspace module so expandHome('~/.contextus/workspaces')
 // resolves to the temp dir. The module evaluates WORKSPACES_DIR at import time.

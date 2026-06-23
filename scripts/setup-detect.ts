@@ -10,9 +10,9 @@
  *   pnpm setup-detect --dir <path>     # detect from specific project root
  */
 
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 const HOME = os.homedir();
 const CONTEXTUS_DATA = path.join(HOME, '.contextus', 'data');

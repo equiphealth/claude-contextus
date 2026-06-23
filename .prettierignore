@@ -10,3 +10,12 @@ package-lock.json
 # Markdown is hand-authored prose (docs, memories, context corpus) — prettier
 # reflows it destructively (wrapping, list renumbering). Never auto-format .md.
 *.md
+
+# Hook scripts are plain .js (no build step), hand-formatted for readability
+scripts/*.js
+scripts/lib/
+hooks/
+
+# POC / generated data (not maintained)
+poc/
+.lancedb-poc/

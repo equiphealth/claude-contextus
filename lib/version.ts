@@ -9,9 +9,9 @@
  * After a successful upgrade, it's stamped with the current package.json version.
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expandHome } from './config.js';
 
 const VERSION_PATH = path.resolve(expandHome('~/.contextus/version.json'));

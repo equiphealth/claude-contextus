@@ -13,8 +13,8 @@
  * estimate's "do NOT unit-test the eval worker process" guidance).
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { drainQueue } from '../lib/calibration/eval-worker-core.js';
 import { readState } from '../lib/calibration/calibration-state.js';
 import { logInfo, logError } from '../lib/logger.js';

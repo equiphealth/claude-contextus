@@ -9,8 +9,8 @@
  * Safe to re-run: skips projects that have no linkedProjects.
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expandHome, stripJsonComments } from '../lib/config.js';
 import { addProjectToWorkspace } from '../lib/workspace.js';
 
