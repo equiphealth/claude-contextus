@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '.claude/context/**'
+      - '.claude/memory/**'
+      - '*.md'
+      - 'CHANGELOG.md'
+      - 'examples/**'
   workflow_dispatch:
     inputs:
       force:
