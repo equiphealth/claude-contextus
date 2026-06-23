@@ -102,9 +102,8 @@ Markdown files, human-readable, merge-friendly, version-controlled. No vendor lo
 
 ## Installation
 
-> ⚠️ **Untested as of 2026-06-15.** The marketplace flow below is wired up but has
-> **not** been verified on a real clean-machine install — use `--plugin-dir` for now.
-> Tracked as a smoke-test before this is the recommended path.
+> ⚠️ **Marketplace install untested on clean machines.** The flow below is wired but
+> unverified end-to-end — use `--plugin-dir` for now until smoke-tested.
 
 **[v1.1 — GitHub marketplace]** Add the marketplace, then install:
 
@@ -153,7 +152,7 @@ Run `/migrate-memory` (see [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)).
 
 ### 3. Embeddings build automatically
 
-On first use, embeddings are generated and stored in `~/.contextus/data/{project}/` (per-user, not committed to git).
+On first use, embeddings are generated and stored in `~/.contextus/data/` — a single shared database with per-project scoping (per-user, not committed to git).
 
 ### 4. Automatic context injection
 
@@ -302,7 +301,7 @@ Track hit counts → learn what's useful
 
 **Total latency**: 100-200ms typical (p50), 300-500ms worst case (p95)
 
-**Storage**: `~/.contextus/data/{project}/` — per-user, per-project LanceDB databases. No git conflicts, automatic rebuilds on context file changes.
+**Storage**: `~/.contextus/data/` — single shared LanceDB with per-project scoping via hash column. Per-user, not committed to git, automatic rebuilds on context file changes.
 
 ## Development
 
@@ -313,7 +312,7 @@ of choice:
 pnpm install          # builds native deps (@lancedb, @xenova/transformers)
 
 pnpm build            # compile to dist/ (auto-built on first run; not committed)
-pnpm test             # 137 tests
+pnpm test             # run test suite
 pnpm lint
 ```
 
@@ -347,6 +346,7 @@ See `examples/` directory for:
 - [x] Phase 4: Reconcile, calibration infrastructure
 - [x] Phase 5: Self-documentation, introspection, stop-eval hook
 - [x] Phase 6: Multi-source (docs + user packs), chunking, packaging
+- [x] Phase 7: Transcript mining (extract patterns from session logs)
 - [ ] v2: Context-Aware Evaluation (CAE), tag-based retrieval, removal governance
 
 ## Do You Need Another Memory System?
@@ -369,4 +369,4 @@ Issues and PRs welcome! This is a vacation project but I'm happy to collaborate.
 
 ---
 
-**Status**: v1 shipped — daemon, embedding pipeline, retrieval, hooks, and skills are all working. See [V2_ROADMAP.md](docs/V2_ROADMAP.md) for what's next.
+**Status**: v0.9.0 — daemon, embedding pipeline, retrieval, hooks, skills, and transcript mining all working. See [docs/dev/V2_ROADMAP.md](docs/dev/V2_ROADMAP.md) for what's next.
