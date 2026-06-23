@@ -78,7 +78,9 @@ export function listProjects(): Array<{ slug: string; path: string; sessions: nu
               break;
             }
           }
-        } catch {}
+        } catch {
+          /* ignore unreadable sessions */
+        }
       }
       return { slug, path: projPath, sessions: files.length };
     })
