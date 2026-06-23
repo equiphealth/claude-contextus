@@ -12,7 +12,9 @@ module.exports = {
     'no-unused-vars': 'off',
     '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     // The LanceDB row<->Record casts are deliberate and documented.
-    '@typescript-eslint/no-explicit-any': 'off'
+    '@typescript-eslint/no-explicit-any': 'off',
+    // Enforce node: protocol prefix for built-in imports (matches SonarLint S7772).
+    'import/enforce-node-protocol-usage': ['error', 'always']
   },
   ignorePatterns: ['dist/', 'node_modules/', '*.config.js', '.eslintrc.cjs'],
   overrides: [

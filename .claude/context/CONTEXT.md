@@ -22,6 +22,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [unified-db-workspaces](decisions/decision-unified-db-workspaces.md) — Single shared LanceDB with project-hash column; workspaces for bidirectional cross-project sharing
 - [capture-noise-reduction](decisions/decision-capture-noise-reduction.md) — Reduce staging capture noise: daemon /capture endpoint now, MCP tool later; subagent as zero-code experiment
 - [upgrade-lifecycle](decisions/decision-upgrade-lifecycle.md) — Breaking changes via PR + version bump; SessionStart notifies, never auto-migrates
+- [node-protocol-imports](decisions/decision-node-protocol-imports.md) — Always use `node:` prefix for built-in imports; keep `async function main()` pattern (reject S7785)
 
 ## Questions (open)
 
