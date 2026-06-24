@@ -64,6 +64,7 @@ import {
   promptHash
 } from '../lib/logger.js';
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
+import { startEvalLoop, stopEvalLoop } from './eval-loop.js';
 
 const PORT = 37800;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -1031,12 +1032,15 @@ async function startDaemon(): Promise<void> {
     // Warm the model AFTER the socket is listening so /health is reachable and
     // reports modelLoaded:false while loading (session-start polls for true).
     attemptWarmup();
+    // Start eval loop (polls queue, drains when non-empty)
+    startEvalLoop();
   });
 }
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
+    stopEvalLoop();
     logInfo('Daemon stopping', { signal: sig, uptime: `${Math.round(process.uptime())}s` });
     cleanupRuntimeFiles();
     server.close(() => process.exit(0));

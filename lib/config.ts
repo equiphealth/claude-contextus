@@ -222,6 +222,30 @@ export interface LoggingConfig {
   retention: RetentionConfig;
 }
 
+export interface StalenessConfig {
+  /** Days of non-retrieval before a pattern is considered stale. Default: 180. */
+  windowDays: number;
+  /** Avg score threshold below which a pattern is considered noisy. Default: 0.3. */
+  noiseThreshold: number;
+  /** Min evaluations required before a pattern can be flagged as noisy. Default: 10. */
+  minEvals: number;
+}
+
+export interface UsageEvaluationConfig {
+  /** Whether to evaluate injected context usage after each response. Default: true. */
+  enabled: boolean;
+  /** 'continuous' = always-on, 'campaign' = bounded sample then auto-stop. Default: continuous. */
+  mode: 'continuous' | 'campaign';
+  /** Provider for the evaluation call (same registry as expansion). Default: bedrock. */
+  provider: LLMProviderType;
+  /** Model for evaluation. Default: Haiku. */
+  model: string;
+  /** Fraction of injections to evaluate (0.0-1.0). Default: 1.0. */
+  samplingRate: number;
+  /** Staleness/noise detection thresholds for /context-doctor. */
+  staleness: StalenessConfig;
+}
+
 export interface ContextusConfig {
   providers: ProvidersConfig;
   embedding: EmbeddingConfig;
@@ -231,6 +255,7 @@ export interface ContextusConfig {
   notifications: NotificationsConfig;
   calibration: CalibrationConfig;
   logging: LoggingConfig;
+  usageEvaluation: UsageEvaluationConfig;
 }
 
 /** Hard defaults — embedding locked to Transformers.js + nomic. */
@@ -291,6 +316,18 @@ const DEFAULTS: ContextusConfig = {
       activeDays: 30,
       archiveMonths: 6,
       paranoidDays: 7
+    }
+  },
+  usageEvaluation: {
+    enabled: true,
+    mode: 'continuous',
+    provider: 'bedrock',
+    model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    samplingRate: 1.0,
+    staleness: {
+      windowDays: 180,
+      noiseThreshold: 0.3,
+      minEvals: 10
     }
   }
 };
@@ -403,6 +440,11 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
     const { retention: retOverride, ...lRest } = c.logging;
     Object.assign(merged.logging, lRest);
     if (retOverride) Object.assign(merged.logging.retention, retOverride);
+  }
+  if (c.usageEvaluation) {
+    const { staleness: staleOverride, ...uRest } = c.usageEvaluation;
+    Object.assign(merged.usageEvaluation, uRest);
+    if (staleOverride) Object.assign(merged.usageEvaluation.staleness, staleOverride);
   }
 }
 

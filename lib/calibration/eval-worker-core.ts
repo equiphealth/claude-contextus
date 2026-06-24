@@ -15,7 +15,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { expandHome } from '../config.js';
+import { expandHome, projectHash } from '../config.js';
 import {
   buildEvalPrompt,
   parseEvalResponse,
@@ -93,6 +93,32 @@ export async function processJob(
     weightedScore: score,
     evaluationLatencyMs: latency
   });
+
+  // Also write per-project usage-ratings.jsonl for Phase 2 analytics
+  try {
+    const projectId = projectHash(job.project);
+    const projectUsagePath = path.join(
+      expandHome('~/.contextus/data'),
+      projectId,
+      'usage-ratings.jsonl'
+    );
+    const projectRating = {
+      timestamp: new Date().toISOString(),
+      promptHash: job.promptHash,
+      evaluations: ratings.map((r) => ({
+        pattern: r.pattern,
+        rating: r.rating,
+        similarity: 0 // TODO: thread retrieval similarity through session-state
+      })),
+      weightedScore: score,
+      evalLatencyMs: latency,
+      evalModel: model.model ?? ''
+    };
+    fs.mkdirSync(path.dirname(projectUsagePath), { recursive: true });
+    fs.appendFileSync(projectUsagePath, JSON.stringify(projectRating) + '\n');
+  } catch {
+    // Best-effort — never break eval on logging failure
+  }
 
   return { weightedScore: score, rated: ratings.length };
 }
