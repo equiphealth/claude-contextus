@@ -145,12 +145,14 @@ export async function drainQueue(caller: EvalCaller = callEvalModel): Promise<nu
       /* a failed eval shouldn't wedge the queue; drop it and continue */
     }
   }
-  // Clear processed jobs (truncate). Anything that arrived during the drain is
-  // rare at this volume; the next tick picks it up after a fresh read.
-  try {
-    fs.writeFileSync(EVAL_QUEUE_PATH, '');
-  } catch {
-    /* best-effort */
+  // Clear processed jobs (truncate). Only if we processed all jobs — otherwise
+  // leave unprocessed jobs for the next drain (e.g. if evaluateUsage flipped false mid-drain).
+  if (processed === jobs.length) {
+    try {
+      fs.writeFileSync(EVAL_QUEUE_PATH, '');
+    } catch {
+      /* best-effort */
+    }
   }
   return processed;
 }

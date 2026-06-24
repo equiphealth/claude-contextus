@@ -1,0 +1,98 @@
+graph TD
+    A["User writes prompt<br/>in Claude Code"] -->|SessionStart| B["Check daemon status"]
+
+    B -->|Not running| C["Start daemon<br/>localhost:37800<br/>Load model"]
+    B -->|Running| D["Daemon ready<br/>Model in memory"]
+    C --> D
+
+    A -->|UserPromptSubmit| E["POST /query<br/>projectId + prompt"]
+
+    E --> F["handleQuery pipeline"]
+
+    F --> G["1. EMBEDDING<br/>embedQuery"]
+    G -->|transformers.js| G1["In-process ONNX<br/>nomic-embed-text<br/>768-dim + L2"]
+    G -->|or fallback| G2["Ollama HTTP<br/>Local server"]
+    G1 --> G3["Query vector"]
+    G2 --> G3
+
+    G3 --> H["2. VECTOR SEARCH<br/>Lance search"]
+    H --> H1["Unified LanceDB<br/>contextus.lance<br/>WHERE projectId IN<br/>self + workspace"]
+    H1 --> H2["top-20 results<br/>with scores"]
+
+    H2 --> I["3. HYBRID SEARCH<br/>RRF fusion"]
+    I -->|parallel| I1["Vector path<br/>cosine similarity"]
+    I -->|parallel| I2["Keyword path<br/>BM25 scoring"]
+    I1 --> I3["Reciprocal Rank Fusion"]
+    I2 --> I3
+    I3 --> I4["Merged candidates"]
+
+    I4 --> J["4. EXPANSION<br/>shouldExpand?"]
+    J -->|best_score &lt; 0.55| J1["Generate alternates"]
+    J1 -->|Ollama| J2["qwen2.5:3b<br/>100-400ms"]
+    J1 -->|Fallback| J3["Bedrock Haiku<br/>1-3s"]
+    J2 --> J4["Re-run vector search"]
+    J3 --> J4
+    J4 --> K1["Expanded results"]
+    J -->|No expansion| K1
+
+    K1 --> K["5. RERANKING<br/>Multi-factor"]
+    K --> K2["Similarity + Freshness<br/>+ Hit count + Type"]
+    K2 --> K3["Re-ranked candidates"]
+
+    K3 --> L["6. FLOOR<br/>applyFloor"]
+    L --> L1["Filter: score >= 0.45"]
+    L1 --> L2["Low scores logged"]
+    L2 --> M["Floor-filtered"]
+
+    M --> N["7. DEDUPE<br/>Cosine 0.95"]
+    N --> N1["Keep highest score<br/>per unique chunk"]
+    N1 --> O["Unique chunks"]
+
+    O --> P["8. FORMAT<br/>formatInjection"]
+    P --> P1["Create footer<br/>with instructions"]
+    P1 --> Q["JSON response"]
+
+    Q --> R["HTTP 200<br/>continue: true"]
+
+    R --> S["Injected into prompt"]
+
+    S --> T["Claude receives<br/>context + prompt"]
+
+    T --> U["Claude processes"]
+
+    U --> V["Claude responds"]
+
+    V -->|Stop hook| W["Usage tracking"]
+
+    D -.->|File watcher| X["watchContextDir"]
+    X -.->|.md changes| Y["handleReconcile"]
+    Y --> Y1["Load .md files<br/>Parse frontmatter"]
+    Y1 --> Y2["Plan: add/update/delete"]
+    Y2 --> Y3["Chunk files"]
+    Y3 --> Y4["Embed chunks<br/>search_document prefix"]
+    Y4 --> Y5["Upsert to LanceDB"]
+    Y5 --> Y6["Invalidate cache<br/>Log stats"]
+
+    D -.->|/introspect| AA["Dashboard query<br/>Config + stats"]
+
+    style A fill:#e1f5ff,color:#000,stroke:#0277bd,stroke-width:2px
+    style B fill:#fff3e0,color:#000,stroke:#f57c00,stroke-width:2px
+    style C fill:#fff3e0,color:#000,stroke:#f57c00,stroke-width:2px
+    style D fill:#e8f5e9,color:#000,stroke:#388e3c,stroke-width:2px
+    style F fill:#f3e5f5,color:#000,stroke:#7b1fa2,stroke-width:2px
+    style G fill:#fce4ec,color:#000,stroke:#c2185b,stroke-width:2px
+    style H fill:#fce4ec,color:#000,stroke:#c2185b,stroke-width:2px
+    style I fill:#fce4ec,color:#000,stroke:#c2185b,stroke-width:2px
+    style J fill:#fce4ec,color:#000,stroke:#c2185b,stroke-width:2px
+    style K fill:#fce4ec,color:#000,stroke:#c2185b,stroke-width:2px
+    style L fill:#fce4ec,color:#000,stroke:#c2185b,stroke-width:2px
+    style N fill:#fce4ec,color:#000,stroke:#c2185b,stroke-width:2px
+    style P fill:#fce4ec,color:#000,stroke:#c2185b,stroke-width:2px
+    style Q fill:#e8f5e9,color:#000,stroke:#388e3c,stroke-width:2px
+    style R fill:#e8f5e9,color:#000,stroke:#388e3c,stroke-width:2px
+    style T fill:#e1f5ff,color:#000,stroke:#0277bd,stroke-width:2px
+    style U fill:#c8e6c9,color:#000,stroke:#00695c,stroke-width:2px
+    style V fill:#c8e6c9,color:#000,stroke:#00695c,stroke-width:2px
+    style W fill:#f1f8e9,color:#000,stroke:#558b2f,stroke-width:2px
+    style Y fill:#ffe0b2,color:#000,stroke:#e65100,stroke-width:2px
+    style AA fill:#e0f2f1,color:#000,stroke:#00897b,stroke-width:2px
