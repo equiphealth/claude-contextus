@@ -131,7 +131,11 @@ the daemon is unreachable, fall back to a "daemon down" line (don't fabricate
 numbers):
 
 ```bash
-curl -s "http://127.0.0.1:37800/introspect?project=<name>"
+# Compute projectId hash (same way daemon does)
+PROJECT_ID=$(echo -n "$(pwd)" | sha256sum | cut -c1-12)
+
+# Query /introspect with project parameter for per-project scoping
+curl -s "http://127.0.0.1:37800/introspect?project=${PROJECT_ID}"
 ```
 
 Returns (live, not mocked):

@@ -2,10 +2,10 @@
 /**
  * UserPromptSubmit query hook — thin HTTP client to the daemon's /query.
  *
- * Reads the hook payload from stdin (`{ prompt, cwd, ... }`), derives the project
- * name the same way the daemon's resolveDBPath does (cwd basename), POSTs to the
- * daemon, and passes its response straight through to Claude Code. The daemon
- * already returns the exact hook output shape, so this stays a pure relay.
+ * Reads the hook payload from stdin (`{ prompt, cwd, ... }`), computes the
+ * projectId hash (sha256 of abs path, first 12 chars), POSTs to the daemon,
+ * and passes its response straight through to Claude Code. The daemon already
+ * returns the exact hook output shape, so this stays a pure relay.
  *
  * Graceful degradation (DESIGN.md): if the daemon is unreachable, fire a
  * background restart and emit `{ continue: true }` — one missed injection, never
@@ -13,6 +13,7 @@
  */
 
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { BASE_URL, ensureDaemonRunning } from './lib/daemon-control.js';
 
 /** Read all of stdin as a string (the hook payload JSON). */
@@ -27,9 +28,10 @@ function readStdin() {
   });
 }
 
-/** Project name = git/dir basename of cwd — matches the daemon's default. */
-function projectName(cwd) {
-  return cwd ? path.basename(cwd) : path.basename(process.cwd());
+/** Compute the projectId hash from an absolute path (matches lib/config.ts projectHash). */
+function projectId(cwd) {
+  const abs = path.resolve(cwd || process.cwd());
+  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
 }
 
 function emit(obj) {
@@ -53,7 +55,7 @@ async function main() {
     const res = await fetch(`${BASE_URL}/query`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt, project: projectName(cwd), cwd }),
+      body: JSON.stringify({ prompt, project: projectId(cwd), cwd }),
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return emit({ continue: true });

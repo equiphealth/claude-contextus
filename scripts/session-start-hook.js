@@ -30,6 +30,7 @@
  */
 
 import path from 'node:path';
+import crypto from 'node:crypto';
 import {
   ensureDaemonRunning,
   ensureDepsInstalled,
@@ -56,9 +57,10 @@ function readStdin() {
   });
 }
 
-/** Project name = cwd basename — matches the daemon's resolveDBPath default. */
-function projectName(cwd) {
-  return cwd ? path.basename(cwd) : path.basename(process.cwd());
+/** Compute the projectId hash from an absolute path (matches lib/config.ts projectHash). */
+function projectId(cwd) {
+  const abs = path.resolve(cwd || process.cwd());
+  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
 }
 
 async function main() {
@@ -135,7 +137,7 @@ async function main() {
   // embed cold). Cheap dry-run check first; fire the background reconcile only
   // if the corpus is actually missing or behind.
   if (warmOk) {
-    const project = projectName(cwd);
+    const project = projectId(cwd);
     const plan = await checkCorpus(project, cwd);
     const pending = plan ? (plan.newCount ?? 0) + (plan.changedCount ?? 0) : 0;
     if (plan && plan.state === 'missing') {

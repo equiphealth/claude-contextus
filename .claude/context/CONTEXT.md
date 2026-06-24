@@ -26,6 +26,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [activity-triggered-retrieval](decisions/decision-activity-triggered-retrieval.md) — Design: inject context based on file-edit activity signals, not just prompt text similarity
 - [extraction-source-candidates](decisions/decision-extraction-source-candidates.md) — Ranked inventory of context extraction sources: PRs, issues, CI logs, review comments, chat
 - [unified-extraction-pipeline](arch/arch-unified-extraction-pipeline.md) — One extraction system with pluggable source adapters; shared pipeline for all sources
+- [project-registry](arch/arch-project-registry.md) — Lazy hash→path/name registry at projects.json for readable UX and bidirectional resolution
 
 ## Questions (open)
 
@@ -38,6 +39,8 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [embedding-provider-switch](gotchas/gotcha-embedding-provider-switch.md) — Switching provider/model (ollama→transformers) is a full re-embed; daemon refuses to inject on corpus/config mismatch
 - [daemon-restart-on-upgrade](gotchas/gotcha-daemon-restart-on-upgrade.md) — Daemon must be killed before code upgrades; holds memoized connections and old code paths
 - [warmup-failure-cascade](gotchas/gotcha-warmup-failure-cascade.md) — Warmup failure is permanent; config changes don't trigger retry; daemon stays stuck until manual kill
+- [skill-project-scoping](gotchas/gotcha-skill-project-scoping.md) — Skills must compute projectId hash and pass it to daemon endpoints (/introspect, /query, etc) for correct per-project isolation
+- [project-column-isolation-bug](gotchas/gotcha-project-column-isolation-bug.md) — CRITICAL: Unified DB WHERE project IN filter not working — queries return rows from other projects instead of scoped results
 
 ## Tradeoffs
 
@@ -50,6 +53,8 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [proactive-capture](implementation/implementation-proactive-capture.md) — MUST propose context capture after implementation work; never wait to be asked; extract complete patterns not stubs
 - [eslint-rules](implementation/eslint-rules.md) — ESLint rules adopted from the automation project
 - [lancedb-api-surface](implementation/lancedb-api-surface.md) — Real @lancedb/lancedb v0.30 API vs DESIGN.md's Chroma sketch (verified)
+- [skill-project-scoping-fixes](implementation/implementation-skill-project-scoping-fixes.md) — Fix plan: add projectId parameter to /context-status, /context-doctor, /rebuild-embeddings daemon calls
+- [daemon-project-scoping-fix](implementation/implementation-daemon-project-scoping-fix.md) — Daemon should accept only projectId (not cwd), look up workspace scope and config by projectId alone
 
 ## Project
 
@@ -59,6 +64,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [package-manager](project/project-package-manager.md) — Project uses pnpm, not npm
 - [pr-merge-checklist](project/project-pr-checklist.md) — Feature PRs require version bump, CHANGELOG, README update before merge
 - [test-coverage-target](project/project-test-coverage.md) — Target ~80% coverage; exports + edge cases + failures, skip internal-helper obsession
+- [skill-fixes-applied](project/project-skill-fixes-applied.md) — Fixed 3 skills to compute projectId and pass it to daemon endpoints for correct per-project scoping
 
 ## Reference
 

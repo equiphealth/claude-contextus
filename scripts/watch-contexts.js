@@ -14,6 +14,7 @@
  * respawn and move on (the file gets picked up by the next full embed or edit).
  */
 
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { BASE_URL, ensureDaemonRunning } from './lib/daemon-control.js';
 
@@ -31,8 +32,9 @@ function emit(obj) {
   process.stdout.write(JSON.stringify(obj));
 }
 
-function projectName(cwd) {
-  return cwd ? path.basename(cwd) : path.basename(process.cwd());
+function projectId(cwd) {
+  const abs = path.resolve(cwd || process.cwd());
+  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
 }
 
 /**
@@ -70,7 +72,7 @@ async function main() {
     await fetch(`${BASE_URL}/notify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ file, cwd, project: projectName(cwd) }),
+      body: JSON.stringify({ file, cwd, project: projectId(cwd) }),
       signal: AbortSignal.timeout(5000),
     });
   } catch {

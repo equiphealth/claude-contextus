@@ -51,7 +51,7 @@ import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { resolveProjectScope } from '../lib/workspace.js';
+import { resolveProjectScope, registerProject } from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
@@ -181,14 +181,18 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
   // cwd = the project repo root, needed for the git-committed tier-3 config override.
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
-  // Compute the project hash for DB scoping (hooks pass absolute path or basename).
-  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : undefined;
+  // project is now the pre-computed projectId hash from callers (sha256(abs_path).slice(0,12)).
+  // Only fall back to hashing cwd for legacy callers that don't send project yet.
+  const projectId = project ?? (cwd ? projectHash(cwd) : undefined);
   // Resolve workspace scope: self + siblings + __user__
   const projectScope = cwd
     ? resolveProjectScope(cwd)
     : projectId
       ? [projectId, '__user__']
       : undefined;
+
+  // Lazy-register project for hash→name reverse lookup
+  if (projectId && cwd) registerProject(projectId, cwd);
 
   if (!prompt.trim()) {
     return sendJson(res, 200, { continue: true });
@@ -480,11 +484,14 @@ async function handleNotify(
   res: http.ServerResponse
 ): Promise<void> {
   const file = typeof body.file === 'string' ? body.file : '';
-  const project = typeof body.project === 'string' && body.project ? body.project : undefined;
-  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+  const projectParam = typeof body.project === 'string' && body.project ? body.project : undefined;
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
+  if (!cwd) return sendJson(res, 400, { error: 'cwd is required for notify' });
 
-  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : '';
+  const project = projectParam;
+  const projectId = project ?? projectHash(cwd);
+  registerProject(projectId, cwd);
   const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
   const contextDir = path.join(cwd, '.claude', 'context');
   watchContextDir(contextDir, project, 'projectContext', projectId);
@@ -518,8 +525,20 @@ async function handleCapture(
   const description = typeof body.description === 'string' ? body.description.trim() : '';
   const content = typeof body.body === 'string' ? body.body : '';
   const scope = typeof body.scope === 'string' ? body.scope : 'project';
-  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+
+  // cwd required for project-scoped captures (need filesystem path for writing)
+  if (scope === 'project' && !cwd) {
+    sendJson(res, 400, { error: 'cwd is required for project-scoped capture' });
+    return;
+  }
+
+  // Lazy-register for hash→name reverse lookup
+  if (cwd) {
+    const id = project ?? projectHash(cwd);
+    registerProject(id, cwd);
+  }
 
   if (target === 'doc') {
     // Doc mode: free-form markdown, no frontmatter, flat directory
@@ -528,7 +547,7 @@ async function handleCapture(
       return;
     }
 
-    const docsDir = scope === 'user' ? expandHome('~/.contextus/docs') : path.join(cwd, 'docs');
+    const docsDir = scope === 'user' ? expandHome('~/.contextus/docs') : path.join(cwd!, 'docs');
     const filename = `${slug}.md`;
     const absFile = path.join(docsDir, filename);
 
@@ -566,7 +585,7 @@ async function handleCapture(
     });
 
     // Embed async
-    const projectId = projectHash(cwd);
+    const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
     const source = scope === 'user' ? 'userDocs' : 'projectDocs';
     embedSingleFile(absFile, docsDir, project, source, projectId)
       .then((result) => {
@@ -623,7 +642,7 @@ ${content}
     implementation: 'implementation'
   };
   const contextDir =
-    scope === 'user' ? expandHome('~/.contextus/context') : path.join(cwd, '.claude', 'context');
+    scope === 'user' ? expandHome('~/.contextus/context') : path.join(cwd!, '.claude', 'context');
   const dirName = CATEGORY_DIRS[category] || category;
   const categoryDir = path.join(contextDir, dirName);
   const filename = `${category}-${slug}.md`;
@@ -667,7 +686,7 @@ ${content}
   });
 
   // Embed async (fire-and-forget) — reconcile catches failures
-  const projectId = projectHash(cwd);
+  const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
   const source = scope === 'user' ? 'userContext' : 'projectContext';
   embedSingleFile(absFile, contextDir, project, source, projectId)
     .then((result) => {
@@ -778,8 +797,10 @@ async function handleReconcile(
 ): Promise<void> {
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
   const projectLabel = project ?? 'default';
-  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
-  const projectId = cwd ? projectHash(cwd) : project ? projectHash(project) : '';
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
+  if (!cwd) return sendJson(res, 400, { error: 'cwd is required for reconcile' });
+  const projectId = project ?? projectHash(cwd);
+  registerProject(projectId, cwd);
   const check = body.check === true;
   const contextDir = path.join(cwd, '.claude', 'context');
 

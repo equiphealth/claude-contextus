@@ -25,6 +25,7 @@
  *   /context-calibrate --stop               # cancel the campaign early
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadProjectConfig, projectLocalConfigPath, expandHome } from '../lib/config.js';
@@ -83,7 +84,9 @@ function parseArgs(argv: string[]): Args {
 async function runFloorMode(args: Args): Promise<void> {
   // Resolve the project name the same way the replay does (cwd basename unless
   // --project given), so the floor we write is scoped to THIS project's corpus.
-  const project = args.project ?? path.basename(process.cwd());
+  const project =
+    args.project ??
+    crypto.createHash('sha256').update(path.resolve(process.cwd())).digest('hex').slice(0, 12);
   // PER-PROJECT write target: the machine-local override beside this project's
   // corpus, NOT the global plugin.json — so calibrating one project never changes
   // another's floor (the multi-project unblocker). Diff is read from the same file.

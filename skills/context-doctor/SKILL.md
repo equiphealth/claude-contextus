@@ -30,9 +30,10 @@ TSX=~/src/claude-contextus/node_modules/.bin/tsx
 curl -s 127.0.0.1:37800/health | jq
 
 # 2. What's the corpus state for THIS project? (new/stale/fresh/empty + quarantined[])
-curl -s -X POST 127.0.0.1:37800/reconcile \
-  -H 'content-type: application/json' \
-  -d "{\"cwd\":\"$PWD\",\"check\":true}" | jq
+PROJECT_ID=$(echo -n "$PWD" | sha256sum | cut -c1-12)
+curl -s -X POST http://127.0.0.1:37800/reconcile \
+  -H 'Content-Type: application/json' \
+  -d "{\"project\":\"${PROJECT_ID}\",\"cwd\":\"$PWD\",\"check\":true}" | jq
 
 # 3. Replay a real query — shows scores AND the per-project floor + below-floor flags
 $TSX ~/src/claude-contextus/scripts/search.ts "your actual prompt here"

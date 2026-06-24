@@ -67,9 +67,11 @@ export async function corpusStats(project?: string): Promise<CorpusStats> {
   if (!(await tableExists(project))) return empty;
 
   const table = await openTable(project);
-  const rows = (await table.query().select(['id', 'type', 'hit_count']).toArray()) as Array<
-    Pick<ContextRow, 'id' | 'type' | 'hit_count'>
-  >;
+  let query = table.query().select(['id', 'type', 'hit_count']);
+  if (project) {
+    query = query.where(`project = '${project.replace(/'/g, "''")}'`);
+  }
+  const rows = (await query.toArray()) as Array<Pick<ContextRow, 'id' | 'type' | 'hit_count'>>;
 
   const byType: Record<string, number> = {};
   let withHits = 0;

@@ -52,9 +52,10 @@ TSX=~/src/claude-contextus/node_modules/.bin/tsx
 $TSX ~/src/claude-contextus/scripts/embed-contexts.ts
 
 # Incremental context reconcile (what the daemon does)
+PROJECT_ID=$(echo -n "$(pwd)" | sha256sum | cut -c1-12)
 curl -s -X POST http://127.0.0.1:37800/reconcile \
   -H 'Content-Type: application/json' \
-  -d '{"project": "<name>", "cwd": "'"$(pwd)"'"}'
+  -d "{\"project\":\"${PROJECT_ID}\",\"cwd\":\"$(pwd)\"}"
 ```
 
 ## How It Decides What to Re-embed
