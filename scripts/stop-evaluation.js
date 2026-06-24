@@ -16,6 +16,7 @@
  * don't need to return JSON.
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -28,6 +29,82 @@ const DAEMON_LOG_PATH = path.join(LOG_DIR, 'daemon.log');
 const CALIBRATION_STATE = path.join(CONTEXTUS, 'calibration-state.json');
 const SESSION_STATE = path.join(CONTEXTUS, '.session-state.json');
 const EVAL_QUEUE = path.join(CONTEXTUS, '.eval-queue.jsonl');
+
+/**
+ * Compute the opaque project identifier: sha256(absolutePath).slice(0, 12).
+ * Must match lib/config.ts projectHash() exactly.
+ */
+function projectHash(absolutePath) {
+  const normalized = path.resolve(absolutePath);
+  return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 12);
+}
+
+/**
+ * Find plugin.jsonc (walk up from CLAUDE_PLUGIN_ROOT or cwd). Returns null if not found.
+ */
+function findPluginJsonc() {
+  const fromEnv = process.env.CLAUDE_PLUGIN_ROOT
+    ? path.join(process.env.CLAUDE_PLUGIN_ROOT, 'plugin.jsonc')
+    : null;
+  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+  // Fallback: walk up from cwd
+  let dir = process.cwd();
+  for (let i = 0; i < 5; i++) {
+    const candidate = path.join(dir, 'plugin.jsonc');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Strip JSONC comments (respects quoted strings). Minimal impl for config reading.
+ */
+function stripJsonComments(text) {
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '"') {
+      result += '"';
+      i++;
+      while (i < text.length && text[i] !== '"') {
+        if (text[i] === '\\') result += text[i++];
+        result += text[i++];
+      }
+      if (i < text.length) result += text[i++];
+    } else if (text[i] === '/' && text[i + 1] === '/') {
+      i += 2;
+      while (i < text.length && text[i] !== '\n') i++;
+    } else if (text[i] === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i += 2;
+    } else {
+      result += text[i++];
+    }
+  }
+  return result;
+}
+
+/**
+ * Read usageEvaluation.enabled from plugin config. Returns true if enabled (default).
+ */
+function usageEvalEnabled() {
+  try {
+    const pluginPath = findPluginJsonc();
+    if (!pluginPath) return true; // default when no config
+    const text = fs.readFileSync(pluginPath, 'utf-8');
+    const cfg = JSON.parse(stripJsonComments(text));
+    const samplingRate = cfg?.config?.usageEvaluation?.samplingRate ?? 1.0;
+    // Apply sampling: skip this eval probabilistically when samplingRate < 1.0
+    if (Math.random() > samplingRate) return false;
+    return cfg?.config?.usageEvaluation?.enabled !== false; // default true
+  } catch {
+    return true; // default on error
+  }
+}
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -113,7 +190,8 @@ function lastTurnFromTranscript(transcriptPath) {
 }
 
 function projectFromCwd(cwd) {
-  return cwd ? path.basename(cwd) : path.basename(process.cwd());
+  const abs = path.resolve(cwd || process.cwd());
+  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
 }
 
 async function main() {
@@ -126,7 +204,8 @@ async function main() {
   }
 
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
-  const project = projectFromCwd(cwd);
+  const project = projectFromCwd(cwd); // basename, for session-state key
+  const projectId = cwd ? projectHash(cwd) : project; // hash for file paths
 
   // What did /query inject for this project's most recent prompt?
   const sessionState = readJson(SESSION_STATE, {});
@@ -165,10 +244,11 @@ async function main() {
     })
   );
 
-  // --- Calibration: enqueue eval job if campaign active ---
-  if (calibrationActive()) {
+  // --- Usage evaluation: enqueue eval job if enabled (calibration or always-on) ---
+  if (calibrationActive() || usageEvalEnabled()) {
     const job = {
-      project,
+      project, // basename for logging/display
+      projectId, // hash for file paths (usage-ratings.jsonl location)
       promptHash: injection.promptHash || '',
       prompt: '',
       thinking,
