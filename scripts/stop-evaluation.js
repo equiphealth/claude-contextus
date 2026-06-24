@@ -204,8 +204,8 @@ async function main() {
   }
 
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
-  const project = projectFromCwd(cwd); // basename, for session-state key
-  const projectId = cwd ? projectHash(cwd) : project; // hash for file paths
+  const project = projectFromCwd(cwd); // sha256 hash for session-state key
+  const projectId = cwd ? projectHash(cwd) : project; // same hash for file paths
 
   // What did /query inject for this project's most recent prompt?
   const sessionState = readJson(SESSION_STATE, {});

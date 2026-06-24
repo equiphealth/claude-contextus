@@ -97,7 +97,10 @@ export async function processJob(
 
   // Also write per-project usage-ratings.jsonl for Phase 2 analytics
   try {
-    // Use projectId if provided (preferred); fallback to hashing project basename for old jobs
+    // Use projectId if provided (preferred); fallback to hashing project basename for old jobs.
+    // NOTE: The fallback creates phantom directories for legacy jobs (job.project is basename,
+    // not cwd, so projectHash("automation") != projectHash("/path/to/automation")). These will
+    // age out naturally; leaving the fallback for backward compat.
     const projectId = job.projectId ?? projectHash(job.project);
     const projectUsagePath = path.join(
       expandHome('~/.contextus/data'),

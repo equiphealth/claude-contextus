@@ -53,7 +53,10 @@ import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveProjectScope, registerProject } from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
-import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
+import {
+  readState as readCalibrationState,
+  startCalibration
+} from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
 import {
   logRetrieval,
@@ -1034,6 +1037,17 @@ async function startDaemon(): Promise<void> {
     attemptWarmup();
     // Start eval loop (polls queue, drains when non-empty)
     startEvalLoop();
+    // Initialize usage evaluation state if config enables it (gate-mismatch fix:
+    // stop hook enqueues when usageEvaluation.enabled, eval-loop drains when
+    // calibrationState.evaluateUsage=true; this bridges the two).
+    if (cfg.usageEvaluation?.enabled) {
+      const state = readCalibrationState();
+      if (!state.evaluateUsage) {
+        const mode = cfg.usageEvaluation.mode ?? 'continuous';
+        startCalibration({ mode });
+        logInfo('Usage evaluation initialized', { mode });
+      }
+    }
   });
 }
 
