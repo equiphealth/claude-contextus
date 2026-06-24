@@ -72,6 +72,7 @@ describe('eval-loop', () => {
     // Enqueue a job
     enqueueJob({
       project: 'test',
+      projectId: projectHash('/fake/test/path'),
       promptHash: 'abc123',
       prompt: 'test prompt',
       thinking: '',
@@ -106,6 +107,7 @@ describe('eval-loop', () => {
 
     enqueueJob({
       project: 'test-project',
+      projectId: projectHash('/fake/test-project/path'),
       promptHash: 'abc123',
       prompt: 'test prompt',
       thinking: 'test thinking',
@@ -182,10 +184,11 @@ describe('calibration-state modes', () => {
 
 describe('per-project usage logging', () => {
   const TEST_PROJECT = 'test-project';
+  const TEST_PROJECT_CWD = '/fake/test-project/path';
   let usageLogPath: string;
 
   beforeEach(() => {
-    const projectId = projectHash(TEST_PROJECT);
+    const projectId = projectHash(TEST_PROJECT_CWD);
     usageLogPath = path.join(expandHome('~/.contextus/data'), projectId, 'usage-ratings.jsonl');
     // Clean up before test
     try {
@@ -202,6 +205,7 @@ describe('per-project usage logging', () => {
   it('processJob writes per-project usage-ratings.jsonl', async () => {
     const job = {
       project: TEST_PROJECT,
+      projectId: projectHash(TEST_PROJECT_CWD),
       promptHash: 'xyz789',
       prompt: 'test',
       thinking: 'thinking',

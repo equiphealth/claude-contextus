@@ -30,7 +30,8 @@ export const EVAL_QUEUE_PATH = expandHome('~/.contextus/.eval-queue.jsonl');
 
 /** One unit of work: a graded prompt + what was injected for it. */
 export interface EvalJob {
-  project: string;
+  project: string; // basename for logging/display
+  projectId?: string; // hash for file paths (optional for backward compat)
   promptHash: string;
   prompt: string;
   thinking: string;
@@ -96,7 +97,8 @@ export async function processJob(
 
   // Also write per-project usage-ratings.jsonl for Phase 2 analytics
   try {
-    const projectId = projectHash(job.project);
+    // Use projectId if provided (preferred); fallback to hashing project basename for old jobs
+    const projectId = job.projectId ?? projectHash(job.project);
     const projectUsagePath = path.join(
       expandHome('~/.contextus/data'),
       projectId,
