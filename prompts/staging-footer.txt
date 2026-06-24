@@ -1,33 +1,32 @@
-Context capture (staging mode active): You MUST write context files BEFORE responding to the user. This is not optional — capture happens FIRST, response SECOND.
+Context capture (staging mode active): Capture reusable patterns by calling the daemon — ONE Bash call handles file creation, index update, and embedding.
 
-When a reusable pattern, decision, domain knowledge, or workflow surfaces: IMMEDIATELY call Write to create the context file, THEN respond to the user. Do not ask permission, do not ask "should I capture this?", do not offer to capture — just write the file silently alongside your response.
+When a reusable pattern, decision, domain knowledge, or workflow surfaces: call the daemon's /capture endpoint. Do not use the Write tool for context files — it's noisy and skips embedding.
 
-IMPORTANT: Do NOT output "Context: propose: <topic>" — that is a different mode. Do NOT ask "would you like me to capture this?" — that defeats staging mode. Write the file. Period.
+IMPORTANT: Do NOT output "Context: propose: <topic>" — that is a different mode. Do NOT ask "should I capture this?" — just capture silently alongside your response.
+
+HOW TO CAPTURE (single Bash call — daemon writes, indexes, and embeds):
+```bash
+curl -s -X POST http://127.0.0.1:37800/capture \
+  -H 'content-type: application/json' \
+  -d '{"slug":"<kebab-slug>","description":"<one-line topical signal>","category":"<type>","tags":["optional","tags"],"body":"<full markdown body>","cwd":"'"$(pwd)"'"}'
+```
+
+The daemon derives the project hash from `cwd`. Use `$(pwd)` for the current project.
+
+VALID CATEGORIES (= `metadata.type`): `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`.
 
 ROUTING:
-- Project-specific insights (architecture, decisions, gotchas about THIS codebase) → write to `.claude/context/<category>/<type>-<slug>.md`
-- Cross-project patterns (tool usage, universal gotchas, personal workflows) → write to `~/.contextus/context/<category>/<type>-<slug>.md`
+- Project-specific insights → use `cwd` pointing to the project root (default scope: "project")
+- Cross-project/personal patterns → add `"scope": "user"` to the payload
 
-FILE FORMAT (must match exactly or the embed gate rejects it):
-```
----
-name: <kebab-slug>
-description: <one line — strong topical signal, gets embedded>
-metadata:
-  type: <category — one of: arch, decision, tradeoff, gotcha, api, phase, project, schema, security, perf, reference, implementation>
-  tags: [optional, comma, list]
----
+The daemon will:
+1. Write the file to `.claude/context/<category>/<type>-<slug>.md` with proper frontmatter
+2. Append to CONTEXT.md index
+3. Embed the file into the vector DB
 
-<body — actionable content with examples, thresholds, edge cases>
-```
-
-FILENAME: `<category>/<type>-<slug>.md` — folder name and filename prefix must both equal `metadata.type`.
-
-AFTER WRITING:
-1. Update the relevant CONTEXT.md index (`.claude/context/CONTEXT.md` or `~/.contextus/context/CONTEXT.md`) with a one-line entry
-2. At the END of your response, emit one line per capture: "Context: captured: <relPath>"
-   Examples: "Context: captured: decisions/decision-foo.md"
-             "Context: captured: ~/.contextus/context/reference/reference-bar.md"
+AFTER CAPTURING:
+At the END of your response, emit one line per capture: "Context: captured: <relPath>"
+  Examples: "Context: captured: decisions/decision-foo.md"
 
 OBLIGATION: You MUST capture when ANY of these occur:
 - Implementation work surfaces new subsystems, architectural patterns, non-obvious failure modes, or workflow knowledge
@@ -35,8 +34,8 @@ OBLIGATION: You MUST capture when ANY of these occur:
 - Discussion reveals decisions, tradeoffs, or constraints that would inform future development
 - Information emerges that would be useful for linked projects or future sessions
 
-Failing to capture means the insight dies with this session. Bias toward writing — false positives cost the user one `git checkout` command.
+Failing to capture means the insight dies with this session. Bias toward capturing — false positives cost one `git checkout`.
 
-QUALITY BAR: Write useful context — expand brief inputs into complete files. If the user shares a one-liner insight, YOU add the reasoning, examples, and "why" to make it a full pattern. The user seeds; you cultivate. A 5-word tip from the user should become a 15-line context file with your elaboration. Never gate on "is this enough?" — if you can explain WHY it's useful, it's enough.
+QUALITY BAR: Expand brief inputs into complete files. A 5-word tip from the user should become a full context body with reasoning, examples, and "why". The user seeds; you cultivate.
 
-SELF-TEST: If your response contains bullet points explaining something useful, those bullets should be IN A CONTEXT FILE, not just in chat. Chat is ephemeral; context files persist.
+SELF-TEST: If your response contains bullets explaining something useful, those bullets belong in the capture body, not just in chat.
