@@ -14,6 +14,7 @@
  *   pnpm tag-context --apply <relpath> a,b --embed  # …and re-embed it after
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { glob } from 'glob';
@@ -85,7 +86,11 @@ async function applyTags(relpath: string, tagsCsv: string, embed: boolean): Prom
   fs.writeFileSync(abs, result.content);
   console.log(`✓ ${relpath}: added [${result.added.join(', ')}]`);
   if (embed) {
-    const r = await embedSingleFile(abs, CONTEXT_DIR, path.basename(process.cwd()));
+    const r = await embedSingleFile(
+      abs,
+      CONTEXT_DIR,
+      crypto.createHash('sha256').update(path.resolve(process.cwd())).digest('hex').slice(0, 12)
+    );
     console.log(`  re-embed: ${r.embedded ? 'done' : `skipped (${r.reason})`}`);
   }
 }

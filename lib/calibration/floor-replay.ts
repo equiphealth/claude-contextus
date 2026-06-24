@@ -18,6 +18,7 @@
  * eyeball — the apply path is gated in the calling script, never here.
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -108,7 +109,9 @@ export async function runFloorReplay(
   opts: ReplayOptions = {},
   onProgress?: (msg: string) => void
 ): Promise<ReplayOutcome> {
-  const project = opts.project ?? path.basename(process.cwd());
+  const project =
+    opts.project ??
+    crypto.createHash('sha256').update(path.resolve(process.cwd())).digest('hex').slice(0, 12);
   const limit = opts.limit ?? Infinity;
   const cfg = loadConfig();
 

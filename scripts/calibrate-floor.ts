@@ -21,6 +21,7 @@
  *   pnpm calibrate-floor --json               # machine-readable output
  */
 
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { loadConfig } from '../lib/config.js';
 import {
@@ -37,7 +38,11 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  let project = path.basename(process.cwd());
+  let project = crypto
+    .createHash('sha256')
+    .update(path.resolve(process.cwd()))
+    .digest('hex')
+    .slice(0, 12);
   let limit = Infinity;
   let json = false;
   for (let i = 0; i < argv.length; i++) {

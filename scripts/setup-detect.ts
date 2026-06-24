@@ -10,6 +10,7 @@
  *   pnpm setup-detect --dir <path>     # detect from specific project root
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -163,7 +164,7 @@ async function checkOllama(): Promise<boolean> {
 
 async function main(): Promise<void> {
   const cwd = parseArgs();
-  const project = path.basename(cwd);
+  const project = crypto.createHash('sha256').update(path.resolve(cwd)).digest('hex').slice(0, 12);
 
   const result: DetectionResult = {
     ollamaReachable: await checkOllama(),
