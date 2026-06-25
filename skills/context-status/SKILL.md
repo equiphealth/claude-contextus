@@ -212,9 +212,14 @@ Bottom Line:
 
 ### Implementation
 
-Run the cost report script and display its output:
+Run the status CLI and display its output:
 ```bash
-npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cost-report.ts" [--project <name>] [--days <N>]
+npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" [--project <name>]
+```
+
+For cost analysis:
+```bash
+npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" --cost [--days <N>]
 ```
 
 The script reads `~/.contextus/logs/usage.jsonl` and computes:
