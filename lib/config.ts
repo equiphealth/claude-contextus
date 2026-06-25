@@ -563,7 +563,8 @@ export function loadedSourceNames(): string[] {
   const pluginPath = findPluginJson();
   if (!pluginPath) return [];
   try {
-    const raw = JSON.parse(fs.readFileSync(pluginPath, 'utf-8'));
+    const text = fs.readFileSync(pluginPath, 'utf-8');
+    const raw = JSON.parse(stripJsonComments(text));
     const sources = raw.config?.sources as Record<string, { enabled?: boolean }> | undefined;
     if (!sources) return [];
     return Object.entries(sources)
