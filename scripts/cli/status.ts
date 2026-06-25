@@ -151,6 +151,58 @@ function formatUptime(seconds: number): string {
   return `${Math.floor(seconds / 86400)}d`;
 }
 
+/** Scan directory recursively for .md files modified in last N days */
+function countRecentFiles(dir: string, days: number): number {
+  if (!fs.existsSync(dir)) return 0;
+
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  let count = 0;
+
+  const walk = (currentPath: string) => {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        const stat = fs.statSync(fullPath);
+        if (stat.mtimeMs > cutoff) {
+          count++;
+        }
+      }
+    }
+  };
+
+  walk(dir);
+  return count;
+}
+
+/** Calculate growth metrics for a project */
+function calculateGrowth(
+  projectPath: string,
+  days: number = 30
+): { patterns: number; docs: number } {
+  const contextDir = path.join(projectPath, '.claude', 'context');
+  const docsDir = path.join(projectPath, 'docs');
+
+  return {
+    patterns: countRecentFiles(contextDir, days),
+    docs: countRecentFiles(docsDir, days)
+  };
+}
+
+/** Look up project path from registry for growth calculation */
+function getProjectPath(projectId: string): string | null {
+  try {
+    const reg: Record<string, { path: string }> = JSON.parse(
+      fs.readFileSync(REGISTRY_PATH, 'utf-8')
+    );
+    return reg[projectId]?.path ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function printDashboard(data: IntrospectResponse, project: string) {
   const display = friendlyName(project);
   console.log(`\nContextus Status — ${display}${display !== project ? ` (${project})` : ''}\n`);
@@ -159,6 +211,14 @@ function printDashboard(data: IntrospectResponse, project: string) {
   console.log('Knowledge Base:');
   console.log(`  🔢 Vector chunks: ${data.corpus.chunks.toLocaleString()}`);
   console.log(`  📦 Packs: ${data.packs.join(', ')}`);
+
+  // Growth tracking (30-day window)
+  const projectPath = getProjectPath(project);
+  if (projectPath) {
+    const growth = calculateGrowth(projectPath, 30);
+    console.log(`  📈 Growth (30d): +${growth.patterns} patterns, +${growth.docs} docs`);
+  }
+
   console.log();
 
   // Corpus Distribution (top 5 types)
