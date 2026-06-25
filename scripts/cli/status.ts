@@ -15,6 +15,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const DAEMON_URL = process.env.CONTEXTUS_DAEMON_URL || 'http://127.0.0.1:37800';
 const REGISTRY_PATH = path.join(os.homedir(), '.contextus', 'data', 'projects.json');

@@ -212,15 +212,22 @@ Bottom Line:
 
 ### Implementation
 
-Run the status CLI and display its output:
+The status CLI is a standalone script. When contextus is loaded (via `--plugin-dir` in development, or installed from marketplace), `CLAUDE_PLUGIN_ROOT` is set by the harness and points to the plugin directory.
+
+Run the CLI and redirect to file to bypass Bash output truncation:
+
 ```bash
-npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" [--project <name>]
+npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" > /tmp/status.txt 2>&1 && cat /tmp/status.txt
 ```
 
 For cost analysis:
 ```bash
-npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" --cost [--days <N>]
+npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" --cost [--days <N>] > /tmp/status.txt 2>&1 && cat /tmp/status.txt
 ```
+
+**Development workflow**: When working in the contextus source directory itself, use `pnpm exec tsx scripts/cli/status.ts` instead (relative path, no CLAUDE_PLUGIN_ROOT needed).
+
+**Why redirect to file**: Bash tool truncates long output with "...(N lines)". The redirect captures everything; cat bypasses the truncation.
 
 The script reads `~/.contextus/logs/usage.jsonl` and computes:
 - **Total injected tokens** = absolute cost of all injections in the period
