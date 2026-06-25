@@ -13,6 +13,8 @@ curl -s -X POST http://127.0.0.1:37800/capture \
 
 The daemon derives the project hash from `cwd`. Use `$(pwd)` for the current project.
 
+**IMPORTANT — Updates vs Creates**: The `/capture` endpoint **OVERWRITES** existing files with the same slug. To update an existing context file, call `/capture` with the same `slug` and `category` — the daemon will replace the entire file. Read the existing file first if you need to preserve parts of it.
+
 VALID CATEGORIES (= `metadata.type`): `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`.
 
 ROUTING:

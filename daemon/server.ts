@@ -17,7 +17,7 @@
  *   GET  /introspect      → live config + corpus stats (Self-doc Layer 1)
  *   POST /query   {project, prompt}                              → { continue, hookSpecificOutput?: { additionalContext } }
  *   POST /notify  {project, file, cwd?}                          → { ok, embedded, id? }
- *   POST /capture {category, slug, description, body, cwd, ...}  → { ok, file, embedded, scope }
+ *   POST /capture {category, slug, description, body, cwd, ...}  → { ok, file, embedded, scope } (overwrites existing)
  *   POST /reconcile {project, cwd, check?}                       → { state, started? } | { state, embedded, removed }
  *
  * The pipeline on /query is the spine: embedQuery → vector search → rerank →

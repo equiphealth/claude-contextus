@@ -80,3 +80,4 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [telemetry-transparency-requirement](decisions/decision-telemetry-transparency-requirement.md) — Telemetry must be opt-in during setup with complete transparency; treat user data as high-trust asset
 - [telemetry-expansion-provider-tracking](api/api-telemetry-expansion-provider-tracking.md) — Track which LLM provider (ollama/bedrock/anthropic) handles query expansion, not hardcode fallback chains
 - [telemetry-environment-filtering](implementation/implementation-telemetry-environment-filtering.md) — Exclude dev/test/maintainer usage from production telemetry metrics to avoid data pollution
+- [daemon-context-create-vs-update](reference/reference-daemon-context-create-vs-update.md) — How to create new vs update existing context files - /capture overwrites on duplicate slug
