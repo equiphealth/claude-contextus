@@ -28,7 +28,13 @@
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
-import { loadConfig, loadProjectConfig, expandHome, projectHash } from '../lib/config.js';
+import {
+  loadConfig,
+  loadProjectConfig,
+  expandHome,
+  projectHash,
+  findPluginConfig
+} from '../lib/config.js';
 import { warmup, embedQuery } from '../lib/embedding/embedder.js';
 import {
   search,
@@ -53,7 +59,10 @@ import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveProjectScope, registerProject } from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
-import { readState as readCalibrationState } from '../lib/calibration/calibration-state.js';
+import {
+  readState as readCalibrationState,
+  startCalibration
+} from '../lib/calibration/calibration-state.js';
 import { buildIntrospection } from '../lib/introspect.js';
 import {
   logRetrieval,
@@ -64,6 +73,7 @@ import {
   promptHash
 } from '../lib/logger.js';
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
+import { startEvalLoop, stopEvalLoop } from './eval-loop.js';
 
 const PORT = 37800;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -475,6 +485,45 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
 }
 
 /**
+ * Determine which source a file belongs to based on its path and config.
+ * Returns { sourceName, sourceDir, projectId, project } or null if no match.
+ */
+function determineSource(
+  absFile: string,
+  cwd: string,
+  project: string | undefined
+): {
+  sourceName: string;
+  sourceDir: string;
+  projectId: string;
+  project: string | undefined;
+} | null {
+  const cfg = findPluginConfig();
+  const sources = cfg.sources as Record<
+    string,
+    {
+      scope: 'project' | 'user';
+      path: string;
+      enabled?: boolean;
+    }
+  >;
+
+  for (const [sourceName, s] of Object.entries(sources)) {
+    if (s.enabled === false) continue;
+
+    const sourceDir = s.scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
+
+    if (absFile.startsWith(sourceDir + path.sep) || absFile === sourceDir) {
+      const pid = s.scope === 'project' ? (project ?? projectHash(cwd)) : '';
+      const proj = s.scope === 'project' ? project : undefined;
+      return { sourceName, sourceDir, projectId: pid, project: proj };
+    }
+  }
+
+  return null;
+}
+
+/**
  * POST /notify — incremental re-embed on file change (PostToolUse). `file` is the
  * changed path; `cwd` (project root) locates `.claude/context`. Best-effort:
  * non-context files are skipped, not errored.
@@ -489,13 +538,17 @@ async function handleNotify(
   if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for notify' });
 
-  const project = projectParam;
-  const projectId = project ?? projectHash(cwd);
-  registerProject(projectId, cwd);
   const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
-  const contextDir = path.join(cwd, '.claude', 'context');
-  watchContextDir(contextDir, project, 'projectContext', projectId);
-  const result = await embedSingleFile(absFile, contextDir, project, 'projectContext', projectId);
+  const sourceInfo = determineSource(absFile, cwd, projectParam);
+
+  if (!sourceInfo) {
+    return sendJson(res, 200, { ok: true, embedded: false, reason: 'not_in_any_source' });
+  }
+
+  const { sourceName, sourceDir, projectId, project } = sourceInfo;
+  registerProject(projectId, cwd);
+  watchContextDir(sourceDir, project, sourceName, projectId);
+  const result = await embedSingleFile(absFile, sourceDir, project, sourceName, projectId);
   if (result.embedded) {
     invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
@@ -806,6 +859,8 @@ async function handleReconcile(
 
   // Dry-run: report the corpus state without touching anything.
   if (check) {
+    // NOTE: This only checks projectContext. To check all sources, iterate like the
+    // non-check path below. For now, check mode is primarily for SessionStart diagnostics.
     const allContexts = await loadContexts(contextDir);
     const exists = await tableExists(project);
     // Quarantine prefix/type-mismatch files — MUST match runReconcile, or they'd
@@ -842,18 +897,54 @@ async function handleReconcile(
   reconcilingProjects.add(projectLabel);
   // Respond immediately; the embed runs detached from the request lifecycle.
   sendJson(res, 200, { state: 'started' });
-  runReconcile(contextDir, project, projectId)
-    .then(async (r) => {
-      if (r.embedded > 0 || r.removed > 0) {
+
+  // Reconcile all enabled sources from config
+  const cfg = findPluginConfig();
+  const sources = cfg.sources as Record<
+    string,
+    {
+      scope: 'project' | 'user';
+      path: string;
+      enabled?: boolean;
+    }
+  >;
+
+  const reconcileTasks = Object.entries(sources)
+    .filter(([, s]) => s.enabled !== false)
+    .map(([sourceName, s]) => {
+      const sourcePath = s.scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
+
+      const pid = s.scope === 'project' ? projectId : '';
+      const proj = s.scope === 'project' ? project : undefined;
+
+      return { sourceName, sourcePath, pid, proj, scope: s.scope };
+    });
+
+  Promise.all(reconcileTasks.map((t) => runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName)))
+    .then(async (results) => {
+      const totalEmbedded = results.reduce((sum, r) => sum + r.embedded, 0);
+      const totalRemoved = results.reduce((sum, r) => sum + r.removed, 0);
+
+      if (totalEmbedded > 0 || totalRemoved > 0) {
         invalidateCorpusCache(project);
+        const sourceStats = reconcileTasks.reduce(
+          (acc, t, i) => {
+            acc[t.sourceName] = { embedded: results[i].embedded, removed: results[i].removed };
+            return acc;
+          },
+          {} as Record<string, { embedded: number; removed: number }>
+        );
+
         logInfo('Reconcile complete', {
           project: projectLabel,
-          state: r.state,
-          embedded: r.embedded,
-          removed: r.removed
+          ...sourceStats
         });
       }
-      watchContextDir(contextDir, project, 'projectContext', projectId);
+
+      // Watch all source directories
+      reconcileTasks.forEach((t) => {
+        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid);
+      });
     })
     .catch((err) =>
       logError('error', 'daemon', 'Reconcile failed', {
@@ -1031,12 +1122,26 @@ async function startDaemon(): Promise<void> {
     // Warm the model AFTER the socket is listening so /health is reachable and
     // reports modelLoaded:false while loading (session-start polls for true).
     attemptWarmup();
+    // Start eval loop (polls queue, drains when non-empty)
+    startEvalLoop();
+    // Initialize usage evaluation state if config enables it (gate-mismatch fix:
+    // stop hook enqueues when usageEvaluation.enabled, eval-loop drains when
+    // calibrationState.evaluateUsage=true; this bridges the two).
+    if (cfg.usageEvaluation?.enabled) {
+      const state = readCalibrationState();
+      if (!state.evaluateUsage) {
+        const mode = cfg.usageEvaluation.mode ?? 'continuous';
+        startCalibration({ mode });
+        logInfo('Usage evaluation initialized', { mode });
+      }
+    }
   });
 }
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
+    stopEvalLoop();
     logInfo('Daemon stopping', { signal: sig, uptime: `${Math.round(process.uptime())}s` });
     cleanupRuntimeFiles();
     server.close(() => process.exit(0));

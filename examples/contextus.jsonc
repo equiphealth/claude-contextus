@@ -87,5 +87,22 @@
       "archiveMonths": 6, // Months before archived .gz files are deleted
       "paranoidDays": 7 // Days before paranoid.jsonl is DELETED (privacy, not archived)
     }
+  },
+
+  "usageEvaluation": {
+    // Continuous usage feedback: evaluates every injected context to learn what's actually
+    // useful. Runs in background (never blocks prompts). Powers /context-stats, /context-review,
+    // and /context-doctor analytics. Default: always-on. Disable for privacy or cost reasons.
+    "enabled": true,
+    "mode": "continuous", // continuous (always-on) | campaign (bounded N samples, then stop)
+    "provider": "bedrock", // bedrock | anthropic | ollama
+    "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0", // Eval model. Haiku recommended (~$0.001/query).
+    "samplingRate": 1.0, // Fraction of injections to evaluate (0.0-1.0). Reduce to cut costs.
+    "staleness": {
+      // Thresholds for /context-doctor health checks.
+      "windowDays": 180, // Days of non-retrieval before pattern is "stale"
+      "noiseThreshold": 0.3, // Avg score below this = "noisy" pattern
+      "minEvals": 10 // Min evaluations before flagging as noisy
+    }
   }
 }

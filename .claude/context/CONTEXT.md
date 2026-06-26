@@ -41,12 +41,21 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [warmup-failure-cascade](gotchas/gotcha-warmup-failure-cascade.md) — Warmup failure is permanent; config changes don't trigger retry; daemon stays stuck until manual kill
 - [skill-project-scoping](gotchas/gotcha-skill-project-scoping.md) — Skills must compute projectId hash and pass it to daemon endpoints (/introspect, /query, etc) for correct per-project isolation
 - [project-column-isolation-bug](gotchas/gotcha-project-column-isolation-bug.md) — CRITICAL: Unified DB WHERE project IN filter not working — queries return rows from other projects instead of scoped results
+- [status-cli-spec-divergence](gotcha/gotcha-status-cli-spec-divergence.md) — Status CLI implementation missing growth tracking promised in skill spec
+- [calibration-bootstrap-catch22](gotcha/gotcha-calibration-bootstrap-catch22.md) — Calibration can't collect samples when injection floor prevents all injections
+- [user-sources-not-loaded](gotcha/gotcha-user-sources-not-loaded.md) — [FIXED] User-scoped sources defined but never embedded; only projectContext loads
+- [workspace-file-format](gotcha/gotcha-workspace-file-format.md) — Workspace files require projects as objects with path property, not string arrays
+- [loadedSourceNames-jsonc-parse](gotcha/gotcha-loadedSourceNames-jsonc-parse.md) — [FIXED] loadedSourceNames() failed to strip JSONC comments, returned empty packs array
+- [calibrate-floor-project-param](gotcha/gotcha-calibrate-floor-project-param.md) — Floor calibration --project expects name substring, not projectId hash
+- [plugin-dir-hook-merging](gotcha/gotcha-plugin-dir-hook-merging.md) — --plugin-dir installs require manual hook merging from hooks/hooks.json to settings.json
+- [stop-hook-transcript-timing](gotcha/gotcha-stop-hook-transcript-timing.md) — Stop hook fires before transcript write completes — response not yet on disk when hook reads file
 - [empty-project-stamp](gotchas/gotcha-empty-project-stamp.md) — buildRows() defaults project to '' — rows embed fine but are invisible to workspace-scoped queries
 
 ## Tradeoffs
 
 - [embedding-provider-deployment](tradeoffs/tradeoff-embedding-provider-deployment.md) — Transformers.js vs local Ollama vs network Ollama: proxy gotchas, team deployment, decision matrix
-- [empty-project-stamp](gotchas/gotcha-empty-project-stamp.md) — buildRows() defaults project to '' — rows embed fine but are invisible to workspace-scoped queries
+- [staging-capture-visibility](tradeoffs/tradeoff-staging-capture-visibility.md) — Write tool calls are visible in UI; no silent file creation on-platform; accept noise as cost of transparency
+- [project-id-hash-vs-path](tradeoff/tradeoff-project-id-hash-vs-path.md) — ProjectId uses SHA256 hash for stability but sacrifices debuggability - operators can't identify projects from logs/directories
 
 ## Implementation
 
@@ -55,6 +64,7 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [lancedb-api-surface](implementation/lancedb-api-surface.md) — Real @lancedb/lancedb v0.30 API vs DESIGN.md's Chroma sketch (verified)
 - [skill-project-scoping-fixes](implementation/implementation-skill-project-scoping-fixes.md) — Fix plan: add projectId parameter to /context-status, /context-doctor, /rebuild-embeddings daemon calls
 - [daemon-project-scoping-fix](implementation/implementation-daemon-project-scoping-fix.md) — Daemon should accept only projectId (not cwd), look up workspace scope and config by projectId alone
+- [multi-source-loading](implementation/implementation-multi-source-loading.md) — [FIXED] All enabled sources (projectContext/projectDocs/userContext/userDocs) now load via config iteration
 
 ## Project
 
@@ -80,4 +90,5 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [telemetry-transparency-requirement](decisions/decision-telemetry-transparency-requirement.md) — Telemetry must be opt-in during setup with complete transparency; treat user data as high-trust asset
 - [telemetry-expansion-provider-tracking](api/api-telemetry-expansion-provider-tracking.md) — Track which LLM provider (ollama/bedrock/anthropic) handles query expansion, not hardcode fallback chains
 - [telemetry-environment-filtering](implementation/implementation-telemetry-environment-filtering.md) — Exclude dev/test/maintainer usage from production telemetry metrics to avoid data pollution
+- [daemon-context-create-vs-update](reference/reference-daemon-context-create-vs-update.md) — How to create new vs update existing context files - /capture overwrites on duplicate slug
 - [daemon-context-create-vs-update](reference/reference-daemon-context-create-vs-update.md) — How to create new vs update existing context files - /capture overwrites on duplicate slug

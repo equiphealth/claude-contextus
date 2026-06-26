@@ -15,7 +15,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { expandHome } from '../config.js';
+import { expandHome, projectHash } from '../config.js';
 import {
   buildEvalPrompt,
   parseEvalResponse,
@@ -30,7 +30,8 @@ export const EVAL_QUEUE_PATH = expandHome('~/.contextus/.eval-queue.jsonl');
 
 /** One unit of work: a graded prompt + what was injected for it. */
 export interface EvalJob {
-  project: string;
+  project: string; // basename for logging/display
+  projectId?: string; // hash for file paths (optional for backward compat)
   promptHash: string;
   prompt: string;
   thinking: string;
@@ -94,23 +95,53 @@ export async function processJob(
     evaluationLatencyMs: latency
   });
 
+  // Also write per-project usage-ratings.jsonl for Phase 2 analytics
+  try {
+    // Use projectId if provided (preferred); fallback to hashing project basename for old jobs.
+    // NOTE: The fallback creates phantom directories for legacy jobs (job.project is basename,
+    // not cwd, so projectHash("automation") != projectHash("/path/to/automation")). These will
+    // age out naturally; leaving the fallback for backward compat.
+    const projectId = job.projectId ?? projectHash(job.project);
+    const projectUsagePath = path.join(
+      expandHome('~/.contextus/data'),
+      projectId,
+      'usage-ratings.jsonl'
+    );
+    const projectRating = {
+      timestamp: new Date().toISOString(),
+      promptHash: job.promptHash,
+      evaluations: ratings.map((r) => ({
+        pattern: r.pattern,
+        rating: r.rating,
+        similarity: 0 // TODO: thread retrieval similarity through session-state
+      })),
+      weightedScore: score,
+      evalLatencyMs: latency,
+      evalModel: model.model ?? ''
+    };
+    fs.mkdirSync(path.dirname(projectUsagePath), { recursive: true });
+    fs.appendFileSync(projectUsagePath, JSON.stringify(projectRating) + '\n');
+  } catch {
+    // Best-effort — never break eval on logging failure
+  }
+
   return { weightedScore: score, rated: ratings.length };
 }
 
-/**
- * Drain the queue once: process every job, then truncate the file. Honors the
- * campaign budget — stops calling the model once the target is hit (the surplus
- * is dropped, which is fine: calibration is a bounded sample, not a backlog to
- * exhaust). `caller` is injected so tests never hit the network.
- */
 export async function drainQueue(caller: EvalCaller = callEvalModel): Promise<number> {
   const jobs = readQueue();
   if (jobs.length === 0) return 0;
 
   let processed = 0;
-  for (const job of jobs) {
+  const remainingJobs: EvalJob[] = [];
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i];
     const state = readState();
-    if (!state.evaluateUsage) break; // campaign finished mid-drain
+    if (!state.evaluateUsage) {
+      // campaign finished mid-drain: preserve all remaining jobs in queue
+      remainingJobs.push(...jobs.slice(i));
+      break;
+    }
     try {
       await processJob(job, state.model, caller);
       recordSample();
@@ -119,12 +150,17 @@ export async function drainQueue(caller: EvalCaller = callEvalModel): Promise<nu
       /* a failed eval shouldn't wedge the queue; drop it and continue */
     }
   }
-  // Clear processed jobs (truncate). Anything that arrived during the drain is
-  // rare at this volume; the next tick picks it up after a fresh read.
+
   try {
-    fs.writeFileSync(EVAL_QUEUE_PATH, '');
+    if (remainingJobs.length === 0) {
+      fs.writeFileSync(EVAL_QUEUE_PATH, '');
+    } else {
+      const lines = remainingJobs.map((j) => JSON.stringify(j)).join('\n') + '\n';
+      fs.writeFileSync(EVAL_QUEUE_PATH, lines);
+    }
   } catch {
     /* best-effort */
   }
+
   return processed;
 }

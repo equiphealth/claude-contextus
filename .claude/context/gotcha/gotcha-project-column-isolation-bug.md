@@ -1,12 +1,14 @@
 ---
 name: gotcha-project-column-isolation-bug
-description: Unified DB WHERE project IN filter not working — queries return rows from other projects instead of project-scoped results
+description: "[FIXED] Unified DB WHERE project IN filter not working — queries return rows from other projects instead of project-scoped results"
 metadata:
   type: gotcha
-  tags: [unified-db, project-isolation, lance-client, critical]
+  tags: [unified-db, project-isolation, lance-client, resolved]
 ---
 
 # Project Column Isolation Bug: WHERE Clause Not Filtering
+
+**STATUS: FIXED** (2026-06-25) — `corpusStats()` now filters by project at line 71-73 in `lib/introspect.ts`.
 
 ## Problem
 
