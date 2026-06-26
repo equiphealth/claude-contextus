@@ -165,8 +165,8 @@ function aggregateStats(
 
   // Process ratings
   for (const rating of ratings) {
-    for (const eval of rating.evaluations) {
-      const filename = eval.pattern;
+    for (const evalItem of rating.evaluations) {
+      const filename = evalItem.pattern;
       if (!stats.has(filename)) {
         stats.set(filename, {
           filename,
@@ -188,8 +188,8 @@ function aggregateStats(
 
       const stat = stats.get(filename)!;
       stat.evalCount++;
-      stat.ratings[eval.rating]++;
-      stat.lastRating = eval.rating;
+      stat.ratings[evalItem.rating]++;
+      stat.lastRating = evalItem.rating;
     }
   }
 
