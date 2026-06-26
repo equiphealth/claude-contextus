@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-06-26
+
+### Added
+- **Phase 2 Usage Feedback Curation Workflows** — Interactive corpus maintenance based on Phase 1 evaluation data. Includes `/context-stats` CLI + skill (usage analytics: most useful, noisy, stale, never retrieved), `/context-review` skill (interactive curation: archive/rewrite/merge), `/context-archive` skill (bulk or single-file archival), `/context-merge` skill (LLM-assisted duplicate merge), and `/context-doctor` usage-driven health checks (stale/noisy/duplicate detection, eval queue monitoring).
+- **Design decision captured** — `decision-no-promotion-path.md` documents why curation (archive/rewrite/merge) is correct and promotion (copy to CLAUDE.md) is wrong. High-value patterns prove themselves via retrieval scores; copying them to CLAUDE.md would add prompt bloat and remove semantic gating.
+
+### Changed
+- **Package version**: 0.10.0 → 0.11.0
+
+### Fixed
+- **context-stats.ts variable naming** — Renamed `eval` to `evalItem` throughout aggregation logic. Variable name `eval` conflicts with strict mode in ESM output format, causing esbuild transform errors.
+
 ## [0.10.0] - 2026-06-26
 
 ### Added
