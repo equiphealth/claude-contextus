@@ -123,7 +123,7 @@ Tell: `/context-stats --window 180` shows patterns with `lastRetrieved: null` or
 **Cause:** Pattern is obsolete, has poor keywords, or is genuinely niche.
 
 **Fix:**
-- Review content — if still relevant, improve keywords or promote to CLAUDE.md
+- Review content — if still relevant, improve keywords to help discoverability
 - If obsolete, archive: `/context-archive --stale`
 - If niche but correct, leave as-is (rare retrieval is expected)
 
@@ -165,5 +165,5 @@ Tell: Check `~/.contextus/data/<project>/.eval-queue.jsonl` line count — if gr
 - `/context-calibrate --floor` — retune the per-project injection floor.
 - `/rebuild-embeddings` — force a full re-embed when staleness looks wrong.
 - `/context-stats` — usage analytics (shows stale/noisy patterns for checks E and F).
-- `/context-review` — interactive promotion workflow for high-value patterns.
+- `/context-review` — interactive curation workflow for problem patterns.
 - `/context-archive --stale` — archive patterns failing staleness check.
