@@ -128,20 +128,20 @@ export async function processJob(
   return { weightedScore: score, rated: ratings.length };
 }
 
-/**
- * Drain the queue once: process every job, then truncate the file. Honors the
- * campaign budget — stops calling the model once the target is hit (the surplus
- * is dropped, which is fine: calibration is a bounded sample, not a backlog to
- * exhaust). `caller` is injected so tests never hit the network.
- */
 export async function drainQueue(caller: EvalCaller = callEvalModel): Promise<number> {
   const jobs = readQueue();
   if (jobs.length === 0) return 0;
 
   let processed = 0;
-  for (const job of jobs) {
+  const remainingJobs: EvalJob[] = [];
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i];
     const state = readState();
-    if (!state.evaluateUsage) break; // campaign finished mid-drain
+    if (!state.evaluateUsage) {
+      // campaign finished mid-drain: preserve all remaining jobs in queue
+      remainingJobs.push(...jobs.slice(i));
+      break;
+    }
     try {
       await processJob(job, state.model, caller);
       recordSample();
@@ -150,14 +150,17 @@ export async function drainQueue(caller: EvalCaller = callEvalModel): Promise<nu
       /* a failed eval shouldn't wedge the queue; drop it and continue */
     }
   }
-  // Clear processed jobs (truncate). Only if we processed all jobs — otherwise
-  // leave unprocessed jobs for the next drain (e.g. if evaluateUsage flipped false mid-drain).
-  if (processed === jobs.length) {
-    try {
+
+  try {
+    if (remainingJobs.length === 0) {
       fs.writeFileSync(EVAL_QUEUE_PATH, '');
-    } catch {
-      /* best-effort */
+    } else {
+      const lines = remainingJobs.map((j) => JSON.stringify(j)).join('\n') + '\n';
+      fs.writeFileSync(EVAL_QUEUE_PATH, lines);
     }
+  } catch {
+    /* best-effort */
   }
+
   return processed;
 }

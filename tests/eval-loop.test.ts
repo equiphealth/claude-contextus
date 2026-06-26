@@ -123,6 +123,121 @@ describe('eval-loop', () => {
     const jobsAfter = readQueue();
     assert.strictEqual(jobsAfter.length, 0);
   });
+
+  it('drops failed jobs without blocking the queue', async () => {
+    writeState({
+      evaluateUsage: true,
+      mode: 'continuous',
+      targetSamples: 100,
+      sampleCount: 0,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      model: { provider: 'bedrock', model: 'test' }
+    });
+
+    // Enqueue 3 jobs: Job 1 passes, Job 2 fails, Job 3 passes
+    enqueueJob({
+      project: 'test-project',
+      projectId: projectHash('/fake/test-project/path'),
+      promptHash: 'job1',
+      prompt: 'test prompt 1',
+      thinking: 'thinking',
+      response: 'response',
+      patterns: [{ id: 'pattern1', snippet: 'snippet1' }],
+      enqueuedAt: new Date().toISOString()
+    });
+
+    enqueueJob({
+      project: 'test-project',
+      projectId: projectHash('/fake/test-project/path'),
+      promptHash: 'job2',
+      prompt: 'test prompt 2',
+      thinking: 'thinking',
+      response: 'response',
+      patterns: [{ id: 'pattern2', snippet: 'snippet2' }],
+      enqueuedAt: new Date().toISOString()
+    });
+
+    enqueueJob({
+      project: 'test-project',
+      projectId: projectHash('/fake/test-project/path'),
+      promptHash: 'job3',
+      prompt: 'test prompt 3',
+      thinking: 'thinking',
+      response: 'response',
+      patterns: [{ id: 'pattern3', snippet: 'snippet3' }],
+      enqueuedAt: new Date().toISOString()
+    });
+
+    const errorCaller: EvalCaller = async (prompt) => {
+      if (prompt.includes('pattern2')) {
+        throw new Error('LLM call failed');
+      }
+      return '1:helpful';
+    };
+
+    const processed = await drainQueue(errorCaller);
+    assert.strictEqual(processed, 2); // job1 and job3 processed
+
+    // Queue should be completely empty (job2 dropped, not wedging queue)
+    const jobsAfter = readQueue();
+    assert.strictEqual(jobsAfter.length, 0);
+  });
+
+  it('preserves remaining jobs when evaluateUsage flips false mid-drain', async () => {
+    writeState({
+      evaluateUsage: true,
+      mode: 'campaign',
+      targetSamples: 2,
+      sampleCount: 0,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      model: { provider: 'bedrock', model: 'test' }
+    });
+
+    // Enqueue 3 jobs
+    enqueueJob({
+      project: 'test-project',
+      projectId: projectHash('/fake/test-project/path'),
+      promptHash: 'job1',
+      prompt: 'test prompt 1',
+      thinking: 'thinking',
+      response: 'response',
+      patterns: [{ id: 'pattern1', snippet: 'snippet1' }],
+      enqueuedAt: new Date().toISOString()
+    });
+
+    enqueueJob({
+      project: 'test-project',
+      projectId: projectHash('/fake/test-project/path'),
+      promptHash: 'job2',
+      prompt: 'test prompt 2',
+      thinking: 'thinking',
+      response: 'response',
+      patterns: [{ id: 'pattern2', snippet: 'snippet2' }],
+      enqueuedAt: new Date().toISOString()
+    });
+
+    enqueueJob({
+      project: 'test-project',
+      projectId: projectHash('/fake/test-project/path'),
+      promptHash: 'job3',
+      prompt: 'test prompt 3',
+      thinking: 'thinking',
+      response: 'response',
+      patterns: [{ id: 'pattern3', snippet: 'snippet3' }],
+      enqueuedAt: new Date().toISOString()
+    });
+
+    // With targetSamples: 2, processing the second job will flip evaluateUsage to false
+    const processed = await drainQueue(mockEvalCaller);
+    assert.strictEqual(processed, 2);
+
+    // Job 3 should still be in the queue
+    const jobsAfter = readQueue();
+    assert.strictEqual(jobsAfter.length, 1);
+    assert.strictEqual(jobsAfter[0].promptHash, 'job3');
+  });
 });
 
 describe('calibration-state modes', () => {
