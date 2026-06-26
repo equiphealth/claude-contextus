@@ -138,7 +138,7 @@ Copying to CLAUDE.md just adds system prompt bloat and removes the semantic gate
 
 - Phase 1 implementation (usage evaluation active)
 - At least 5 evaluations per pattern for meaningful data
-- Write access to `.claude/memory/` and `CLAUDE.md`
+- Write access to `.claude/context/` and `.claude/context/.archive/`
 
 ## Cost
 

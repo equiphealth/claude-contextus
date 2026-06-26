@@ -1,7 +1,7 @@
 # ctx-review
 
-**Alias for `/context-review`** — interactive pattern promotion workflow.
+**Alias for `/context-review`** — interactive pattern curation workflow.
 
-Reviews high-value patterns and promotes to `CLAUDE.md` or `.claude/memory/`.
+Reviews problem patterns and guides curation (archive, rewrite, merge).
 
 See `/context-review` skill for full documentation.

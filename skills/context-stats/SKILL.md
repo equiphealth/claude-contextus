@@ -61,9 +61,7 @@ npx tsx ~/.claude/plugins/contextus/scripts/cli/context-stats.ts --all --json
 ## Interpreting Results
 
 ### Top 10 Most Useful
-Patterns with high weighted scores (min 5 evaluations). These are candidates for promotion to `CLAUDE.md` or `.claude/memory/`.
-
-**Action threshold:** Score ≥ 0.7 AND critical% > 50% → strong promotion candidate
+Patterns with high weighted scores (min 5 evaluations). These are high-value patterns that are working well (informational only).
 
 ### Noisy Patterns
 Retrieved frequently but low usage scores (< 0.3). These are false positives — the retrieval is matching but the content isn't helping.
@@ -78,7 +76,7 @@ Retrieved frequently but low usage scores (< 0.3). These are false positives —
 ### Stale Patterns
 Not retrieved in 6+ months. May be obsolete, may need better keywords, or may be niche patterns that rarely apply.
 
-**Action:** Review content — if still relevant, improve keywords or promote to always-loaded. If obsolete, archive.
+**Action:** Review content — if still relevant, improve keywords to help discoverability. If obsolete, archive.
 
 ### Never Retrieved
 Files in corpus with zero retrieval events. Either:
@@ -88,7 +86,7 @@ Files in corpus with zero retrieval events. Either:
 
 ## Related Skills
 
-- `/context-review` — Interactive promotion workflow
+- `/context-review` — Interactive curation workflow
 - `/context-archive` — Move stale patterns out of active corpus
 - `/context-doctor` — Full health check (includes staleness detection)
 - `/tag-context --suggest` — AI-suggested tags based on co-occurrence
