@@ -161,9 +161,16 @@ function calibrationActive() {
 }
 
 /**
- * Pull the last assistant turn's thinking + visible text from a transcript JSONL.
+ * Synchronous sleep using Atomics.wait. Blocks the current thread.
  */
-function lastTurnFromTranscript(transcriptPath) {
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Read the last assistant turn from transcript (single attempt).
+ */
+function readLastTurn(transcriptPath) {
   let lines;
   try {
     lines = fs.readFileSync(transcriptPath, 'utf-8').split('\n').filter(Boolean);
@@ -187,6 +194,25 @@ function lastTurnFromTranscript(transcriptPath) {
     }
   }
   return { thinking: thinking.join('\n'), response: response.join('\n') };
+}
+
+/**
+ * Pull the last assistant turn's thinking + visible text from a transcript JSONL.
+ * Retries with exponential backoff to handle async transcript writes.
+ */
+function lastTurnFromTranscript(transcriptPath, maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const result = readLastTurn(transcriptPath);
+    if (result.response) return result; // found it
+
+    // Wait exponentially: 50ms, 100ms, 200ms, 400ms, 800ms (total ~1.6s max)
+    if (attempt < maxRetries - 1) {
+      const delayMs = 50 * Math.pow(2, attempt);
+      sleepMs(delayMs);
+    }
+  }
+  // Give up after retries — transcript never updated
+  return { thinking: '', response: '' };
 }
 
 function projectFromCwd(cwd) {
