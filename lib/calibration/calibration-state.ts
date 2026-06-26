@@ -21,6 +21,8 @@ const STATE_PATH = expandHome('~/.contextus/calibration-state.json');
 export interface CalibrationState {
   /** is usage-evaluation currently active? */
   evaluateUsage: boolean;
+  /** 'campaign' = bounded (100 samples then auto-disable), 'continuous' = always-on */
+  mode: 'campaign' | 'continuous';
   /** how many evaluated retrievals to collect before auto-disabling */
   targetSamples: number;
   /** evaluations logged so far this campaign */
@@ -47,6 +49,7 @@ function defaults(): CalibrationState {
     : DEFAULT_EVAL_MODEL;
   return {
     evaluateUsage: false,
+    mode: 'continuous',
     targetSamples: c?.targetSamples ?? 100,
     sampleCount: 0,
     startedAt: null,
@@ -73,12 +76,13 @@ export function writeState(state: CalibrationState): void {
 
 /** Begin a calibration campaign (/context-calibrate --start). */
 export function startCalibration(
-  opts: { targetSamples?: number; model?: EvalModelConfig } = {}
+  opts: { targetSamples?: number; model?: EvalModelConfig; mode?: 'campaign' | 'continuous' } = {}
 ): CalibrationState {
   const base = defaults();
   const state: CalibrationState = {
     ...base,
     evaluateUsage: true,
+    mode: opts.mode ?? 'campaign',
     targetSamples: opts.targetSamples ?? base.targetSamples,
     model: opts.model ?? base.model,
     sampleCount: 0,
@@ -90,13 +94,13 @@ export function startCalibration(
 }
 
 /**
- * Record one completed evaluation; auto-disable when the target is reached.
- * Returns the updated state so the caller can log completion.
+ * Record one completed evaluation; auto-disable when the target is reached
+ * (only if mode === 'campaign'). Returns the updated state so the caller can log completion.
  */
 export function recordSample(): CalibrationState {
   const state = readState();
   state.sampleCount += 1;
-  if (state.sampleCount >= state.targetSamples) {
+  if (state.mode === 'campaign' && state.sampleCount >= state.targetSamples) {
     state.evaluateUsage = false;
     state.completedAt = new Date().toISOString();
   }

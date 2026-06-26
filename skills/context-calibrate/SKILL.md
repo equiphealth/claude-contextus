@@ -33,8 +33,16 @@ plumbing into `plugin.json` `config.retrieval.*`.
 > ```bash
 > cd <target-project>   # the project you're calibrating (cwd = its corpus)
 > ~/src/claude-contextus/node_modules/.bin/tsx \
->   ~/src/claude-contextus/scripts/calibrate-floor.ts [--limit N] [--json]
+>   ~/src/claude-contextus/scripts/calibrate-floor.ts --project <project-name> [--limit N] [--json]
 > ```
+> **CRITICAL: `--project` expects the PROJECT NAME (substring match), NOT the projectId hash.**
+> - ✅ RIGHT: `--project claude-contextus` (matches transcript dir slug)
+> - ❌ WRONG: `--project 8fa4d8ac62c3` (hash won't match transcript directory)
+>
+> The script looks for transcripts under `~/.claude/projects/-Users-...-{project-name}/`.
+> Pass the last segment of that directory name. If you pass the hash, you'll get:
+> "No Claude Code transcripts found for [hash]".
+>
 > This prints the distribution + trade curve + recommendation (never applies). To
 > apply, edit `config.retrieval.injectionFloor` in the contextus repo's
 > `plugin.json` (or run the engine's apply path if present). If the corpus doesn't

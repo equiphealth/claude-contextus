@@ -45,7 +45,8 @@ export interface ReconcileResult {
 export async function runReconcile(
   contextDir: string,
   projectName?: string,
-  projectId = ''
+  projectId = '',
+  source = 'projectContext'
 ): Promise<ReconcileResult> {
   const allContexts = await loadContexts(contextDir);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
@@ -56,10 +57,8 @@ export async function runReconcile(
   const badPaths = new Set(findPrefixTypeMismatches(allContexts).map((m) => m.relPath));
   const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
   const exists = await tableExists(projectName);
-  // Reconcile manages ONLY the projectContext source — doc/user packs refresh on a
-  // full `pnpm run embed`, so scoping the hash map keeps reconcile from seeing
-  // them as orphans to delete. Also scoped to this project's rows in the unified DB.
-  const hashes = await getContentHashes(projectName, 'projectContext', projectId || undefined);
+  // Scope hash lookup to this source + projectId to avoid treating other sources' rows as orphans
+  const hashes = await getContentHashes(projectName, source, projectId || undefined);
 
   const diskFiles: DiskFile[] = contexts.map((c) => ({
     id: c.id,
@@ -80,7 +79,7 @@ export async function runReconcile(
       const pending = planChunks(c);
       if (pending.length === 0) continue;
       const vectors = await embedDocuments(pending.map((p) => p.embedText));
-      rows.push(...buildRows(c, pending, vectors, 'projectContext', now, projectId));
+      rows.push(...buildRows(c, pending, vectors, source, now, projectId));
     }
     if (rows.length === 0) return { state: plan.state, embedded: 0, removed: 0, unchanged: 0 };
     await createTable(rows, { projectName, replace: true });
@@ -91,7 +90,7 @@ export async function runReconcile(
   // chunks + replaces per file; orphans (files gone from disk) delete all their chunks.
   let embedded = 0;
   for (const absPath of plan.embedPaths) {
-    const r = await embedSingleFile(absPath, contextDir, projectName, 'projectContext', projectId);
+    const r = await embedSingleFile(absPath, contextDir, projectName, source, projectId);
     if (r.embedded) embedded++;
   }
   for (const filename of plan.toRemove)

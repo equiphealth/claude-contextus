@@ -5,7 +5,7 @@
   // Two files on purpose: this is the tunable runtime config, that is the install descriptor.
   // Keep `version` in sync with the manifest.
   "name": "contextus",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
   "repository": "github:anthonypdawson/claude-contextus",
@@ -26,7 +26,7 @@
       "anthropic": {}
     },
     "sources": {
-      "projectMemory": {
+      "projectContext": {
         "type": "context",
         "scope": "project",
         "path": ".claude/context",
@@ -133,6 +133,28 @@
       // Logs full prompt + injection to ~/.contextus/logs/paranoid.jsonl.
       // OFF by default (privacy). View with: contextus watch --paranoid
       "paranoid": true
+    },
+    "usageEvaluation": {
+      // Evaluate injected context usage after each response. Runs in a background loop
+      // (never blocks prompts). Logs to ~/.contextus/data/<projectId>/usage-ratings.jsonl
+      // for Phase 2 analytics (context-stats, context-review, context-doctor).
+      "enabled": true,
+      // 'continuous' = always-on, 'campaign' = bounded sample then auto-stop (for testing)
+      "mode": "continuous",
+      // Provider + model for evaluation (same registry as calibration). Bedrock Haiku
+      // default: cheapest, reliable, proven in calibration tests.
+      "provider": "bedrock",
+      "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      // Fraction of injections to evaluate (0.0-1.0). Reduce if cost is a concern.
+      "samplingRate": 1.0,
+      "staleness": {
+        // Days of non-retrieval before a pattern is considered stale. Default: 180.
+        "windowDays": 180,
+        // Avg score threshold below which a pattern is considered noisy. Default: 0.3.
+        "noiseThreshold": 0.3,
+        // Min evaluations required before a pattern can be flagged as noisy. Default: 10.
+        "minEvals": 10
+      }
     }
   },
   "hooks": "hooks/hooks.json",
