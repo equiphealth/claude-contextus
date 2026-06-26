@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-06-26
+
+### Added
+- **Phase 1 Usage Evaluation** — Stop hook enqueues prompt+response+injected context, eval-loop polls queue and drains with Haiku rating each chunk on 1-5 scale (critical/helpful/mentioned/somewhat-helpful/unused). Writes to `~/.contextus/data/<projectId>/usage-ratings.jsonl`. Cost: ~$0.001/query. **THE KEYSTONE** — unblocks Track B analytics (context-stats, context-review, context-doctor).
+- **Multi-source loading** — Daemon now iterates over all enabled sources from config instead of hardcoding projectContext. All four sources (projectContext, projectDocs, userContext, userDocs) embed when enabled. File watching covers all sources. `/notify` endpoint detects which source a file belongs to via path matching.
+- **Growth tracking** — Status CLI (`/context-status`) now scans `.claude/context/` and `docs/` for 30-day mtime growth metrics. Reports `+N patterns, +N docs` recently added.
+- **Evaluation queue resilience** — Queue drain continues even if individual evaluation jobs fail. Campaign end (sampleCount >= targetSamples) safely stops drain without clearing remaining queue.
+- **Status CLI for Phase 2** — Standalone `scripts/cli/status.ts` executable for corpus analytics. Foundation for context-stats/context-review workflows.
+
+### Changed
+- **Source naming** — Renamed `projectMemory` → `projectContext` in config for consistency with source column values. No mapping layer needed.
+- **Package version**: 0.9.0 → 0.10.0
+
+### Fixed
+- **User sources not loading** — User-scoped sources (`userContext`, `userDocs`) defined in config but never embedded. Now reconcile loop processes all enabled sources with correct scope handling (project vs user projectId).
+- **Status CLI spec divergence** — Growth tracking was promised in skill spec but missing from implementation. Now implemented.
+- **Enqueue/drain gate mismatch** — Fixed race condition where evaluateUsage flag could flip during queue drain.
+- **ESM __dirname shim** — Added shim for cost-report script (ESM modules don't have __dirname).
+- **JSONC comment parsing** — `loadedSourceNames()` now strips comments before JSON.parse (was silently failing, returning []).
+
 ## [0.9.0] - 2026-06-23
 
 ### Added

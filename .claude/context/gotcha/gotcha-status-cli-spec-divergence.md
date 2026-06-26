@@ -1,10 +1,12 @@
 ---
 name: status-cli-spec-divergence
-description: Status CLI implementation missing growth tracking promised in skill spec
+description: "[FIXED 2026-06-26] Status CLI implementation missing growth tracking promised in skill spec"
 metadata:
   type: gotcha
-  tags: [skills, cli, status, implementation-gap]
+  tags: [skills, cli, status, implementation-gap, resolved]
 ---
+
+**STATUS: FIXED** (2026-06-26) — Growth tracking now implemented in `scripts/cli/status.ts`. Scans `.claude/context/` and `docs/` for 30-day mtime.
 
 # Problem
 
