@@ -305,10 +305,10 @@ function aggregateUsage(projectId: string, windowDays: number): PatternStats[] {
 **Output sections:**
 
 1. **Summary:** Total queries, injection rate, avg weighted score, eval cost
-2. **Top 10 Most Useful:** Sorted by weighted score, min 5 evals
-3. **Never Retrieved:** Files in corpus with 0 retrieval events in window
-4. **High Retrieval, Low Usage (noisy):** Retrieved 10+ times, avg score < 0.3
-5. **Staleness candidates:** Not retrieved in 6+ months
+2. **Top 10 Most Useful:** Sorted by weighted score, min 5 evals (informational only — high-value patterns are already working)
+3. **Never Retrieved:** Files in corpus with 0 retrieval events in window (discoverability problem)
+4. **High Retrieval, Low Usage (noisy):** Retrieved 10+ times, avg score < 0.3 (archive candidates)
+5. **Staleness candidates:** Not retrieved in 6+ months (obsolete or niche — review to decide)
 
 **Flags:**
 - `--window 30` (default 30 days)
@@ -324,45 +324,26 @@ function aggregateUsage(projectId: string, windowDays: number): PatternStats[] {
 
 **Implementation:** `skills/context-review/SKILL.md` (interactive skill, not a CLI script)
 
+**Purpose:** Corpus curation — archive noisy patterns, flag for rewrite, merge duplicates. NOT promotion (high-value patterns are already working).
+
 **Logic (runs inside Claude's response):**
 
-1. Read aggregated stats (same as `/context-stats` but filtered to promotion candidates)
-2. Promotion threshold: `avgWeightedScore >= 0.6 AND retrievalCount >= 10 AND evalCount >= 5`
-3. Present top 10 candidates with stats
-4. For each, ask user: promote to CLAUDE.md / promote to .claude/memory/ / skip
-5. On promotion:
-   - **CLAUDE.md:** Append a section derived from the context file's content. Use the description from frontmatter as the rule text. Add under a `## Contextus-Promoted Patterns` section (create if absent).
-   - **`.claude/memory/`:** Create a memory file with the context file's content, converting the metadata type to a memory type (`decision→project`, `gotcha→feedback`, `reference→reference`).
-6. Stage the changes (don't commit)
+1. Read aggregated stats (same as `/context-stats` but filtered by problem category)
+2. Filter options:
+   - `--filter noisy`: Retrieved ≥ 10 times, score < 0.3 (false positives)
+   - `--filter stale`: Not retrieved in 180 days (obsolete or undiscoverable)
+   - `--filter unused`: avgWeightedScore < 0.2 (noise)
+   - `--filter duplicates`: Similar filenames or content hashes
+   - No filter: show all problem patterns
+3. Present patterns with stats and suggested actions
+4. For each, offer:
+   - **Archive**: Move to `.claude/context/.archive/`, delete from LanceDB
+   - **Rewrite**: Flag for manual improvement (keywords, scope)
+   - **Merge**: Combine with similar pattern (deduplicate)
+   - **Keep as-is**: Pattern is working correctly (niche is okay)
+5. Execute actions and stage changes
 
-**Promotion format for CLAUDE.md:**
-
-```markdown
-## Contextus-Promoted Patterns
-
-<!-- Auto-promoted by /context-review based on usage data. Edit freely. -->
-
-### [pattern-name] (promoted 2026-06-24, score: 0.82)
-[content of the context file, minus frontmatter]
-```
-
-**Promotion format for `.claude/memory/`:**
-
-```markdown
----
-name: [slug from context file]
-description: [description from context frontmatter]
-metadata:
-  type: [mapped type]
-  promoted_from: .claude/context/[category]/[filename]
-  promoted_at: 2026-06-24
-  usage_score: 0.82
----
-
-[content of the context file, minus frontmatter]
-```
-
-**Important:** The original context file is NOT deleted. It remains in the corpus and continues to be retrievable. The promotion adds the pattern to a higher-precedence layer — not move, copy-up.
+**Why not promotion?** High-value patterns (score ≥ 0.7) don't need copying to CLAUDE.md — the retrieval system already delivers them when relevant. Promotion would add system prompt bloat and remove the semantic gate (pattern always loads, even when irrelevant).
 
 ### `/context-doctor`
 
@@ -447,27 +428,6 @@ Recommended Actions
 ## Phase 3: Curation Workflows
 
 Skills that act on Phase 2 insights.
-
-### `/context-promote <file>`
-
-**Aliases:** `/ctx-promote <file>`
-
-**Trigger:** Manual invocation or suggested by `/context-review`
-
-**Targets:**
-1. `CLAUDE.md` — for patterns that should always be loaded (critical > 70% of evals)
-2. `.claude/memory/` — for patterns that are important cross-session but not always-on
-
-**Behavior:**
-1. Read the context file (validate it exists, has frontmatter)
-2. Show the user: filename, description, usage stats (if available)
-3. Ask target: CLAUDE.md or .claude/memory/
-4. If CLAUDE.md: append under `## Contextus-Promoted Patterns` (create section if absent)
-5. If memory: create memory file with converted frontmatter
-6. Stage changes to git (don't commit)
-7. Output: what was promoted, where, next steps ("review with `git diff`, commit when ready")
-
-**The original file stays.** Promotion is copy-up, not move. Rationale: the context file still serves users who don't have the promoted pattern loaded (different projects linking this corpus). And removal is a separate, explicit action.
 
 ### `/context-archive <file>` or `--stale`
 
@@ -570,11 +530,9 @@ scripts/
 skills/
   context-stats/SKILL.md        # NEW: aggregation + display
   ctx-stats/SKILL.md            # NEW: alias
-  context-review/SKILL.md       # NEW: interactive promotion
+  context-review/SKILL.md       # NEW: interactive curation (archive/rewrite/merge, NOT promotion)
   ctx-review/SKILL.md           # NEW: alias
   context-doctor/SKILL.md       # MODIFY: add usage-driven checks (already exists)
-  context-promote/SKILL.md      # NEW: promotion workflow
-  ctx-promote/SKILL.md          # NEW: alias
   context-archive/SKILL.md      # NEW: archival workflow
   ctx-archive/SKILL.md          # NEW: alias
   context-merge/SKILL.md        # NEW: duplicate merge
@@ -617,41 +575,55 @@ skills/
 8. Add `usageEvaluation` to `plugin.jsonc`
 9. Test: start daemon, send a query, verify eval fires and logs appear
 
-### Phase 2 (separate session, ~3-4 hours)
+### Phase 2 (separate session, ~2-3 hours)
 
-1. `scripts/cli/context-stats.ts` — aggregation over usage-ratings.jsonl + usage.jsonl
-2. `skills/context-stats/SKILL.md` — skill wrapper
-3. `skills/context-review/SKILL.md` — interactive promotion logic
-4. `scripts/cli/context-doctor.ts` — health checks (non-usage checks first, then staleness)
-5. `skills/context-doctor/SKILL.md` — skill wrapper
+1. `scripts/cli/context-stats.ts` — aggregation over usage-ratings.jsonl + usage.jsonl (already exists)
+2. `skills/context-stats/SKILL.md` — skill wrapper (already exists)
+3. `skills/context-review/SKILL.md` — interactive curation logic (reframed: archive/rewrite/merge, NOT promotion)
+4. `skills/context-doctor/SKILL.md` — add usage-driven health checks (already modified)
 
-### Phase 3 (separate session, ~2-3 hours)
+### Phase 3 (separate session, ~2 hours)
 
-1. `skills/promote-context/SKILL.md` — CLAUDE.md + memory promotion
-2. `skills/archive-context/SKILL.md` — move + LanceDB cleanup
-3. `skills/merge-context/SKILL.md` — Haiku-assisted merge
-4. `/tag-context --suggest` enhancement
+1. `skills/archive-context/SKILL.md` — move + LanceDB cleanup
+2. `skills/merge-context/SKILL.md` — Haiku-assisted merge
+3. `/tag-context --suggest` enhancement (optional — low priority)
 
 ---
 
+## Design Rationale: Why No Promotion Path?
+
+Original design included promotion to CLAUDE.md/memory for high-value patterns. Removed after user insight: **patterns that prove valuable will naturally rank higher in future retrievals**. Promotion would:
+
+1. **Add system prompt bloat** — CLAUDE.md grows unbounded as patterns accumulate
+2. **Remove semantic gating** — promoted patterns always load, even when irrelevant
+3. **Duplicate work** — pattern appears twice (CLAUDE.md + corpus retrieval)
+4. **Miss the point** — the feedback loop proves retrieval is working; copying to CLAUDE.md undermines that
+
+**What the feedback loop should drive instead:**
+- **Archive** — Remove noise (low-value patterns)
+- **Rewrite** — Fix false positives (high retrieval, low usage)
+- **Merge** — Deduplicate (similar patterns)
+- **Improve keywords** — Fix discoverability (never retrieved but still relevant)
+
+High-value patterns need nothing — they're already working.
+
 ## Open Questions (deferred to user)
 
-1. **Should the original context file be removed on promotion to CLAUDE.md?** This design says no (copy-up, not move). The user may prefer move-up to reduce corpus noise. Decision point: after Phase 2 data shows whether promoted patterns cause duplicate-injection issues.
+1. **Archive directory: gitignored or not?** If gitignored, archives are local-only (can't be restored from git). If tracked, they're recoverable but add noise to the repo. Recommendation: tracked but excluded from embedding via a `.contextusignore` pattern.
 
-2. **Archive directory: gitignored or not?** If gitignored, archives are local-only (can't be restored from git). If tracked, they're recoverable but add noise to the repo. Recommendation: tracked but excluded from embedding via a `.contextusignore` pattern.
+2. **Eval model upgrade path:** If qwen2.5:32b proves reliable locally, should `usageEvaluation.provider` default to `ollama` with the larger model? Lower cost ($0) but higher latency (~2-5s vs ~500ms for Haiku). Depends on how the new model performs.
 
-3. **Eval model upgrade path:** If qwen2.5:32b proves reliable locally, should `usageEvaluation.provider` default to `ollama` with the larger model? Lower cost ($0) but higher latency (~2-5s vs ~500ms for Haiku). Depends on how the new model performs.
-
-4. **Cross-project aggregation:** Should `/context-stats` show stats across all projects, or only the current one? Phase 2 implementation: current project only. Cross-project requires scanning all `data/*/usage-ratings.jsonl` files.
+3. **Cross-project aggregation:** Should `/context-stats` show stats across all projects, or only the current one? Phase 2 implementation: current project only. Cross-project requires scanning all `data/*/usage-ratings.jsonl` files.
 
 ---
 
 ## Success Criteria
 
-- [ ] Phase 1: After upgrade, `usage-ratings.jsonl` accumulates entries on every injected query (no user action needed)
-- [ ] Phase 1: Eval failures log warnings but never block prompts or queries
-- [ ] Phase 1: `samplingRate: 0.0` disables eval completely (zero LLM calls)
+- [x] Phase 1: After upgrade, `usage-ratings.jsonl` accumulates entries on every injected query (no user action needed) — **SHIPPED**
+- [x] Phase 1: Eval failures log warnings but never block prompts or queries — **SHIPPED**
+- [x] Phase 1: `samplingRate: 0.0` disables eval completely (zero LLM calls) — **SHIPPED**
 - [ ] Phase 2: `/context-stats` shows retrieval + usage data within 30 seconds of Phase 1 data existing
+- [ ] Phase 2: `/context-review` presents noisy/stale patterns with archive/rewrite suggestions
 - [ ] Phase 2: `/context-doctor` identifies stale/duplicate patterns with actionable fixes
-- [ ] Phase 3: `/promote-context` writes valid CLAUDE.md/memory entries that Claude loads correctly
 - [ ] Phase 3: `/archive-context --stale` moves files + removes from LanceDB without data loss
+- [ ] Phase 3: `/context-merge` combines duplicates via LLM-assisted workflow

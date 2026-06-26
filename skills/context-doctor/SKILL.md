@@ -112,9 +112,58 @@ kill $(cat ~/.contextus/runtime/daemon.pid) 2>/dev/null
 # next session-start (or any hook) respawns it
 ```
 
+## Phase 2: Usage-Driven Health Checks
+
+When Phase 1 (usage evaluation) is active and `usage-ratings.jsonl` exists, add these checks:
+
+### E. "Stale patterns" — not retrieved in 6+ months
+
+Tell: `/context-stats --window 180` shows patterns with `lastRetrieved: null` or older than 180 days.
+
+**Cause:** Pattern is obsolete, has poor keywords, or is genuinely niche.
+
+**Fix:**
+- Review content — if still relevant, improve keywords or promote to CLAUDE.md
+- If obsolete, archive: `/context-archive --stale`
+- If niche but correct, leave as-is (rare retrieval is expected)
+
+### F. "Noisy patterns" — high retrieval, low usage (score < 0.3)
+
+Tell: `/context-stats` shows patterns with `retrievalCount >= 10` but `avgWeightedScore < 0.3`.
+
+**Cause:** Generic keywords causing over-retrieval, or content no longer matches user's actual needs.
+
+**Fix:**
+- Rewrite for specificity (narrow scope, add targeted keywords)
+- Split into multiple patterns if covering too many topics
+- Archive if the pattern is no longer relevant
+- Check if similar patterns exist and merge duplicates
+
+### G. "Duplicate patterns" — same content, different files
+
+Tell: `/context-stats` combined with content-hash comparison (coming in `/context-doctor` CLI).
+
+**Cause:** Pattern was manually copied, or evolved independently in different categories.
+
+**Fix:** Use `/context-merge <file1> <file2>` to combine into one pattern, archive the duplicate.
+
+### H. "Eval queue growing unbounded" — jobs enqueued but not draining
+
+Tell: Check `~/.contextus/data/<project>/.eval-queue.jsonl` line count — if growing unbounded, eval worker isn't running.
+
+**Cause:** Daemon eval loop not started, or eval model provider unreachable.
+
+**Fix:**
+1. Check daemon logs for eval worker errors: `tail ~/.contextus/logs/daemon.log | grep eval`
+2. Verify eval provider is reachable (default: Bedrock Haiku via AWS credentials)
+3. If provider is down, jobs will retry on next daemon restart
+4. If queue is massive (>1000 lines), truncate: `tail -100 .eval-queue.jsonl > .eval-queue.tmp && mv .eval-queue.tmp .eval-queue.jsonl`
+
 ## Related
 
-- `/context-status` — the impact dashboard ("how's it helping?"). Doctor answers
-  "why isn't it working?"
+- `/context-status` — the impact dashboard ("how's it helping?"). Doctor answers "why isn't it working?"
 - `/context-calibrate --floor` — retune the per-project injection floor.
 - `/rebuild-embeddings` — force a full re-embed when staleness looks wrong.
+- `/context-stats` — usage analytics (shows stale/noisy patterns for checks E and F).
+- `/context-review` — interactive promotion workflow for high-value patterns.
+- `/context-archive --stale` — archive patterns failing staleness check.
