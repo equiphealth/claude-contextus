@@ -93,3 +93,4 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [daemon-context-create-vs-update](reference/reference-daemon-context-create-vs-update.md) — How to create new vs update existing context files - /capture overwrites on duplicate slug
 - [daemon-context-create-vs-update](reference/reference-daemon-context-create-vs-update.md) — How to create new vs update existing context files - /capture overwrites on duplicate slug
 - [no-promotion-path](decisions/decision-no-promotion-path.md) — Why contextus feedback loop drives curation (archive/rewrite/merge) not promotion (copy to CLAUDE.md)
+- [hook-js-ts-duplication](gotchas/gotcha-hook-js-ts-duplication.md) — Hooks use plain JS (no build step) while core uses TS, requiring duplicate port discovery logic
