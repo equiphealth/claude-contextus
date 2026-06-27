@@ -1,6 +1,6 @@
 ---
 name: ctx-status
-description: Health dashboard for contextus — corpus stats, daemon health, recent embeddings, injection coverage, calibration quality metrics. The go-to diagnostic when something feels off.
+description: Alias for /context-status. See that skill for flags and options.
 ---
 
 Alias for `/context-status`. Invoke that skill now.
