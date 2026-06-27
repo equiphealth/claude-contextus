@@ -64,35 +64,44 @@ fi
 
 # --- Case 3: No statusline exists — create a minimal one ---
 if [ ! -f "$STATUSLINE" ]; then
-    echo "[contextus] No statusline script found — creating minimal one with bridge."
+    echo "[contextus] No statusline script found — creating one with bridge."
     mkdir -p "$(dirname "$STATUSLINE")"
     cat > "$STATUSLINE" << 'MINIMAL'
 #!/usr/bin/env bash
-# Minimal statusline created by contextus for token overflow protection.
-# Customize freely — the bridge block (marked below) is the only required part.
+# Created by contextus for token overflow protection (GitHub #17).
+# This script runs after each assistant turn. It receives JSON on stdin with
+# model info and context_window stats. The bridge block below writes those stats
+# to a file that contextus reads to avoid injecting context when the conversation
+# is near the model's token limit.
+#
+# To add statusline output: uncomment the example at the bottom, or write your own.
+# Whatever this script prints to stdout appears in the Claude Code status bar.
 input=$(cat)
 
 MINIMAL
     # Append the bridge block
     printf '%s\n' "$BRIDGE_BLOCK" >> "$STATUSLINE"
-    # Add a basic status display after the bridge
+    # Add commented-out example display — user uncomments if they want output
     cat >> "$STATUSLINE" << 'DISPLAY'
 
-# Basic status display (customize or replace as desired)
-if command -v jq >/dev/null 2>&1; then
-    _model=$(echo "$input" | jq -r '.model.display_name // "Unknown"')
-    _in=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
-    _pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
-    _in_k=$(echo "scale=1; $_in / 1000" | bc 2>/dev/null || echo "$_in")
-    if [ -n "$_pct" ]; then
-        printf "%s | %sK in | %s%%" "$_model" "$_in_k" "$(printf '%.0f' "$_pct")"
-    else
-        printf "%s | %sK in" "$_model" "$_in_k"
-    fi
-fi
+# Uncomment below for a basic status display, or write your own.
+# The script receives JSON on stdin with model info and context_window stats.
+# See: claude code docs on statusline-command for the full JSON schema.
+#
+# if command -v jq >/dev/null 2>&1; then
+#     _model=$(echo "$input" | jq -r '.model.display_name // "Unknown"')
+#     _in=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
+#     _pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
+#     _in_k=$(echo "scale=1; $_in / 1000" | bc 2>/dev/null || echo "$_in")
+#     if [ -n "$_pct" ]; then
+#         printf "%s | %sK in | %s%%" "$_model" "$_in_k" "$(printf '%.0f' "$_pct")"
+#     else
+#         printf "%s | %sK in" "$_model" "$_in_k"
+#     fi
+# fi
 DISPLAY
     chmod +x "$STATUSLINE"
-    echo "[contextus] Created $STATUSLINE with bridge + basic display."
+    echo "[contextus] Created $STATUSLINE with bridge (no output — uncomment example to add statusline display)."
     exit 0
 fi
 
