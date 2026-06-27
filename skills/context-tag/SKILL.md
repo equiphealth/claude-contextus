@@ -1,6 +1,6 @@
 ---
-name: tag-context
-description: Find tagless context files and backfill sensible tags from their content (you propose, user approves). Tags are stored-but-inert until v2 CAE consumes them.
+name: context-tag
+description: Manage tags on context files — backfill missing tags, suggest improvements, or bulk-update tags based on content analysis. Tags improve discoverability and future CAE classification.
 ---
 
 # Tag Context
