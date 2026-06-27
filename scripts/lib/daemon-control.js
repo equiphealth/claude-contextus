@@ -491,8 +491,11 @@ export async function waitForModel({ attempts, intervalMs } = {}) {
 
 /**
  * Lightweight upgrade check — compares data schema version against installed code.
- * Returns { needed, dataVersion, installedVersion } or null on error.
+ * Returns { needed, dataVersion, installedVersion, hasBreakingChanges } or null on error.
  * Pure filesystem reads (~1ms), no network, safe to call on every session start.
+ *
+ * hasBreakingChanges=true means MIGRATIONS.md has an entry between dataVersion and
+ * installedVersion, which requires running /contextus-upgrade.
  */
 export function checkUpgradeNeeded() {
   try {
@@ -523,7 +526,41 @@ export function checkUpgradeNeeded() {
       if ((pa[i] ?? 0) > (pb[i] ?? 0)) break;
     }
 
-    return { needed, dataVersion, installedVersion };
+    // Check if MIGRATIONS.md has entries between dataVersion and installedVersion
+    let hasBreakingChanges = false;
+    if (needed) {
+      try {
+        const migrationsPath = path.join(REPO_ROOT, 'migrations', 'MIGRATIONS.md');
+        const migrations = fs.readFileSync(migrationsPath, 'utf8');
+        // Extract all version headers: ## X.Y.Z — Title
+        const versionPattern = /^## (\d+\.\d+\.\d+)/gm;
+        let match;
+        while ((match = versionPattern.exec(migrations)) !== null) {
+          const migrationVersion = match[1];
+          const mv = migrationVersion.split('.').map(Number);
+          // Is this migration version between dataVersion and installedVersion?
+          let afterData = false;
+          let beforeOrEqualInstalled = false;
+          for (let i = 0; i < 3; i++) {
+            if ((mv[i] ?? 0) > (pa[i] ?? 0)) { afterData = true; break; }
+            if ((mv[i] ?? 0) < (pa[i] ?? 0)) break;
+          }
+          for (let i = 0; i < 3; i++) {
+            if ((mv[i] ?? 0) < (pb[i] ?? 0)) { beforeOrEqualInstalled = true; break; }
+            if ((mv[i] ?? 0) > (pb[i] ?? 0)) break;
+            if (i === 2 && (mv[i] ?? 0) === (pb[i] ?? 0)) beforeOrEqualInstalled = true;
+          }
+          if (afterData && beforeOrEqualInstalled) {
+            hasBreakingChanges = true;
+            break;
+          }
+        }
+      } catch {
+        // Can't read MIGRATIONS.md — assume no breaking changes (non-blocking)
+      }
+    }
+
+    return { needed, dataVersion, installedVersion, hasBreakingChanges };
   } catch {
     return null;
   }
