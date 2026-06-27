@@ -95,3 +95,4 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [no-promotion-path](decisions/decision-no-promotion-path.md) — Why contextus feedback loop drives curation (archive/rewrite/merge) not promotion (copy to CLAUDE.md)
 - [hook-js-ts-duplication](gotchas/gotcha-hook-js-ts-duplication.md) — Hooks use plain JS (no build step) while core uses TS, requiring duplicate port discovery logic
 - [project-identifier-everywhere](gotchas/gotcha-project-identifier-everywhere.md) — All daemon endpoints must normalize project identifiers (name/hash/path) to canonical hash before DB operations
+- [upgrade-notification-flow](implementation/implementation-upgrade-notification-flow.md) — Automatic upgrade notification flow when plugin is updated via marketplace
