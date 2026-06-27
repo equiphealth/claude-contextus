@@ -29,15 +29,22 @@ const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
 const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
 
 /**
- * Base URL for daemon HTTP API.
+ * Base URL for daemon HTTP API (cached for process lifetime).
  * Priority: CONTEXTUS_DAEMON_URL env var > daemon.port file > PREFERRED_PORT (37800)
  *
- * Matches daemon-config.sh logic for consistency across shell and JS contexts.
+ * NOTE: This is a plain JS implementation to avoid build dependencies. TypeScript
+ * scripts should import getDaemonURL() from lib/daemon-url.ts instead.
+ * Both implementations must stay in sync.
  */
+let cachedURL = null;
 export function getBaseURL() {
+  if (cachedURL) {
+    return cachedURL;
+  }
   // 1. Check env var (set by daemon-config.sh or user override)
   if (process.env.CONTEXTUS_DAEMON_URL) {
-    return process.env.CONTEXTUS_DAEMON_URL;
+    cachedURL = process.env.CONTEXTUS_DAEMON_URL;
+    return cachedURL;
   }
 
   // 2. Read actual port from runtime file (written by daemon at startup)
@@ -46,7 +53,8 @@ export function getBaseURL() {
       const content = fs.readFileSync(PORT_PATH, 'utf-8').trim();
       const port = parseInt(content, 10);
       if (port > 0 && port < 65536) {
-        return `http://127.0.0.1:${port}`;
+        cachedURL = `http://127.0.0.1:${port}`;
+        return cachedURL;
       }
     }
   } catch {
@@ -55,7 +63,8 @@ export function getBaseURL() {
 
   // 3. Fall back to preferred port
   const port = parseInt(process.env.CONTEXTUS_DAEMON_PORT || String(PREFERRED_PORT), 10);
-  return `http://127.0.0.1:${port}`;
+  cachedURL = `http://127.0.0.1:${port}`;
+  return cachedURL;
 }
 // Two launch targets per process: the compiled JS (shipped/packaged) and the
 // TypeScript source (dev, run via tsx). resolveLaunch() picks per-process.
