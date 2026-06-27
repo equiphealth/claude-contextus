@@ -167,12 +167,21 @@
     "skills/rebuild-embeddings",
     "skills/context-search",
     "skills/context-status",
+    "skills/context-stats",
     "skills/context-doctor",
+    "skills/context-review",
     "skills/context-calibrate",
+    "skills/context-archive",
+    "skills/context-merge",
     "skills/audit-context",
     "skills/audit-stale",
     "skills/migrate-memory",
     "skills/contextus-setup",
-    "skills/tag-context"
+    "skills/tag-context",
+    "skills/ctx-status",
+    "skills/ctx-stats",
+    "skills/ctx-review",
+    "skills/ctx-archive",
+    "skills/ctx-merge"
   ]
 }

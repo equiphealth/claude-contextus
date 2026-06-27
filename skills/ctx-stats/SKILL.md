@@ -1,3 +1,8 @@
+---
+name: ctx-stats
+description: Alias for /context-stats — usage analytics for injected context. See /context-stats for full documentation.
+---
+
 # ctx-stats
 
 **Alias for `/context-stats`** — usage analytics for injected context.

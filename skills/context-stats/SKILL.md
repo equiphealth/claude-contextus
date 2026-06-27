@@ -1,3 +1,8 @@
+---
+name: context-stats
+description: Usage analytics for injected context — aggregates usage evaluation data to show what's working. Reports most useful patterns, noisy patterns (high retrieval, low score), stale patterns (not retrieved in 6+ months), and never-retrieved files.
+---
+
 # context-stats
 
 **Usage analytics for injected context** — aggregates usage evaluation data to show what's working.

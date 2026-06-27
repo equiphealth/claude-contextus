@@ -44,6 +44,58 @@ This outputs JSON with:
 
 If `needsUpgrade` is false, report "Already up to date" and stop.
 
+If `needsUpgrade` is true but `migrations` is empty, the version gap contains
+only code changes with no data schema migrations. Present this to the user:
+
+```
+contextus-upgrade: 0 migrations pending
+
+  Data version:      0.9.0
+  Installed version: 0.11.0
+  
+  No data migrations needed (code-only releases).
+  Will stamp version and optionally restart daemon.
+```
+
+Then skip to Step 1.5 (check daemon) and Step 4 (stamp version). No migration
+work needed.
+
+### Step 1.5: Check Daemon Status
+
+After determining upgrade needs, check if the daemon needs restart.
+
+**Version mismatch check:**
+
+```bash
+DAEMON_VERSION=$(curl -s http://127.0.0.1:37800/health | jq -r '.version // "unknown"')
+PLUGIN_VERSION=$(cd ~/src/claude-contextus && jq -r '.version' package.json)
+
+if [ "$DAEMON_VERSION" != "$PLUGIN_VERSION" ]; then
+  echo "⚠ Daemon running $DAEMON_VERSION, plugin is $PLUGIN_VERSION — restart needed"
+fi
+```
+
+**Uptime check:**
+
+```bash
+curl -s http://127.0.0.1:37800/health | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+uptime_hours = data['uptime'] / 3600
+print(f\"Daemon uptime: {uptime_hours:.1f} hours\")
+if uptime_hours > 1:
+    print(f\"  → Daemon started before upgrade, restart recommended\")
+"
+```
+
+**When to restart:**
+- Version mismatch between daemon and plugin
+- Uptime is several hours (daemon started before code update)
+- Migrations were applied (daemon holds memoized DB connections)
+
+The daemon auto-restarts on next session start (via SessionStart hook), or
+manually restart with Step 2.5.
+
 ### Step 2: Present Plan
 
 Show the user what migrations will run:
@@ -105,22 +157,26 @@ $TSX ~/src/claude-contextus/scripts/embed-contexts.ts
 
 ### Step 4: Stamp Version
 
-After all migrations succeed, stamp the data version:
+After all migrations succeed, stamp the data version.
+
+**Note on file paths:** Contextus uses `lib/` for TypeScript source (not `src/`).
+Scripts run via `tsx` can import `.ts` files directly; built output goes to `dist/`.
+
+Use this Node.js one-liner (simpler than tsx + imports):
 
 ```bash
-$TSX -e "
-import { writeVersionState, getInstalledVersion } from './lib/version.js';
-writeVersionState(getInstalledVersion());
-console.log('Stamped version:', getInstalledVersion());
+cd ~/src/claude-contextus && node -e "
+const fs = require('fs');
+const path = require('path');
+const versionPath = path.join(process.env.HOME, '.contextus', 'version.json');
+const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+fs.writeFileSync(versionPath, JSON.stringify({ version: pkg.version }, null, 2));
+console.log('Stamped version:', pkg.version);
 "
 ```
 
-Or use the helper directly in Node:
-
-```typescript
-import { writeVersionState, getInstalledVersion } from '../lib/version.js';
-writeVersionState(getInstalledVersion());
-```
+This reads the installed version from `package.json` and writes it to
+`~/.contextus/version.json`.
 
 ### Step 5: Verify
 
