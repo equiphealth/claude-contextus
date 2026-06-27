@@ -12,12 +12,38 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { expandHome, projectHash } from '../lib/config.js';
 import {
   workspacesForProject,
   addProjectToWorkspace,
   removeProjectFromWorkspace
 } from '../lib/workspace.js';
+
+/**
+ * Daemon base URL with dynamic port discovery.
+ * Priority: CONTEXTUS_DAEMON_URL env var > daemon.port file > default (37800)
+ */
+function getBaseURL(): string {
+  if (process.env.CONTEXTUS_DAEMON_URL) {
+    return process.env.CONTEXTUS_DAEMON_URL;
+  }
+
+  const portPath = path.join(os.homedir(), '.contextus', 'runtime', 'daemon.port');
+  try {
+    if (fs.existsSync(portPath)) {
+      const port = parseInt(fs.readFileSync(portPath, 'utf-8').trim(), 10);
+      if (port > 0 && port < 65536) {
+        return `http://127.0.0.1:${port}`;
+      }
+    }
+  } catch {
+    // Fall through
+  }
+
+  const port = parseInt(process.env.CONTEXTUS_DAEMON_PORT || '37800', 10);
+  return `http://127.0.0.1:${port}`;
+}
 
 const USAGE = `link-project — share context across projects via workspaces
 
@@ -39,7 +65,7 @@ function currentProjectPath(): string {
 async function triggerReconcile(): Promise<void> {
   const project = projectHash(currentProjectPath());
   try {
-    const res = await fetch('http://127.0.0.1:37800/reconcile', {
+    const res = await fetch(`${getBaseURL()}/reconcile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, cwd: currentProjectPath() }),
