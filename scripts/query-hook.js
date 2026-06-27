@@ -13,6 +13,7 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { getBaseURL, ensureDaemonRunning } from './lib/daemon-control.js';
 
@@ -32,6 +33,21 @@ function readStdin() {
 function projectId(cwd) {
   const abs = path.resolve(cwd || process.cwd());
   return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
+}
+
+/** Read context-window stats written by statusline (best-effort). */
+function readContextStats() {
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
+  if (!sessionId) return undefined;
+  const statsPath = path.join(
+    process.env.HOME || '/tmp',
+    '.contextus', 'runtime', `${sessionId}.context-stats.json`
+  );
+  try {
+    return JSON.parse(fs.readFileSync(statsPath, 'utf8'));
+  } catch {
+    return undefined;
+  }
 }
 
 function emit(obj) {
@@ -55,7 +71,7 @@ async function main() {
     const res = await fetch(`${getBaseURL()}/query`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt, project: projectId(cwd), cwd }),
+      body: JSON.stringify({ prompt, project: projectId(cwd), cwd, contextStats: readContextStats() }),
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return emit({ continue: true });

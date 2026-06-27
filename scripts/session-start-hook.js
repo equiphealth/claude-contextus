@@ -30,6 +30,7 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import crypto from 'node:crypto';
 import {
   ensureDaemonRunning,
@@ -45,6 +46,30 @@ import {
   checkUpgradeNeeded,
 } from './lib/daemon-control.js';
 import { resolveDaemonStatus } from './lib/daemon-status.js';
+
+/** Clean up stale context-stats files (>24h old) from ~/.contextus/runtime/. Best-effort. */
+function cleanStaleContextStats() {
+  const runtimeDir = path.join(process.env.HOME || '/tmp', '.contextus', 'runtime');
+  try {
+    const files = fs.readdirSync(runtimeDir);
+    const now = Date.now();
+    const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+    for (const file of files) {
+      if (!file.endsWith('.context-stats.json')) continue;
+      const absPath = path.join(runtimeDir, file);
+      try {
+        const stat = fs.statSync(absPath);
+        if (now - stat.mtimeMs > MAX_AGE_MS) {
+          fs.unlinkSync(absPath);
+        }
+      } catch {
+        // Individual file cleanup failure is non-fatal
+      }
+    }
+  } catch {
+    // Runtime dir may not exist yet — that's fine
+  }
+}
 
 /** Read the SessionStart payload from stdin (for cwd). Never hangs on a TTY. */
 function readStdin() {
@@ -64,6 +89,9 @@ function projectId(cwd) {
 }
 
 async function main() {
+  // Housekeeping: remove stale stats files from previous sessions (best-effort).
+  cleanStaleContextStats();
+
   const verbosity = getVerbosity();
 
   let cwd = process.cwd();

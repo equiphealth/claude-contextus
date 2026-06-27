@@ -14,6 +14,41 @@ should perform.
 
 ---
 
+## 0.13.0 — Token Overflow Protection (Statusline Bridge)
+
+**What changed:**
+- New `capacityProtection` config section controls graduated injection throttling
+- Query hook now reads `~/.contextus/runtime/<session>.context-stats.json` and passes stats to daemon
+- Daemon checks `contextStats.used_percentage` before embedding/injection
+- Session-start hook cleans stale stats files (>24h)
+- Statusline script patched to write stats file on every render
+
+**Why breaking:**
+- Without the statusline bridge patch, overflow protection is inactive (feature degrades gracefully, but users expect it after upgrade)
+- The `install-statusline-bridge.sh` script must be run once to enable the feature
+
+**Detection:**
+- `~/.claude/statusline-command.sh` exists but does NOT contain "contextus: token overflow protection bridge"
+- `~/.contextus/runtime/` directory doesn't have `.context-stats.json` files being written
+
+**Steps:**
+1. Install the statusline bridge:
+   ```bash
+   bash ~/src/claude-contextus/scripts/install-statusline-bridge.sh
+   ```
+2. Verify bridge is active (send a message, then check):
+   ```bash
+   cat ~/.contextus/runtime/$CLAUDE_CODE_SESSION_ID.context-stats.json
+   ```
+
+**Scripts:**
+- `scripts/install-statusline-bridge.sh` — idempotent patch installer
+
+**Rollback:**
+Remove the bridge block from `~/.claude/statusline-command.sh` (look for the `# contextus: token overflow protection bridge` marker and delete through the closing `fi`). Feature silently disables.
+
+---
+
 ## 0.12.0 — Unified Database & Project Normalization
 
 **What changed:**

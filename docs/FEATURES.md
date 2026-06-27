@@ -54,6 +54,7 @@
 - **Self-documentation** — `/introspect` endpoint exposes config + corpus stats
 
 #### Health & Recovery
+- **Token overflow protection** — Reads context-window stats from statusline bridge, applies graduated throttling (reduce → minimal → disable) as conversation grows. Prevents API 400 errors in long sessions. Configurable thresholds.
 - **Daemon health probe** — `/health?probe=true` verifies provider is actually reachable
 - **Auto-recovery** — Detects provider failure, attempts re-warmup with retry backoff
 - **Graceful degradation** — Returns `{"continue": true}` when provider down instead of blocking

@@ -170,6 +170,7 @@ All endpoints use JSON for request/response bodies. The daemon never blocks a pr
 - `project` (required) — Absolute path to project (identifies which LanceDB table to query)
 - `prompt` (required) — User's prompt text to embed and search
 - `cwd` (optional) — Project root directory for resolving git-committed config overrides
+- `contextStats` (optional) — Context-window stats from the statusline bridge: `{input_tokens, output_tokens, used_percentage}`. When present and `capacityProtection.enabled`, triggers graduated injection throttling.
 
 **Response (success with injection):**
 ```json
@@ -199,6 +200,26 @@ All endpoints use JSON for request/response bodies. The daemon never blocks a pr
   }
 }
 ```
+
+**Response (capacity exceeded — token overflow protection):**
+```json
+{
+  "continue": true,
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "[contextus: conversation at 87% capacity (174K tokens), injection disabled to prevent overflow]"
+  }
+}
+```
+
+**Graduated Capacity Behavior:**
+When `contextStats.used_percentage` is provided:
+- Below `reduceAt` (default 70%): Normal injection
+- Above `reduceAt`: topK capped at min(configured, 3)
+- Above `minimalAt` (default 80%): topK=1, injection floor raised 20%
+- Above `disableAt` (default 85%): Injection disabled entirely, warning message emitted
+
+Thresholds are configurable in `capacityProtection` config section.
 
 **Graceful Degradation Cases:**
 Returns `{"continue": true}` (no `hookSpecificOutput`) when:

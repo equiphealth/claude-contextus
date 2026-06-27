@@ -274,6 +274,64 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     return sendJson(res, 200, { continue: true });
   }
 
+  // --- Token capacity guard (GitHub #17) ---
+  // The statusline script writes context_window stats to a file; the query hook
+  // reads it and passes it here. When the conversation is near the model limit,
+  // suppress injection to prevent API overflow errors.
+  const contextStats = body.contextStats as
+    | {
+        input_tokens?: number;
+        output_tokens?: number;
+        used_percentage?: number;
+      }
+    | undefined;
+
+  let capacityTopK: number | undefined;
+  let capacityFloorMultiplier = 1.0;
+
+  if (
+    contextStats?.used_percentage &&
+    contextStats.used_percentage > 0 &&
+    cfg.capacityProtection.enabled !== false
+  ) {
+    const pct = contextStats.used_percentage;
+    const cpCfg = cfg.capacityProtection;
+    const disableAt = cpCfg?.disableAt ?? 85;
+    const minimalAt = cpCfg?.minimalAt ?? 80;
+    const reduceAt = cpCfg?.reduceAt ?? 70;
+
+    if (pct > disableAt) {
+      logInfo('Token capacity exceeded — disabling injection', {
+        project: projectLabel,
+        used_percentage: Math.round(pct),
+        input_tokens: contextStats.input_tokens
+      });
+      return sendJson(res, 200, {
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: 'UserPromptSubmit',
+          additionalContext: `[contextus: conversation at ${Math.round(pct)}% capacity (${Math.round((contextStats.input_tokens || 0) / 1000)}K tokens), injection disabled to prevent overflow]`
+        }
+      });
+    }
+    if (pct > minimalAt) {
+      capacityTopK = 1;
+      capacityFloorMultiplier = 1.2;
+      logInfo('Token capacity high — minimal injection', {
+        project: projectLabel,
+        used_percentage: Math.round(pct),
+        adjustedTopK: 1
+      });
+    } else if (pct > reduceAt) {
+      capacityTopK = Math.min(cfg.retrieval.topK, 3);
+      logInfo('Token capacity moderate — reducing injection', {
+        project: projectLabel,
+        used_percentage: Math.round(pct),
+        adjustedTopK: capacityTopK
+      });
+    }
+  }
+
   // --- Embedding + vector search (with hybrid fusion + keyword fallback + auto-recovery) ---
   // When hybrid='always': run keyword search in parallel with vector search, then
   // fuse via RRF. When embedding genuinely fails (provider down), degrade to
@@ -281,8 +339,9 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   let raw: Awaited<ReturnType<typeof search>>;
   let usedKeywordFallback = false;
   try {
+    const effectiveTopK = capacityTopK ?? cfg.retrieval.topK;
     const CHUNK_FANOUT = 4;
-    const fetchLimit = cfg.retrieval.topK * CHUNK_FANOUT;
+    const fetchLimit = effectiveTopK * CHUNK_FANOUT;
 
     // Always start with semantic search (workspace-scoped)
     const vec = await embedQuery(prompt);
@@ -400,8 +459,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const outcome = processSearchResults(
     raw,
     {
-      topK: cfg.retrieval.topK,
-      injectionFloor: cfg.retrieval.injectionFloor,
+      topK: capacityTopK ?? cfg.retrieval.topK,
+      injectionFloor: cfg.retrieval.injectionFloor * capacityFloorMultiplier,
       maxTokens: cfg.retrieval.maxTokens,
       provenanceFooter: cfg.retrieval.provenanceFooter
     },
@@ -1049,7 +1108,7 @@ const server = http.createServer((req, res) => {
           const results = raw.slice(0, limit).map((r) => ({
             id: r.id,
             filename: r.filename,
-            description: r.description || '',
+            description: (r as any).description || '',
             type: r.type,
             source: r.source,
             similarity: Number(r.similarity.toFixed(4))
