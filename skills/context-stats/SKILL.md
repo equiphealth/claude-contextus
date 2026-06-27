@@ -37,8 +37,12 @@ When this skill is invoked:
 ## Implementation
 
 ```bash
-npx tsx ~/.claude/plugins/contextus/scripts/cli/context-stats.ts [options]
+# Detect contextus installation (queries daemon, falls back to search)
+CONTEXTUS_ROOT=$(bash ~/.contextus/scripts/find-contextus-root.sh) || exit 1
+$CONTEXTUS_ROOT/node_modules/.bin/tsx $CONTEXTUS_ROOT/scripts/cli/context-stats.ts [options]
 ```
+
+**Discovery**: Uses fixed-location script at `~/.contextus/scripts/find-contextus-root.sh` which queries the daemon for `installRoot` (authoritative), then searches standard locations (`~/.claude/plugins/contextus`, `~/src/claude-contextus`, `~/dev/claude-contextus`).
 
 ### Flags
 
@@ -53,14 +57,19 @@ npx tsx ~/.claude/plugins/contextus/scripts/cli/context-stats.ts [options]
 ### Examples
 
 ```bash
+# Detect contextus location once, then use it
+CONTEXTUS_ROOT=$(bash ~/.contextus/scripts/find-contextus-root.sh) || exit 1
+TSX=$CONTEXTUS_ROOT/node_modules/.bin/tsx
+STATS="$TSX $CONTEXTUS_ROOT/scripts/cli/context-stats.ts"
+
 # Current project, last 30 days
-npx tsx ~/.claude/plugins/contextus/scripts/cli/context-stats.ts
+$STATS
 
 # Specific project, last 7 days with cost
-npx tsx ~/.claude/plugins/contextus/scripts/cli/context-stats.ts --project automation --window 7 --cost
+$STATS --project automation --window 7 --cost
 
 # All history as JSON
-npx tsx ~/.claude/plugins/contextus/scripts/cli/context-stats.ts --all --json
+$STATS --all --json
 ```
 
 ## Interpreting Results

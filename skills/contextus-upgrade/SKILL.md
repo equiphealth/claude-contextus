@@ -155,6 +155,17 @@ $TSX ~/src/claude-contextus/scripts/embed-contexts.ts
 # Other projects will re-embed on their next session start (reconcile handles it)
 ```
 
+### Step 3.5: Install Discovery Scripts
+
+After migrations, ensure discovery scripts are in the fixed location:
+
+```bash
+bash ~/src/claude-contextus/scripts/install-discovery-scripts.sh
+```
+
+This installs `daemon-config.sh` and `find-contextus-root.sh` to `~/.contextus/scripts/`
+so skills can reliably discover the contextus installation.
+
 ### Step 4: Stamp Version
 
 After all migrations succeed, stamp the data version.
