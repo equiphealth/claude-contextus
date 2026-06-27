@@ -36,6 +36,10 @@ import {
   projectHash,
   findPluginConfig
 } from '../lib/config.js';
+
+// ESM equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { warmup, embedQuery } from '../lib/embedding/embedder.js';
 import {
   search,
@@ -76,8 +80,10 @@ import {
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 import { startEvalLoop, stopEvalLoop } from './eval-loop.js';
 
-const PORT = 37800;
-const BASE_URL = `http://127.0.0.1:${PORT}`;
+/** Preferred daemon port (fallback to OS-assigned if unavailable). */
+const PREFERRED_PORT = parseInt(process.env.CONTEXTUS_DAEMON_PORT || '37800', 10);
+let actualPort: number = PREFERRED_PORT;
+const BASE_URL = () => `http://127.0.0.1:${actualPort}`;
 /** Daemon/protocol version read from package.json at startup. */
 const DAEMON_VERSION = (() => {
   try {
@@ -155,7 +161,7 @@ async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse)
   const cfg = loadConfig();
 
   // Liveness probe: if model appears warm, verify the provider is still up.
-  const url = new URL(req.url ?? '/', BASE_URL);
+  const url = new URL(req.url ?? '/', BASE_URL());
   if (url.searchParams.get('probe') === 'true' && modelLoaded) {
     try {
       await embedQuery('health');
@@ -175,6 +181,7 @@ async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse)
   sendJson(res, 200, {
     status: 'ok',
     version: DAEMON_VERSION,
+    installRoot: path.resolve(__dirname, '..'),
     uptime: process.uptime(),
     modelLoaded,
     warmupError,
@@ -978,14 +985,14 @@ const server = http.createServer((req, res) => {
   // GET /novelty?project=foo — recently-injected pattern names for the awareness
   // hook's novelty signal. Cheap in-memory read; no body.
   if (method === 'GET' && url.startsWith('/novelty')) {
-    const project = new URL(url, BASE_URL).searchParams.get('project') ?? 'default';
+    const project = new URL(url, BASE_URL()).searchParams.get('project') ?? 'default';
     return sendJson(res, 200, { project, recent: noveltyFor(project) });
   }
 
   // GET /introspect?project=foo — live config + corpus stats (Self-doc Layer 1).
   // Feeds /context-status so the dashboard shows real numbers, not a mock.
   if (method === 'GET' && url.startsWith('/introspect')) {
-    const project = new URL(url, BASE_URL).searchParams.get('project') ?? undefined;
+    const project = new URL(url, BASE_URL()).searchParams.get('project') ?? undefined;
     buildIntrospection({
       version: DAEMON_VERSION,
       uptimeSeconds: process.uptime(),
@@ -1030,7 +1037,7 @@ const server = http.createServer((req, res) => {
 function writeRuntimeFiles(): void {
   fs.mkdirSync(RUNTIME_DIR, { recursive: true });
   fs.writeFileSync(PID_PATH, String(process.pid));
-  fs.writeFileSync(PORT_PATH, String(PORT));
+  fs.writeFileSync(PORT_PATH, String(actualPort));
 }
 
 function cleanupRuntimeFiles(): void {
@@ -1116,19 +1123,21 @@ async function startDaemon(): Promise<void> {
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
       // Another daemon already owns the port — defer to it and exit quietly.
-      logInfo('Port in use — another daemon is running, exiting', { port: PORT });
+      logInfo('Port in use — another daemon is running, exiting', { port: PREFERRED_PORT });
       process.exit(0);
     }
     logError('error', 'daemon', 'Server error', { message: err.message });
     process.exit(1);
   });
 
-  server.listen(PORT, '127.0.0.1', () => {
+  server.listen(PREFERRED_PORT, '127.0.0.1', () => {
+    actualPort = (server.address() as any).port;
     writeRuntimeFiles();
     const cfg = loadConfig();
     logInfo('Daemon started', {
       pid: process.pid,
-      port: PORT,
+      port: actualPort,
+      preferredPort: PREFERRED_PORT,
       provider: cfg.embedding.provider
     });
     // Warm the model AFTER the socket is listening so /health is reachable and
