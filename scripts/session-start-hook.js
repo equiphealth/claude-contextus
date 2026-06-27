@@ -173,8 +173,11 @@ async function main() {
     // the installed code version. Never blocks, never auto-migrates.
     const upgrade = checkUpgradeNeeded();
     if (upgrade && upgrade.needed) {
+      const action = upgrade.hasBreakingChanges
+        ? `run /contextus-upgrade to migrate (breaking changes)`
+        : `updated to ${upgrade.installedVersion}`;
       lines.push(
-        `contextus: upgrade available (${upgrade.dataVersion} → ${upgrade.installedVersion}) — run /contextus-upgrade when ready.`
+        `contextus: ${action}`
       );
     }
 
