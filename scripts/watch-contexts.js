@@ -16,7 +16,7 @@
 
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { BASE_URL, ensureDaemonRunning } from './lib/daemon-control.js';
+import { getBaseURL, ensureDaemonRunning } from './lib/daemon-control.js';
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -69,7 +69,7 @@ async function main() {
   if (!isContextFile(file, cwd)) return emit({ continue: true });
 
   try {
-    await fetch(`${BASE_URL}/notify`, {
+    await fetch(`${getBaseURL()}/notify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ file, cwd, project: projectId(cwd) }),

@@ -14,7 +14,7 @@
 
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { BASE_URL, ensureDaemonRunning } from './lib/daemon-control.js';
+import { getBaseURL, ensureDaemonRunning } from './lib/daemon-control.js';
 
 /** Read all of stdin as a string (the hook payload JSON). */
 function readStdin() {
@@ -52,7 +52,7 @@ async function main() {
   if (!prompt.trim()) return emit({ continue: true });
 
   try {
-    const res = await fetch(`${BASE_URL}/query`, {
+    const res = await fetch(`${getBaseURL()}/query`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ prompt, project: projectId(cwd), cwd }),

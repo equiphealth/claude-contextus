@@ -27,7 +27,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BASE_URL } from './lib/daemon-control.js';
+import { getBaseURL } from './lib/daemon-control.js';
 import { stripJsonComments } from './lib/parse-jsonc.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -85,7 +85,7 @@ function captureMode() {
 /** Ask the daemon what it has recently injected for this project (best-effort). */
 async function recentPatterns(project) {
   try {
-    const res = await fetch(`${BASE_URL}/novelty?project=${encodeURIComponent(project)}`, {
+    const res = await fetch(`${getBaseURL()}/novelty?project=${encodeURIComponent(project)}`, {
       signal: AbortSignal.timeout(1000),
     });
     if (!res.ok) return [];
