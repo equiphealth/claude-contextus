@@ -127,9 +127,10 @@ If [1]: run `/migrate-memory` dry-run after setup completes.
 
 ### Execute (Quick Track)
 
-1. Install discovery scripts to fixed location:
+1. Install discovery scripts and statusline bridge:
    ```bash
    bash ~/src/claude-contextus/scripts/install-discovery-scripts.sh
+   bash ~/src/claude-contextus/scripts/install-statusline-bridge.sh
    ```
 
 2. Run the setup script:
@@ -347,9 +348,10 @@ If no `existingProjects`, skip silently.
 
 ### Execute (Power User Track)
 
-1. Install discovery scripts to fixed location:
+1. Install discovery scripts and statusline bridge:
    ```bash
    bash ~/src/claude-contextus/scripts/install-discovery-scripts.sh
+   bash ~/src/claude-contextus/scripts/install-statusline-bridge.sh
    ```
 
 2. Write `.claude/contextus.jsonc` with all chosen values:

@@ -246,6 +246,17 @@ export interface UsageEvaluationConfig {
   staleness: StalenessConfig;
 }
 
+export interface CapacityProtectionConfig {
+  /** Whether token overflow protection is enabled. Default: true. */
+  enabled: boolean;
+  /** Percentage threshold to reduce topK to min(configured, 3). Default: 70. */
+  reduceAt: number;
+  /** Percentage threshold for minimal injection (topK=1, floor*1.2). Default: 80. */
+  minimalAt: number;
+  /** Percentage threshold to disable injection entirely. Default: 85. */
+  disableAt: number;
+}
+
 export interface ContextusConfig {
   providers: ProvidersConfig;
   embedding: EmbeddingConfig;
@@ -256,6 +267,7 @@ export interface ContextusConfig {
   calibration: CalibrationConfig;
   logging: LoggingConfig;
   usageEvaluation: UsageEvaluationConfig;
+  capacityProtection: CapacityProtectionConfig;
 }
 
 /** Hard defaults — embedding locked to Transformers.js + nomic. */
@@ -329,6 +341,12 @@ const DEFAULTS: ContextusConfig = {
       noiseThreshold: 0.3,
       minEvals: 10
     }
+  },
+  capacityProtection: {
+    enabled: true,
+    reduceAt: 70,
+    minimalAt: 80,
+    disableAt: 85
   }
 };
 
@@ -446,6 +464,7 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
     Object.assign(merged.usageEvaluation, uRest);
     if (staleOverride) Object.assign(merged.usageEvaluation.staleness, staleOverride);
   }
+  if (c.capacityProtection) Object.assign(merged.capacityProtection, c.capacityProtection);
 }
 
 /** Read a JSON/JSONC config file's `config` object (or the whole file if no `config` key). */

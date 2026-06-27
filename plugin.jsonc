@@ -5,7 +5,7 @@
   // Two files on purpose: this is the tunable runtime config, that is the install descriptor.
   // Keep `version` in sync with the manifest.
   "name": "contextus",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
   "repository": "github:anthonypdawson/claude-contextus",
@@ -133,6 +133,16 @@
       // Logs full prompt + injection to ~/.contextus/logs/paranoid.jsonl.
       // OFF by default (privacy). View with: contextus watch --paranoid
       "paranoid": true
+    },
+    "capacityProtection": {
+      // Token overflow prevention (GitHub #17). The statusline script writes
+      // context_window stats; the query hook passes them to the daemon. When the
+      // conversation is near the model's context limit, injection is reduced or disabled.
+      "enabled": true,
+      // Percentage thresholds for graduated degradation:
+      "reduceAt": 70, // reduce topK to min(configured, 3)
+      "minimalAt": 80, // topK=1, floor*1.2
+      "disableAt": 85 // no injection, emit warning
     },
     "usageEvaluation": {
       // Evaluate injected context usage after each response. Runs in a background loop

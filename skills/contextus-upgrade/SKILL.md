@@ -155,16 +155,18 @@ $TSX ~/src/claude-contextus/scripts/embed-contexts.ts
 # Other projects will re-embed on their next session start (reconcile handles it)
 ```
 
-### Step 3.5: Install Discovery Scripts
+### Step 3.5: Install Scripts & Bridges
 
-After migrations, ensure discovery scripts are in the fixed location:
+After migrations, ensure discovery scripts and the statusline bridge are installed:
 
 ```bash
 bash ~/src/claude-contextus/scripts/install-discovery-scripts.sh
+bash ~/src/claude-contextus/scripts/install-statusline-bridge.sh
 ```
 
-This installs `daemon-config.sh` and `find-contextus-root.sh` to `~/.contextus/scripts/`
-so skills can reliably discover the contextus installation.
+The first installs `daemon-config.sh` and `find-contextus-root.sh` to `~/.contextus/scripts/`.
+The second patches `~/.claude/statusline-command.sh` to write context-window stats that
+contextus reads for token overflow protection (GitHub #17). Both are idempotent.
 
 ### Step 4: Stamp Version
 

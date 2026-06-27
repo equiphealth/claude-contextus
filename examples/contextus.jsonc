@@ -89,6 +89,16 @@
     }
   },
 
+  "capacityProtection": {
+    // Token overflow prevention: reads context-window stats from statusline bridge
+    // and reduces/disables injection as conversation approaches model limit.
+    // Requires statusline bridge (installed by /contextus-setup or /contextus-upgrade).
+    "enabled": true, // Set false to disable capacity-aware throttling
+    "reduceAt": 70, // % capacity to start reducing topK (to min(configured, 3))
+    "minimalAt": 80, // % capacity for minimal injection (topK=1, floor*1.2)
+    "disableAt": 85 // % capacity to disable injection entirely (emit warning only)
+  },
+
   "usageEvaluation": {
     // Continuous usage feedback: evaluates every injected context to learn what's actually
     // useful. Runs in background (never blocks prompts). Powers /context-stats, /context-review,
