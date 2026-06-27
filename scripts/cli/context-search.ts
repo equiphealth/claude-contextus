@@ -100,10 +100,10 @@ async function search(query: string, project: string, limit: number): Promise<Se
   // daemon scopes to just [projectId, '__user__'] without workspace siblings.
   const projectId = resolveProjectId(project);
   const cwd = projectPath(projectId) || undefined;
-  const response = await fetch(`${daemonUrl}/query`, {
+  const response = await fetch(`${daemonUrl}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: query, project: projectId, cwd }),
+    body: JSON.stringify({ query, project: projectId, cwd, limit }),
     signal: AbortSignal.timeout(10_000)
   });
 
@@ -113,48 +113,20 @@ async function search(query: string, project: string, limit: number): Promise<Se
 
   const data = await response.json();
 
-  // The /query endpoint returns hook format with additionalContext containing results
-  // Parse the injected context blocks or nearest topics from the message
-  const context = data.hookSpecificOutput?.additionalContext || '';
-  const results: SearchResult[] = [];
-
-  // Extract patterns from [contextus — N patterns matched] blocks
-  const patternRegex = /## (.+?) › .+?\n_type: (\w+) \| source: (\w+) \| similarity: ([\d.]+)/g;
-  let match;
-  while ((match = patternRegex.exec(context)) !== null && results.length < limit) {
-    results.push({
-      file: match[1],
-      name: match[1].split('/').pop()?.replace(/\.md$/, '') || match[1],
-      description: '', // Not in the compact format
-      score: parseFloat(match[4]),
-      type: match[2],
-      source: match[3]
-    });
-  }
-
-  // Also try to extract from "Nearest topics:" in retrieval gap messages
-  if (results.length === 0) {
-    const nearestRegex = /Nearest topics: (.+?)(?:\n\n|$)/s;
-    const nearestMatch = context.match(nearestRegex);
-    if (nearestMatch) {
-      const topics = nearestMatch[1].split(',').map((t) => t.trim());
-      for (const topic of topics.slice(0, limit)) {
-        results.push({
-          file: topic,
-          name: topic,
-          description: '(No description available)',
-          score: 0,
-          type: 'unknown',
-          source: 'projectContext'
-        });
-      }
-    }
-  }
+  // The /search endpoint returns raw results with scores
+  const results: SearchResult[] = (data.results || []).map((r: any) => ({
+    file: r.filename || r.id,
+    name: r.filename?.split('/').pop()?.replace(/\.md$/, '') || r.id,
+    description: r.description || '',
+    score: r.similarity,
+    type: r.type,
+    source: r.source
+  }));
 
   return {
     results,
     query,
-    project
+    project: data.project || projectId
   };
 }
 
