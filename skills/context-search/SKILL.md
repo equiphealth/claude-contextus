@@ -19,6 +19,13 @@ Search the contextus corpus manually — useful for exploring what's available, 
 
 Queries the daemon's `/query` endpoint (same as automatic retrieval) but presents ALL matches, not just those above the injection floor. This lets you see what's in the corpus even if it wouldn't normally inject.
 
+**Search scope** (matches automatic retrieval):
+- Current project's `.claude/context/` and `docs/`
+- Linked projects (workspace siblings, if configured via `/link-project`)
+- User-scoped patterns (`~/.contextus/data/__user__/`)
+
+Override scope with `--project <name>` to search a different project.
+
 ## Usage
 
 ```bash
@@ -32,8 +39,9 @@ $SEARCH "error handling patterns"
 # More results with similarity scores
 $SEARCH "testing patterns" --limit 20 --scores
 
-# Specific project
+# Search a different project (by name, hash, or path)
 $SEARCH "deployment workflow" --project automation
+$SEARCH "how to log" --project /Users/me/other-project
 
 # JSON output for scripting
 $SEARCH "api patterns" --json
@@ -71,9 +79,10 @@ Found 5 matches:
 ## Notes
 
 - **Semantic search only** — Uses embeddings, not keyword matching
-- **Current project** — Searches the corpus for your current working directory
-- **All results** — Shows matches below injection floor (unlike automatic retrieval)
+- **Workspace-aware** — Includes linked projects + user-scoped patterns (same scope as automatic retrieval)
+- **All results** — Shows matches below injection floor (unlike automatic retrieval which filters)
 - **Same ranking** — Uses the same similarity scoring as automatic injection
+- **Natural queries work best** — "how to handle errors" retrieves better than just "errors"
 
 ## Related
 
