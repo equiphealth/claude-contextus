@@ -1,0 +1,214 @@
+#!/usr/bin/env node
+/**
+ * context-search CLI — Search the contextus corpus by semantic similarity or keywords.
+ *
+ * Usage:
+ *   context-search "query text"
+ *   context-search "query text" --limit 20
+ *   context-search "query text" --project automation
+ *   context-search "query text" --json
+ *   context-search "query text" --scores  # show similarity scores
+ */
+
+import { getDaemonURL } from '../../lib/daemon-url.js';
+import { projectHash } from '../../lib/config.js';
+
+interface SearchResult {
+  file: string;
+  name: string;
+  description: string;
+  score: number;
+  type: string;
+  source: string;
+}
+
+interface SearchResponse {
+  results: SearchResult[];
+  query: string;
+  project: string;
+}
+
+interface CliArgs {
+  query: string;
+  limit: number;
+  project?: string;
+  json: boolean;
+  scores: boolean;
+  help: boolean;
+}
+
+const USAGE = `context-search — Search the contextus corpus
+
+Usage:
+  context-search "query text" [options]
+
+Options:
+  --limit N        Max results to return (default: 10)
+  --project NAME   Target project (default: current directory)
+  --json           Output JSON instead of human-readable
+  --scores         Show similarity scores
+  --help           Show this help
+
+Examples:
+  # Search current project
+  context-search "how to handle errors"
+
+  # More results with scores
+  context-search "testing patterns" --limit 20 --scores
+
+  # Specific project
+  context-search "deployment" --project automation
+
+  # JSON output for scripting
+  context-search "api patterns" --json
+`;
+
+function parseArgs(argv: string[]): CliArgs {
+  const args: CliArgs = {
+    query: '',
+    limit: 10,
+    json: false,
+    scores: false,
+    help: false
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--help' || arg === '-h') {
+      args.help = true;
+    } else if (arg === '--json') {
+      args.json = true;
+    } else if (arg === '--scores') {
+      args.scores = true;
+    } else if (arg === '--limit' && i + 1 < argv.length) {
+      args.limit = parseInt(argv[++i], 10);
+    } else if (arg === '--project' && i + 1 < argv.length) {
+      args.project = argv[++i];
+    } else if (!arg.startsWith('--')) {
+      args.query = arg;
+    }
+  }
+
+  return args;
+}
+
+async function search(query: string, project: string, limit: number): Promise<SearchResponse> {
+  const daemonUrl = getDaemonURL();
+  const response = await fetch(`${daemonUrl}/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: query, project, cwd: process.cwd() }),
+    signal: AbortSignal.timeout(10_000)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Daemon returned ${response.status}: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  // The /query endpoint returns hook format with additionalContext containing results
+  // Parse the injected context blocks or nearest topics from the message
+  const context = data.hookSpecificOutput?.additionalContext || '';
+  const results: SearchResult[] = [];
+
+  // Extract patterns from [contextus — N patterns matched] blocks
+  const patternRegex = /## (.+?) › .+?\n_type: (\w+) \| source: (\w+) \| similarity: ([\d.]+)/g;
+  let match;
+  while ((match = patternRegex.exec(context)) !== null && results.length < limit) {
+    results.push({
+      file: match[1],
+      name: match[1].split('/').pop()?.replace(/\.md$/, '') || match[1],
+      description: '', // Not in the compact format
+      score: parseFloat(match[4]),
+      type: match[2],
+      source: match[3]
+    });
+  }
+
+  // Also try to extract from "Nearest topics:" in retrieval gap messages
+  if (results.length === 0) {
+    const nearestRegex = /Nearest topics: (.+?)(?:\n\n|$)/s;
+    const nearestMatch = context.match(nearestRegex);
+    if (nearestMatch) {
+      const topics = nearestMatch[1].split(',').map((t) => t.trim());
+      for (const topic of topics.slice(0, limit)) {
+        results.push({
+          file: topic,
+          name: topic,
+          description: '(No description available)',
+          score: 0,
+          type: 'unknown',
+          source: 'projectContext'
+        });
+      }
+    }
+  }
+
+  return {
+    results,
+    query,
+    project
+  };
+}
+
+function formatResults(response: SearchResponse, showScores: boolean): string {
+  const { results, query } = response;
+
+  if (results.length === 0) {
+    return `No results found for: "${query}"`;
+  }
+
+  let output = `## Search Results: "${query}"\n\n`;
+  output += `Found ${results.length} matches:\n\n`;
+
+  for (const result of results) {
+    const scoreStr = showScores ? ` (${result.score.toFixed(2)})` : '';
+    output += `📄 ${result.file}${scoreStr}\n`;
+    output += `   ${result.description}\n`;
+    if (result.type !== 'unknown') {
+      output += `   Type: ${result.type}`;
+      if (result.source && result.source !== 'projectContext') {
+        output += ` | Source: ${result.source}`;
+      }
+      output += '\n';
+    }
+    output += '\n';
+  }
+
+  return output;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.help) {
+    console.log(USAGE);
+    process.exit(0);
+  }
+
+  if (!args.query) {
+    console.error('Error: Query text required\n');
+    console.log(USAGE);
+    process.exit(1);
+  }
+
+  try {
+    const project = args.project || projectHash(process.cwd());
+    const response = await search(args.query, project, args.limit);
+
+    if (args.json) {
+      console.log(JSON.stringify(response, null, 2));
+    } else {
+      console.log(formatResults(response, args.scores));
+    }
+  } catch (error: any) {
+    console.error(`Error: ${error.message}`);
+    if (error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed')) {
+      console.error('\nIs the contextus daemon running? Try: /manage-daemon start');
+    }
+    process.exit(1);
+  }
+}
+
+main();
