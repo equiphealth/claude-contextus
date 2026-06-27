@@ -1,6 +1,6 @@
 ---
 name: context-doctor
-description: Diagnose contextus when something looks broken — daemon down, no injections, wrong corpus, phantom re-embeds, or a footer naming a file that wasn't injected. Maps each symptom to a real, deterministic check.
+description: Diagnose contextus issues — daemon health, corpus state, stale patterns (--stale), noisy patterns (--noisy), eval queue status. Maps symptoms to deterministic checks.
 ---
 
 # Context Doctor

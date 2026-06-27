@@ -1,6 +1,6 @@
 ---
 name: ctx-setup
-description: First-run setup for a project — scaffold .claude/context/, register contextus in CLAUDE.md (marked, idempotent block), run the initial embed, confirm the daemon. The only thing that edits CLAUDE.md.
+description: Alias for /contextus-setup. See that skill for setup workflow details.
 ---
 
 Alias for `/contextus-setup`. Invoke that skill now.

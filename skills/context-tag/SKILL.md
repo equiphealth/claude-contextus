@@ -1,6 +1,6 @@
 ---
 name: context-tag
-description: Manage tags on context files — backfill missing tags, suggest improvements, or bulk-update tags based on content analysis. Tags improve discoverability and future CAE classification.
+description: Manage tags on context files — backfill missing (--backfill), AI-suggested improvements (--suggest), or bulk-update. Improves discoverability and classification.
 ---
 
 # Tag Context
