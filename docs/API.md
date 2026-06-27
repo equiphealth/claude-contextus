@@ -235,6 +235,76 @@ Returns `{"continue": true}` (no `hookSpecificOutput`) when:
 
 ---
 
+### `POST /search`
+
+**Purpose:** Raw corpus search without injection floor filtering. Returns ALL matching patterns with similarity scores for debugging retrieval behavior. Used by `/context-search` skill.
+
+**Request Body:**
+```json
+{
+  "query": "How to handle logging?",
+  "project": "e70f0dcf1fbd",
+  "cwd": "/Users/Anthony.Dawson/src/my-project",
+  "limit": 10
+}
+```
+
+**Parameters:**
+- `query` (required) — Search query text to embed
+- `project` (optional) — Project identifier (name, hash, or path) — normalized to canonical hash
+- `cwd` (optional) — Project root directory for workspace scope resolution
+- `limit` (optional, default: 10) — Maximum results to return
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "id": "chunk-123",
+      "filename": "reference/reference-logging.md",
+      "description": "Project logging configuration and patterns",
+      "type": "reference",
+      "source": "projectContext",
+      "similarity": 0.8432
+    },
+    {
+      "id": "chunk-456",
+      "filename": "decisions/decision-logger-choice.md",
+      "description": "Why we chose Winston over Bunyan",
+      "type": "decision",
+      "source": "projectContext",
+      "similarity": 0.7123
+    }
+  ],
+  "query": "How to handle logging?",
+  "project": "e70f0dcf1fbd"
+}
+```
+
+**Key Differences from `/query`:**
+- **No injection floor** — Returns results even if similarity < configured threshold
+- **Simple JSON response** — Not wrapped in hook format
+- **Raw scores** — All similarity values visible for debugging
+- **No formatting** — Returns structured data, not markdown blocks
+- **No side effects** — Doesn't increment hit counters or record to novelty tracker
+
+**Use Cases:**
+- Debug why patterns fall below injection floor
+- Explore corpus contents without triggering injection
+- Test retrieval quality before committing context changes
+- Understand semantic similarity scores for calibration
+
+**Graceful Degradation:**
+Returns `{"results": [], ...}` when:
+- Model not loaded yet
+- No corpus exists for the project
+- Query is empty
+- Provider down (no keyword fallback in search mode)
+
+**Used by:** `/context-search` skill for manual corpus exploration.
+
+---
+
 ### `POST /capture`
 
 **Purpose:** Atomically create a context file, update the CONTEXT.md index, and embed it. Designed for staging-mode capture with minimal UI noise — one HTTP call replaces Write + Edit + re-embed.

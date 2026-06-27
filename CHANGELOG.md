@@ -27,18 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hook port references** — Updated all hooks to use `getBaseURL()` function instead of hardcoded `BASE_URL` constant for dynamic port resolution.
 
 ### Breaking Changes
-**This release requires manual migration** — see `docs/UPGRADE_GUIDE.md`
+**This release requires migration** — run `/contextus-upgrade` when ready, or see `docs/UPGRADE_GUIDE.md` for manual steps.
 
-1. Stop the daemon
-2. Delete old per-project DBs: `rm -rf ~/.contextus/data/*/contextus.lance`
-3. Delete corrupted registry: `rm ~/.contextus/data/projects.json`
-4. Re-embed each project from its directory:
-   ```bash
-   cd ~/your-project
-   ~/src/claude-contextus/node_modules/.bin/tsx \
-     ~/src/claude-contextus/scripts/embed-contexts.ts
-   ```
-5. Restart daemon
+The upgrade involves:
+1. Stopping the daemon
+2. Clearing old per-project databases and corrupted registry
+3. Re-embedding each project corpus with unified DB + project normalization
+4. Restarting the daemon
+
+The `/contextus-upgrade` skill automates this process and verifies each step.
 
 ## [0.11.0] - 2026-06-26
 
