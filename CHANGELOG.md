@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-27
+
+### Added
+- **Token overflow protection** — Graduated injection throttling prevents API 400 errors when conversations approach model context limits. Reads context-window stats from the statusline via a filesystem bridge and applies configurable thresholds (reduce at 70%, minimal at 80%, disable at 85%). Fixes #17.
+- **Statusline bridge installer** — `scripts/install-statusline-bridge.sh` idempotently patches `~/.claude/statusline-command.sh` to write context-window stats that contextus reads for capacity decisions.
+- **`capacityProtection` config section** — Configurable thresholds for graduated degradation in `plugin.jsonc` and `.claude/contextus.jsonc`.
+- **Stale stats cleanup** — Session-start hook removes context-stats files older than 24 hours.
+
+### Changed
+- **`/query` endpoint** accepts optional `contextStats` parameter with `{input_tokens, output_tokens, used_percentage}` for capacity-aware injection decisions.
+- **Setup and upgrade skills** now install the statusline bridge automatically.
+- **Package version**: 0.12.0 → 0.13.0
+
+### Migration
+This release adds the statusline bridge — run `/contextus-upgrade` or manually:
+```bash
+bash ~/src/claude-contextus/scripts/install-statusline-bridge.sh
+```
+No database migration needed. The bridge is optional; without it, contextus continues to inject normally (no overflow protection).
+
 ## [0.12.0] - 2026-06-27
 
 ### Added
