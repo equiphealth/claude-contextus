@@ -1,20 +1,27 @@
 ---
-name: audit-context
-description: Audit context files AND docs for frontmatter quality, duplicates, missing fields, type validity, and coverage gaps. Reports fixable issues with suggested corrections.
+name: context-audit
+description: Audit corpus quality — structural issues (missing frontmatter, type mismatches), staleness (not modified in 6+ months), and usage patterns (not retrieved). Comprehensive health check with suggested fixes.
 ---
 
-# Audit Context & Docs
+# Context Audit
 
-Structural quality audit across both `.claude/context/` and `docs/`. Checks that files
-will embed well and inject correctly — catches issues before they silently degrade
-retrieval quality.
+Comprehensive corpus quality audit covering structure, staleness, and usage. Catches issues before they degrade retrieval quality.
 
 ## When to Use
 
 - After bulk migrations or doc creation
-- Periodic hygiene (monthly)
+- Periodic maintenance (monthly/quarterly)
 - When `/context-status` shows unexpected type distributions
+- After major project changes
 - Before a full re-embed to catch issues upfront
+
+## Audit Modes
+
+**Three complementary checks** (run individually or together):
+
+1. **Structure audit** (`--structure` or default) — Frontmatter quality, type validity, duplicates
+2. **Staleness audit** (`--stale`) — Files not modified in 6+ months
+3. **Usage audit** (`--usage`) — Patterns never retrieved (requires Phase 1 data)
 
 ## Configuration
 
@@ -27,7 +34,9 @@ Docs coverage is gated by `config.docs.requireFrontmatter` in plugin.json (set d
 
 ## What It Checks
 
-### Both context files AND docs (when docs coverage is enabled):
+### Structure Audit (default)
+
+Both context files AND docs (when docs coverage is enabled):
 
 | Check | Issue | Fix |
 |---|---|---|
@@ -40,30 +49,61 @@ Docs coverage is gated by `config.docs.requireFrontmatter` in plugin.json (set d
 | **Duplicate names** | Same `name:` across files | Flag for rename |
 | **Near-duplicate descriptions** | High similarity between descriptions | Flag for dedup or differentiation |
 
-### Context files only (exempt for docs):
+Context files only (exempt for docs):
 
 | Check | Issue | Fix |
 |---|---|---|
 | **Prefix↔type mismatch** | Filename prefix disagrees with `metadata.type` | Rename file or fix type |
 | **Wrong directory** | File in `decisions/` but type is `gotcha` | Move to correct folder |
 
+### Staleness Audit (`--stale`)
+
+Files not modified in 6+ months (configurable threshold):
+
+| Check | Issue | Action |
+|---|---|---|
+| **Old + contradicted** | Newer context file disagrees | Archive or update |
+| **Old + code missing** | Referenced patterns no longer exist | Archive or update |
+| **Old + never retrieved** | Not retrieved in 6+ months (requires usage data) | Archive or improve keywords |
+| **Old + still relevant** | Recent commit references or retrievals | Keep, mark as reviewed |
+
+### Usage Audit (`--usage`)
+
+Patterns never retrieved (requires Phase 1 usage evaluation data):
+
+| Check | Issue | Action |
+|---|---|---|
+| **Zero retrievals** | Never retrieved in any session | Archive or improve keywords |
+| **Low score** | Retrieved but always scored < 0.2 | Rewrite or archive (noisy) |
+| **Zero injections** | Retrieved but never passed injection floor | Improve content quality |
+
 ## Usage
 
 ```bash
-# Audit everything (context + docs)
-/audit-context
+# All audits (structure + stale + usage)
+/context-audit
 
-# Only check docs
-/audit-context --docs-only
+# Individual audits
+/context-audit --structure     # Frontmatter quality only
+/context-audit --stale         # Modified 6+ months ago
+/context-audit --usage         # Never retrieved (needs Phase 1 data)
 
-# Only check context files
-/audit-context --context-only
+# Combine audits
+/context-audit --structure --stale
+/context-audit --stale --usage
 
-# Auto-fix safe issues (missing name derived from filename, etc.)
-/audit-context --fix
+# Scope
+/context-audit --docs-only     # Only check docs/
+/context-audit --context-only  # Only check .claude/context/
 
-# Show only files with issues (skip clean files)
-/audit-context --issues-only
+# Actions
+/context-audit --fix           # Auto-fix safe issues
+/context-audit --issues-only   # Skip clean files
+/context-audit --auto-archive  # Archive stale without prompts (caution!)
+
+# Custom staleness threshold
+/context-audit --stale --months 3
+/context-audit --stale --days 90
 ```
 
 ## Example Output
@@ -120,7 +160,8 @@ frontmatter from both context files and docs. Files without frontmatter get
 
 ## Related
 
-- `/audit-stale` — staleness/relevance audit (time-based)
-- `/create-context` — create properly structured context files
-- `/create-doc` — create properly structured docs
-- `/rebuild-embeddings` — re-embed after fixing issues
+- `/context-stats` — Usage analytics (Phase 2)
+- `/context-review` — Interactive curation workflow
+- `/context-archive` — Archive patterns bulk or individually
+- `/create-context` — Create properly structured context files
+- `/rebuild-embeddings` — Re-embed after fixing issues

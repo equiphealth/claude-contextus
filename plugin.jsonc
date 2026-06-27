@@ -166,10 +166,7 @@
     "skills/update-context",
     "skills/add-patterns",
     "skills/rebuild-embeddings",
-    "skills/tag-context",
     "skills/migrate-memory",
-    "skills/audit-context",
-    "skills/audit-stale",
     "skills/link-project",
     "skills/manage-daemon",
 
@@ -182,6 +179,8 @@
     "skills/context-calibrate",
     "skills/context-archive",
     "skills/context-merge",
+    "skills/context-tag",
+    "skills/context-audit",
 
     // Contextus operations (system)
     "skills/contextus-setup",
@@ -198,8 +197,9 @@
     "skills/ctx-calibrate",
     "skills/ctx-archive",
     "skills/ctx-merge",
-    "skills/ctx-setup",
     "skills/ctx-tag",
+    "skills/ctx-audit",
+    "skills/ctx-setup",
     "skills/ctx-migrate",
     "skills/ctx-watch"
   ]
