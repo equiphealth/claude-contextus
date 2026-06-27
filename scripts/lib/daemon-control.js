@@ -21,12 +21,42 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** repo root = two levels up from scripts/lib/ */
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
-export const PORT = 37800;
-export const BASE_URL = `http://127.0.0.1:${PORT}`;
+/** Preferred daemon port (fallback if daemon.port file doesn't exist). */
+export const PREFERRED_PORT = 37800;
 
 const RUNTIME_DIR = path.join(os.homedir(), '.contextus', 'runtime');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
 const PORT_PATH = path.join(RUNTIME_DIR, 'daemon.port');
+
+/**
+ * Base URL for daemon HTTP API.
+ * Priority: CONTEXTUS_DAEMON_URL env var > daemon.port file > PREFERRED_PORT (37800)
+ *
+ * Matches daemon-config.sh logic for consistency across shell and JS contexts.
+ */
+export function getBaseURL() {
+  // 1. Check env var (set by daemon-config.sh or user override)
+  if (process.env.CONTEXTUS_DAEMON_URL) {
+    return process.env.CONTEXTUS_DAEMON_URL;
+  }
+
+  // 2. Read actual port from runtime file (written by daemon at startup)
+  try {
+    if (fs.existsSync(PORT_PATH)) {
+      const content = fs.readFileSync(PORT_PATH, 'utf-8').trim();
+      const port = parseInt(content, 10);
+      if (port > 0 && port < 65536) {
+        return `http://127.0.0.1:${port}`;
+      }
+    }
+  } catch {
+    // File doesn't exist or is unreadable — fall through
+  }
+
+  // 3. Fall back to preferred port
+  const port = parseInt(process.env.CONTEXTUS_DAEMON_PORT || String(PREFERRED_PORT), 10);
+  return `http://127.0.0.1:${port}`;
+}
 // Two launch targets per process: the compiled JS (shipped/packaged) and the
 // TypeScript source (dev, run via tsx). resolveLaunch() picks per-process.
 const DAEMON_JS = path.join(REPO_ROOT, 'dist', 'daemon', 'server.js');
@@ -207,7 +237,7 @@ export function ensureDepsInstalled() {
 export async function getHealth(timeoutMs = 1000, { probe = false } = {}) {
   try {
     const qs = probe ? '?probe=true' : '';
-    const res = await fetch(`${BASE_URL}/health${qs}`, { signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(`${getBaseURL()}/health${qs}`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -398,7 +428,7 @@ export function hasPopulatedContextDir(cwd) {
 /** POST /reconcile with `check:true` — returns the corpus state plan, or null. */
 export async function checkCorpus(project, cwd, timeoutMs = 1500) {
   try {
-    const res = await fetch(`${BASE_URL}/reconcile`, {
+    const res = await fetch(`${getBaseURL()}/reconcile`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ project, cwd, check: true }),
@@ -414,7 +444,7 @@ export async function checkCorpus(project, cwd, timeoutMs = 1500) {
 /** POST /reconcile (no check) — fire the background reconcile. Returns body or null. */
 export async function fireReconcile(project, cwd, timeoutMs = 2000) {
   try {
-    const res = await fetch(`${BASE_URL}/reconcile`, {
+    const res = await fetch(`${getBaseURL()}/reconcile`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ project, cwd }),

@@ -34,8 +34,33 @@ import {
   updateProjectState
 } from '../lib/transcript/state.js';
 import { loadConfig } from '../lib/config.js';
+import fs from 'node:fs';
+import os from 'node:os';
 
-const BASE_URL = 'http://127.0.0.1:37800';
+/**
+ * Daemon base URL with dynamic port discovery.
+ * Priority: CONTEXTUS_DAEMON_URL env var > daemon.port file > default (37800)
+ */
+function getBaseURL(): string {
+  if (process.env.CONTEXTUS_DAEMON_URL) {
+    return process.env.CONTEXTUS_DAEMON_URL;
+  }
+
+  const portPath = path.join(os.homedir(), '.contextus', 'runtime', 'daemon.port');
+  try {
+    if (fs.existsSync(portPath)) {
+      const port = parseInt(fs.readFileSync(portPath, 'utf-8').trim(), 10);
+      if (port > 0 && port < 65536) {
+        return `http://127.0.0.1:${port}`;
+      }
+    }
+  } catch {
+    // Fall through
+  }
+
+  const port = parseInt(process.env.CONTEXTUS_DAEMON_PORT || '37800', 10);
+  return `http://127.0.0.1:${port}`;
+}
 
 interface CliArgs {
   project?: string;
@@ -112,7 +137,7 @@ const DEDUP_THRESHOLD = 0.82;
 /** Check if a similar pattern already exists in the corpus. */
 async function isDuplicate(pattern: ExtractedPattern, projectPath: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE_URL}/query`, {
+    const res = await fetch(`${getBaseURL()}/query`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -160,7 +185,7 @@ async function writePattern(
   }
 
   try {
-    const res = await fetch(`${BASE_URL}/capture`, {
+    const res = await fetch(`${getBaseURL()}/capture`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
