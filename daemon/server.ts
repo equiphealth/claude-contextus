@@ -212,11 +212,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   // Normalize project identifier (accepts hash, name, or path) to canonical hash.
   // Falls back to hashing cwd for legacy callers that don't send project yet.
-  const projectId = project
-    ? resolveProjectId(project)
-    : cwd
-      ? projectHash(cwd)
-      : undefined;
+  const projectId = project ? resolveProjectId(project) : cwd ? projectHash(cwd) : undefined;
   // Resolve workspace scope: self + siblings + __user__
   const projectScope = cwd
     ? resolveProjectScope(cwd)
@@ -1012,6 +1008,66 @@ const server = http.createServer((req, res) => {
           message: err instanceof Error ? err.message : String(err)
         });
         sendJson(res, 500, { error: 'introspect failed' });
+      });
+    return;
+  }
+
+  // POST /search — raw corpus search without injection floor (for /context-search skill)
+  if (method === 'POST' && url === '/search') {
+    readJsonBody(req)
+      .then(async (body) => {
+        const query = typeof body.query === 'string' ? body.query : '';
+        const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+        const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
+        const limit = typeof body.limit === 'number' ? body.limit : 10;
+
+        // Normalize project identifier
+        const projectId = project ? resolveProjectId(project) : cwd ? projectHash(cwd) : undefined;
+        const projectScope = cwd
+          ? resolveProjectScope(cwd)
+          : projectId
+            ? [projectId, '__user__']
+            : undefined;
+
+        if (!query.trim()) {
+          return sendJson(res, 200, { results: [] });
+        }
+
+        if (!modelLoaded) {
+          return sendJson(res, 503, { error: 'Model not loaded yet' });
+        }
+
+        if (!(await tableExists(projectId))) {
+          return sendJson(res, 200, { results: [] });
+        }
+
+        try {
+          const vec = await embedQuery(query);
+          const raw = await search(vec, limit * 4, undefined, projectId, projectScope);
+
+          // Return raw results with scores, no floor filtering
+          const results = raw.slice(0, limit).map((r) => ({
+            id: r.id,
+            filename: r.filename,
+            description: r.description || '',
+            type: r.type,
+            source: r.source,
+            similarity: Number(r.similarity.toFixed(4))
+          }));
+
+          sendJson(res, 200, { results, query, project: projectId });
+        } catch (err) {
+          logError('error', 'daemon', '/search failed', {
+            message: err instanceof Error ? err.message : String(err)
+          });
+          sendJson(res, 500, { error: 'Search failed' });
+        }
+      })
+      .catch((err) => {
+        logError('error', 'daemon', '/search handler failed', {
+          message: err instanceof Error ? err.message : String(err)
+        });
+        sendJson(res, 500, { error: 'Search request malformed' });
       });
     return;
   }
