@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.12.0] - 2026-06-27
+
+### Added
+- **Floor-free search endpoint** — New `POST /search` endpoint returns raw similarity scores without injection floor filtering. Enables `/context-search` skill to show ALL matching patterns with scores, useful for debugging retrieval and understanding why patterns fall below the threshold.
+- **Project identifier normalization** — Daemon now accepts project identifiers in three forms (friendly name like "automation", SHA256 hash, or full path) and normalizes them to canonical hash before DB operations. Fixes cross-project search bugs.
+- **Upgrade documentation** — Comprehensive `docs/UPGRADE_GUIDE.md` with step-by-step migration instructions for existing installations. Documents unified DB migration and registry cleanup process.
+- **Migration registry** — Updated `migrations/MIGRATIONS.md` with 0.12.0 breaking changes for `/contextus-upgrade` skill consumption.
+
+### Changed
+- **Unified database architecture** — All projects now share one LanceDB instance at `~/.contextus/data/contextus.lance` instead of per-project databases. Project isolation via `project` column (SHA256 hash of absolute path).
+- **Dynamic port discovery** — Daemon can bind to OS-assigned port if preferred port 37800 is unavailable. Port resolution centralized with caching across all daemon clients.
+- **Skill naming consolidated** — Standardized naming: `context-*` for corpus operations, `contextus-*` for system operations, `ctx-*` for aliases only.
+- **Package version**: 0.11.0 → 0.12.0
+
+### Fixed
+- **Project scoping bug** — Daemon endpoints now use normalized project hash for ALL DB operations (tableExists, search, loadCorpusForKeyword, incrementHits). Previously used raw string causing empty results.
+- **Registry corruption** — Cleared corrupted `projects.json` entries where projects were registered with wrong paths.
+- **Hook port references** — Updated all hooks to use `getBaseURL()` function instead of hardcoded `BASE_URL` constant for dynamic port resolution.
+
+### Breaking Changes
+**This release requires manual migration** — see `docs/UPGRADE_GUIDE.md`
+
+1. Stop the daemon
+2. Delete old per-project DBs: `rm -rf ~/.contextus/data/*/contextus.lance`
+3. Delete corrupted registry: `rm ~/.contextus/data/projects.json`
+4. Re-embed each project from its directory:
+   ```bash
+   cd ~/your-project
+   ~/src/claude-contextus/node_modules/.bin/tsx \
+     ~/src/claude-contextus/scripts/embed-contexts.ts
+   ```
+5. Restart daemon
+
 ## [0.11.0] - 2026-06-26
 
 ### Added
