@@ -1,3 +1,8 @@
+---
+name: context-review
+description: Interactive corpus curation workflow — review patterns and improve/archive/merge based on usage data. Identifies noisy patterns (high retrieval, low score), stale patterns (not retrieved in 6+ months), and duplicates. Offers archive/rewrite/merge actions.
+---
+
 # context-review
 
 **Interactive corpus curation workflow** — review patterns and improve/archive/merge based on usage data.

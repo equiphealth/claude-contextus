@@ -28,6 +28,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   loadConfig,
   loadProjectConfig,
@@ -77,8 +78,18 @@ import { startEvalLoop, stopEvalLoop } from './eval-loop.js';
 
 const PORT = 37800;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-/** Daemon/protocol version reported by /introspect (keep in sync with plugin.json). */
-const DAEMON_VERSION = '0.1.0';
+/** Daemon/protocol version read from package.json at startup. */
+const DAEMON_VERSION = (() => {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const pkgPath = path.join(__dirname, '../package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    return pkg.version;
+  } catch {
+    return 'unknown';
+  }
+})();
 const RUNTIME_DIR = expandHome('~/.contextus/runtime');
 const CAPTURES_LOG = expandHome('~/.contextus/captures.log');
 const PID_PATH = path.join(RUNTIME_DIR, 'daemon.pid');
@@ -163,6 +174,7 @@ async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse)
     stats.queries > 0 ? Number(((stats.expansionFired / stats.queries) * 100).toFixed(1)) : 0;
   sendJson(res, 200, {
     status: 'ok',
+    version: DAEMON_VERSION,
     uptime: process.uptime(),
     modelLoaded,
     warmupError,
