@@ -14,35 +14,46 @@ should perform.
 
 ---
 
-## 0.8.0 — Unified Database & Workspaces
+## 0.12.0 — Unified Database & Project Normalization
 
 **What changed:**
 - Single shared LanceDB at `~/.contextus/data/contextus.lance` replaces per-project DBs
-- Every row has a `project` column (sha256 hash of the absolute path)
+- Every row has a `project` column (SHA256 hash of absolute path, not project name)
+- Project identifiers (name/hash/path) normalized to canonical hash before DB operations
+- Project registry at `~/.contextus/data/projects.json` enables name → hash resolution
 - `linkedProjects` config replaced by workspace files (`~/.contextus/workspaces/`)
-- `linkedContext` source label replaced by `siblingContext` (workspace-scoped queries)
-- `deleteBySource()` removed; `deleteByProject()` added
-- `resolveDBPath()` returns a fixed path (ignores project param)
+- New `/search` endpoint for floor-free corpus queries (used by `/context-search`)
+
+**Why breaking:**
+- Old DBs used project name (e.g., "automation") for isolation
+- New DB uses SHA256 hash (e.g., "e70f0dcf1fbd") for isolation
+- Pre-normalization code may have corrupted the registry with wrong paths
 
 **Detection:**
 - Per-project DB dirs exist at `~/.contextus/data/<name>/contextus.lance/`
-- `linkedProjects` key in any `~/.contextus/data/<name>/config.json`
-- Rows without a `project` column in an existing corpus
+- Corrupted `projects.json` (entries pointing to wrong paths)
+- Old queries return empty results (project name not found in new DB)
 
 **Steps:**
-1. Stop the daemon (holds memoized connection to old DB path; respawns on next session)
-2. Delete old per-project DB directories and `__manifest` artifacts (`~/.contextus/data/<name>/`)
-3. Convert `linkedProjects` config entries → workspace JSONC files
-4. Remove `linkedProjects` key from tier-2 config files
-5. Re-embed the current project (rows now get `project` column stamped)
-6. Other projects re-embed on their next session start (reconcile detects empty corpus)
+1. Stop the daemon (holds memoized connection to old DB path)
+2. Delete old per-project DB directories (`rm -rf ~/.contextus/data/*/contextus.lance`)
+3. Delete corrupted registry (`rm ~/.contextus/data/projects.json`)
+4. Keep usage logs (usage-ratings.jsonl, .eval-queue.jsonl remain per-project)
+5. Re-embed each project from its directory:
+   ```bash
+   cd ~/your-project
+   ~/src/claude-contextus/node_modules/.bin/tsx \
+     ~/src/claude-contextus/scripts/embed-contexts.ts
+   ```
+6. Verify with `/context-search` using project name or hash
+7. Restart daemon to load new code
 
 **Scripts:**
-- `pnpm upgrade-detect` — reports what needs migrating (JSON output)
-- `pnpm migrate-workspaces` — converts linked projects → workspaces
-- `pnpm embed` — re-embeds with unified DB + project column
+- Manual re-embed (no automated script yet — see UPGRADE_GUIDE.md)
+- `/context-search` to verify after migration
 
-**Rollback:** Not needed (no other users; re-embed is the forward path).
+**Rollback:**
+Restore backup of `~/.contextus/data/`, checkout previous version, restart daemon.
 
 ---
 
