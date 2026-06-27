@@ -111,7 +111,7 @@ async function search(query: string, project: string, limit: number): Promise<Se
     throw new Error(`Daemon returned ${response.status}: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as { results?: any[]; project?: string };
 
   // The /search endpoint returns raw results with scores
   const results: SearchResult[] = (data.results || []).map((r: any) => ({

@@ -1108,7 +1108,7 @@ const server = http.createServer((req, res) => {
           const results = raw.slice(0, limit).map((r) => ({
             id: r.id,
             filename: r.filename,
-            description: r.description || '',
+            description: (r as any).description || '',
             type: r.type,
             source: r.source,
             similarity: Number(r.similarity.toFixed(4))
