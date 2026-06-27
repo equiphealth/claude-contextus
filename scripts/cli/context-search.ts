@@ -12,6 +12,7 @@
 
 import { getDaemonURL } from '../../lib/daemon-url.js';
 import { projectHash } from '../../lib/config.js';
+import { resolveProjectId, projectPath } from '../../lib/workspace.js';
 
 interface SearchResult {
   file: string;
@@ -94,10 +95,15 @@ function parseArgs(argv: string[]): CliArgs {
 
 async function search(query: string, project: string, limit: number): Promise<SearchResponse> {
   const daemonUrl = getDaemonURL();
+  // Normalize project to hash, then resolve to path for proper scope resolution.
+  // If path lookup fails (project not registered), pass undefined for cwd so the
+  // daemon scopes to just [projectId, '__user__'] without workspace siblings.
+  const projectId = resolveProjectId(project);
+  const cwd = projectPath(projectId) || undefined;
   const response = await fetch(`${daemonUrl}/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: query, project, cwd: process.cwd() }),
+    body: JSON.stringify({ prompt: query, project: projectId, cwd }),
     signal: AbortSignal.timeout(10_000)
   });
 

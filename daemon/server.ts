@@ -62,7 +62,7 @@ import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { resolveProjectScope, registerProject } from '../lib/workspace.js';
+import { resolveProjectScope, registerProject, resolveProjectId } from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import {
   readState as readCalibrationState,
@@ -210,9 +210,13 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
   // cwd = the project repo root, needed for the git-committed tier-3 config override.
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
-  // project is now the pre-computed projectId hash from callers (sha256(abs_path).slice(0,12)).
-  // Only fall back to hashing cwd for legacy callers that don't send project yet.
-  const projectId = project ?? (cwd ? projectHash(cwd) : undefined);
+  // Normalize project identifier (accepts hash, name, or path) to canonical hash.
+  // Falls back to hashing cwd for legacy callers that don't send project yet.
+  const projectId = project
+    ? resolveProjectId(project)
+    : cwd
+      ? projectHash(cwd)
+      : undefined;
   // Resolve workspace scope: self + siblings + __user__
   const projectScope = cwd
     ? resolveProjectScope(cwd)
@@ -239,7 +243,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   }
 
   // No corpus yet for this project → silently inject nothing (not an error).
-  if (!(await tableExists(project))) {
+  if (!(await tableExists(projectId))) {
     logInfo('No corpus for project — skipping', { project: projectLabel });
     return sendJson(res, 200, { continue: true });
   }
@@ -250,8 +254,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // so similarities are meaningless. Fail fast + degrade rather than inject noise.
   // Project-aware: floor/topK/etc. resolve through the 3-tier merge (global →
   // machine-local → git-committed), so each project calibrates independently.
-  const cfg = loadProjectConfig(project, cwd);
-  const meta = readTableMeta(project);
+  const cfg = loadProjectConfig(projectId, cwd);
+  const meta = readTableMeta(projectId);
   const activeModel =
     cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model;
   if (meta && meta.embeddingModel !== activeModel) {
@@ -286,11 +290,11 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
 
     // Always start with semantic search (workspace-scoped)
     const vec = await embedQuery(prompt);
-    raw = await search(vec, fetchLimit, undefined, project, projectScope);
+    raw = await search(vec, fetchLimit, undefined, projectId, projectScope);
 
     if (cfg.retrieval.hybrid === 'always') {
       // Always-on hybrid: fuse keyword + semantic unconditionally
-      const corpus = await loadCorpusForKeyword(project, projectScope);
+      const corpus = await loadCorpusForKeyword(projectId, projectScope);
       const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
       if (keywordResults.length > 0) {
         raw = fuseRRF(raw, keywordResults, fetchLimit);
@@ -300,7 +304,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       // Rescues exact-symbol queries ("getLogger") that embed poorly but BM25 nails.
       const semanticBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
       if (semanticBest < cfg.retrieval.injectionFloor) {
-        const corpus = await loadCorpusForKeyword(project, projectScope);
+        const corpus = await loadCorpusForKeyword(projectId, projectScope);
         const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
         if (keywordResults.length > 0) {
           raw = fuseRRF(raw, keywordResults, fetchLimit);
@@ -326,7 +330,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     attemptWarmup();
 
     // Try keyword fallback before giving up entirely
-    const corpus = await loadCorpusForKeyword(project, projectScope);
+    const corpus = await loadCorpusForKeyword(projectId, projectScope);
     if (corpus.length === 0) {
       return sendJson(res, 200, { continue: true });
     }
@@ -362,7 +366,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       const variantSearches = await Promise.all(
         expanded.variants.map(async (variant) => {
           const vVec = await embedQuery(variant);
-          return search(vVec, variantLimit, undefined, project, projectScope);
+          return search(vVec, variantLimit, undefined, projectId, projectScope);
         })
       );
       // Union: merge all results, dedupe by row id (keep highest similarity).
@@ -449,7 +453,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   //  - remember the set so /novelty can tell the awareness hook what we have
   incrementHits(
     included.map((r) => r.id),
-    project
+    projectId
   ).catch((err) =>
     logError('warn', 'daemon', 'hit-count update failed', {
       message: err instanceof Error ? err.message : String(err)
@@ -608,7 +612,7 @@ async function handleCapture(
 
   // Lazy-register for hash→name reverse lookup
   if (cwd) {
-    const id = project ?? projectHash(cwd);
+    const id = project ? resolveProjectId(project) : projectHash(cwd);
     registerProject(id, cwd);
   }
 
@@ -871,7 +875,8 @@ async function handleReconcile(
   const projectLabel = project ?? 'default';
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for reconcile' });
-  const projectId = project ?? projectHash(cwd);
+  // Normalize project identifier (accepts hash, name, or path) to canonical hash
+  const projectId = project ? resolveProjectId(project) : projectHash(cwd);
   registerProject(projectId, cwd);
   const check = body.check === true;
   const contextDir = path.join(cwd, '.claude', 'context');
@@ -992,7 +997,9 @@ const server = http.createServer((req, res) => {
   // GET /introspect?project=foo — live config + corpus stats (Self-doc Layer 1).
   // Feeds /context-status so the dashboard shows real numbers, not a mock.
   if (method === 'GET' && url.startsWith('/introspect')) {
-    const project = new URL(url, BASE_URL()).searchParams.get('project') ?? undefined;
+    const projectParam = new URL(url, BASE_URL()).searchParams.get('project') ?? undefined;
+    // Normalize project identifier (accepts hash, name, or path) to canonical hash
+    const project = projectParam ? resolveProjectId(projectParam) : undefined;
     buildIntrospection({
       version: DAEMON_VERSION,
       uptimeSeconds: process.uptime(),
