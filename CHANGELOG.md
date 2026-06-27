@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.12.0] - 2026-06-27
 
 ### Added
+- **Automatic upgrade notification** — SessionStart hook now detects when the plugin has been updated and notifies users. Checks MIGRATIONS.md to determine if breaking changes require `/contextus-upgrade` or if it's just a code-only update.
 - **Floor-free search endpoint** — New `POST /search` endpoint returns raw similarity scores without injection floor filtering. Enables `/context-search` skill to show ALL matching patterns with scores, useful for debugging retrieval and understanding why patterns fall below the threshold.
 - **Project identifier normalization** — Daemon now accepts project identifiers in three forms (friendly name like "automation", SHA256 hash, or full path) and normalizes them to canonical hash before DB operations. Fixes cross-project search bugs.
 - **Upgrade documentation** — Comprehensive `docs/UPGRADE_GUIDE.md` with step-by-step migration instructions for existing installations. Documents unified DB migration and registry cleanup process.
