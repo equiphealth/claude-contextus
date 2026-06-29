@@ -42,7 +42,7 @@ The workflows are ready to run — just push to GitHub. No manual setup required
    ```json
    "repository": {
      "type": "git",
-     "url": "https://github.com/anthonypdawson/claude-contextus.git"
+     "url": "https://github.com/equiphealth/claude-contextus.git"
    }
    ```
 
@@ -55,8 +55,8 @@ The workflows are ready to run — just push to GitHub. No manual setup required
 Add these to the top of `README.md`:
 
 ```markdown
-[![CI](https://github.com/anthonypdawson/claude-contextus/actions/workflows/ci.yml/badge.svg)](https://github.com/anthonypdawson/claude-contextus/actions/workflows/ci.yml)
-[![Release](https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml/badge.svg)](https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml)
+[![CI](https://github.com/equiphealth/claude-contextus/actions/workflows/ci.yml/badge.svg)](https://github.com/equiphealth/claude-contextus/actions/workflows/ci.yml)
+[![Release](https://github.com/equiphealth/claude-contextus/actions/workflows/release.yml/badge.svg)](https://github.com/equiphealth/claude-contextus/actions/workflows/release.yml)
 ```
 
 ---

@@ -24,7 +24,7 @@ Use the `find-contextus-root.sh` helper script:
 
 ```bash
 # Detect contextus installation (queries daemon, then searches standard locations)
-CONTEXTUS_ROOT=$(bash <(curl -s https://raw.githubusercontent.com/anthonypdawson/claude-contextus/main/scripts/find-contextus-root.sh)) || exit 1
+CONTEXTUS_ROOT=$(bash <(curl -s https://raw.githubusercontent.com/equiphealth/claude-contextus/main/scripts/find-contextus-root.sh)) || exit 1
 
 TSX=$CONTEXTUS_ROOT/node_modules/.bin/tsx
 SCRIPT=$CONTEXTUS_ROOT/scripts/cli/your-script.ts
@@ -59,7 +59,7 @@ For skills that might run anywhere:
 ```bash
 # Download and run the helper (caches in /tmp)
 HELPER="/tmp/find-contextus-root-$$.sh"
-curl -sS https://raw.githubusercontent.com/anthonypdawson/claude-contextus/main/scripts/find-contextus-root.sh > "$HELPER"
+curl -sS https://raw.githubusercontent.com/equiphealth/claude-contextus/main/scripts/find-contextus-root.sh > "$HELPER"
 CONTEXTUS_ROOT=$(bash "$HELPER") || exit 1
 rm -f "$HELPER"
 

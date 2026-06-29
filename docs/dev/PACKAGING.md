@@ -95,7 +95,7 @@ marketplace-install smoke test (unverifiable locally).**
 **Acceptance spec (from `docs/quick-start.md`, document-driven) — NOT yet smoke-tested
 on a real install:** these exact commands must work for an end user:
 ```text
-/plugin marketplace add anthonypdawson/claude-contextus
+/plugin marketplace add equiphealth/claude-contextus
 /plugin install contextus@claude-contextus
 ```
 After install, hooks must fire automatically (no enable step), the daemon must spawn
@@ -137,7 +137,7 @@ double-loading.
 # TEST the marketplace install:
 1. Turn OFF the --plugin-dir wrapper (so plugin-dir is not in play)
 2. kill $(cat ~/.contextus/runtime/daemon.pid)        # force a real spawn
-3. /plugin marketplace add anthonypdawson/claude-contextus
+3. /plugin marketplace add equiphealth/claude-contextus
    /plugin install contextus@claude-contextus
 4. New session (NO --plugin-dir). Verify:
    - deps land in $CLAUDE_PLUGIN_DATA/node_modules

@@ -51,7 +51,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthonypdawson/claude-contextus.git"
+    "url": "https://github.com/equiphealth/claude-contextus.git"
   },
   "engines": {
     "node": ">=22.0.0"

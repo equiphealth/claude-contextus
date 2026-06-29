@@ -281,6 +281,6 @@ All timings on M4 Pro 48GB.
 
 ## Support
 
-- **Issues** — [GitHub Issues](https://github.com/anthonypdawson/claude-contextus/issues)
+- **Issues** — [GitHub Issues](https://github.com/equiphealth/claude-contextus/issues)
 - **Docs** — [docs/](.) directory (quick-start, migration guide, design docs)
 - **Self-help** — `/context-doctor` for troubleshooting, `/contextus-watch` for live debugging

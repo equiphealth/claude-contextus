@@ -8,14 +8,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/anthonypdawson/claude-contextus/releases">
-    <img src="https://img.shields.io/github/v/release/anthonypdawson/claude-contextus" alt="Latest Release">
+  <a href="https://github.com/equiphealth/claude-contextus/releases">
+    <img src="https://img.shields.io/github/v/release/equiphealth/claude-contextus" alt="Latest Release">
   </a>
-  <a href="https://github.com/anthonypdawson/claude-contextus/actions/workflows/test.yml">
-    <img src="https://github.com/anthonypdawson/claude-contextus/actions/workflows/test.yml/badge.svg" alt="Test">
+  <a href="https://github.com/equiphealth/claude-contextus/actions/workflows/test.yml">
+    <img src="https://github.com/equiphealth/claude-contextus/actions/workflows/test.yml/badge.svg" alt="Test">
   </a>
-  <a href="https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml">
-    <img src="https://github.com/anthonypdawson/claude-contextus/actions/workflows/release.yml/badge.svg" alt="Release">
+  <a href="https://github.com/equiphealth/claude-contextus/actions/workflows/release.yml">
+    <img src="https://github.com/equiphealth/claude-contextus/actions/workflows/release.yml/badge.svg" alt="Release">
   </a>
 </p>
 
@@ -108,7 +108,7 @@ Markdown files, human-readable, merge-friendly, version-controlled. No vendor lo
 **[v1.1 — GitHub marketplace]** Add the marketplace, then install:
 
 ```text
-/plugin marketplace add anthonypdawson/claude-contextus
+/plugin marketplace add equiphealth/claude-contextus
 /plugin install contextus@claude-contextus
 ```
 
@@ -119,7 +119,7 @@ Hooks activate automatically (no enable step), the daemon starts on your next se
 **[v1 today — clone + `--plugin-dir`]** Until the marketplace listing is live:
 
 ```bash
-git clone https://github.com/anthonypdawson/claude-contextus ~/src/claude-contextus
+git clone https://github.com/equiphealth/claude-contextus ~/src/claude-contextus
 cd ~/src/claude-contextus && pnpm install   # builds the native deps; needs Node 22
 # then, in any project you want contextus active:
 claude --plugin-dir ~/src/claude-contextus

@@ -143,7 +143,7 @@ If [1]: run `/migrate-memory` dry-run after setup completes.
 3. Write minimal `.claude/contextus.jsonc` (only if file doesn't already exist):
    ```jsonc
    // contextus config — edit to override defaults, or run /contextus-setup to reconfigure.
-   // Docs: https://github.com/anthonypdawson/claude-contextus/blob/main/examples/contextus.jsonc
+   // Docs: https://github.com/equiphealth/claude-contextus/blob/main/examples/contextus.jsonc
    {
    }
    ```

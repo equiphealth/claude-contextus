@@ -115,7 +115,7 @@ M4 Pro 48GB — makes local Ollama viable for both embedding and expansion. Bedr
 <!-- contextus:start -->
 ## Context (claude-contextus)
 
-This project uses [claude-contextus](https://github.com/anthonypdawson/claude-contextus):
+This project uses [claude-contextus](https://github.com/equiphealth/claude-contextus):
 relevant patterns from `.claude/context/` are **retrieved and injected automatically**
 on each prompt — you don't need to search for them. Injected blocks are tagged
 `[contextus — …]`.

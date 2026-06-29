@@ -4,7 +4,7 @@ _Last updated: June 12, 2026_
 
 **Status**: Core scaffolding complete, implementation in progress
 
-**Repository**: <https://github.com/anthonypdawson/claude-contextus> (private)
+**Repository**: <https://github.com/equiphealth/claude-contextus> (private)
 
 ## Overview
 

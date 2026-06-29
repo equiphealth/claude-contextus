@@ -47,9 +47,9 @@ If you enable AWS Bedrock integration for query expansion:
 
 contextus is open source. You can audit exactly what it does:
 
-- **GitHub**: [https://github.com/anthonypdawson/claude-contextus](https://github.com/anthonypdawson/claude-contextus)
+- **GitHub**: [https://github.com/equiphealth/claude-contextus](https://github.com/equiphealth/claude-contextus)
 - **License**: Apache 2.0
 
 ## Contact
 
-Questions about privacy? Open an issue on GitHub: [https://github.com/anthonypdawson/claude-contextus/issues](https://github.com/anthonypdawson/claude-contextus/issues)
+Questions about privacy? Open an issue on GitHub: [https://github.com/equiphealth/claude-contextus/issues](https://github.com/equiphealth/claude-contextus/issues)
