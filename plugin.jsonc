@@ -9,7 +9,6 @@
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
   "repository": "github:equiphealth/claude-contextus",
-  "license": "MIT",
   "engines": {
     "claude": ">=1.0.0",
     "node": ">=22.0.0"
