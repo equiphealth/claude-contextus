@@ -359,10 +359,6 @@ claude-contextus handles workflow patterns, decisions, and documentation — the
 
 If you're not sure, start with contextus. Add claude-mem later if you find yourself needing to recall specific past sessions.
 
-## License
-
-MIT © Anthony Dawson
-
 ## Contributing
 
 Issues and PRs welcome! This is a vacation project but I'm happy to collaborate.
