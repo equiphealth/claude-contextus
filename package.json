@@ -48,7 +48,6 @@
     "claude-code"
   ],
   "author": "Anthony Dawson",
-  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/equiphealth/claude-contextus.git"
