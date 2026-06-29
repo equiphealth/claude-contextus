@@ -38,7 +38,7 @@ It's the inverse of a memory system you query: **the context finds you.**
 **[v1.1]** Add the marketplace, then install the plugin:
 
 ```text
-/plugin marketplace add anthonypdawson/claude-contextus
+/plugin marketplace add equiphealth/claude-contextus
 /plugin install contextus@claude-contextus
 ```
 
@@ -48,7 +48,7 @@ skills appear under the `/context-*` and `/contextus-*` namespace.
 **[v1 today]** Until the marketplace ships, clone + load by directory:
 
 ```bash
-git clone https://github.com/anthonypdawson/claude-contextus ~/src/claude-contextus
+git clone https://github.com/equiphealth/claude-contextus ~/src/claude-contextus
 cd ~/src/claude-contextus && pnpm install      # builds the daemon's native deps
 # then, in any project you want contextus active:
 claude --plugin-dir ~/src/claude-contextus
