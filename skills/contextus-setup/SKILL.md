@@ -34,9 +34,14 @@ When this skill is invoked, follow this exact sequence:
 Run the detection script to gather all project state in one shot:
 
 ```bash
-cd <target-project-cwd>
-~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/setup-detect.ts
+# From the target project directory
+tsx $CLAUDE_PLUGIN_ROOT/scripts/setup-detect.ts
+
+# Or specify a different project
+tsx $CLAUDE_PLUGIN_ROOT/scripts/setup-detect.ts --dir /path/to/project
 ```
+
+`$CLAUDE_PLUGIN_ROOT` is set by Claude Code and points to the installed contextus plugin directory.
 
 This returns JSON with: `ollamaReachable`, `ollamaState`, `platform`, `hasHomebrew`,
 `hasStanza`, `hasProjectConfig`, `hasPopulatedContext`, `legacyMemory`, `projectDocs`,
@@ -194,15 +199,15 @@ If [1]: run `/migrate-memory` dry-run after setup completes.
 
 1. Install discovery scripts and statusline bridge:
    ```bash
-   bash ~/src/claude-contextus/scripts/install-discovery-scripts.sh
-   bash ~/src/claude-contextus/scripts/install-statusline-bridge.sh
+   bash $CLAUDE_PLUGIN_ROOT/scripts/install-discovery-scripts.sh
+   bash $CLAUDE_PLUGIN_ROOT/scripts/install-statusline-bridge.sh
    ```
 
 2. Run the setup script:
    ```bash
    cd <target-project-cwd>
-   ~/src/claude-contextus/node_modules/.bin/tsx \
-     ~/src/claude-contextus/scripts/contextus-setup.ts [--no-embed if needed]
+   tsx \
+     $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts [--no-embed if needed]
    ```
 
 3. Write minimal `.claude/contextus.jsonc` (only if file doesn't already exist):
@@ -480,8 +485,8 @@ If no `existingProjects`, skip silently.
 
 1. Install discovery scripts and statusline bridge:
    ```bash
-   bash ~/src/claude-contextus/scripts/install-discovery-scripts.sh
-   bash ~/src/claude-contextus/scripts/install-statusline-bridge.sh
+   bash $CLAUDE_PLUGIN_ROOT/scripts/install-discovery-scripts.sh
+   bash $CLAUDE_PLUGIN_ROOT/scripts/install-statusline-bridge.sh
    ```
 
 2. Write `.claude/contextus.jsonc` with all chosen values:
@@ -517,8 +522,8 @@ If no `existingProjects`, skip silently.
 3. Run the setup script:
    ```bash
    cd <target-project-cwd>
-   ~/src/claude-contextus/node_modules/.bin/tsx \
-     ~/src/claude-contextus/scripts/contextus-setup.ts [--no-embed if provider down]
+   tsx \
+     $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts [--no-embed if provider down]
    ```
 
 4. If migration was requested, run `/migrate-memory` dry-run.
@@ -564,8 +569,8 @@ Triggered by `/contextus-setup --tune` or chosen during re-run.
 
 ```bash
 cd <target-project-cwd>
-~/src/claude-contextus/node_modules/.bin/tsx \
-  ~/src/claude-contextus/scripts/contextus-setup.ts --tune
+tsx \
+  $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts --tune
 ```
 
 **If `usageLogEntries` > 50:**
