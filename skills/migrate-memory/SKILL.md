@@ -9,7 +9,7 @@ description: Convert legacy .claude/memory/ slug files into .claude/context/ pre
 
 ## When to use
 
-See [docs/skills/migrate-memory.md](../../docs/skills/migrate-memory.md) for:
+See [./reference.md](./reference.md) for:
 - When to invoke this skill
 - Complete implementation instructions
 - Flags, options, and examples

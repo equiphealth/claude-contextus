@@ -5,5 +5,5 @@ description: Stop, start, or restart the contextus daemon. Use after config chan
 
 # manage-daemon
 
-See [docs/skills/manage-daemon.md](../../docs/skills/manage-daemon.md) for complete implementation instructions, flags, examples, and usage guidance.
+See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
 

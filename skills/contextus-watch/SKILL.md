@@ -9,7 +9,7 @@ description: Live activity stream — colored, formatted follower over daemon.lo
 
 ## When to use
 
-See [docs/skills/contextus-watch.md](../../docs/skills/contextus-watch.md) for:
+See [./reference.md](./reference.md) for:
 - When to invoke this skill
 - Complete implementation instructions
 - Flags, options, and examples

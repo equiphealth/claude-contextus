@@ -33,7 +33,7 @@ When invoked, follow the implementation flow in the reference guide:
 5. Configure embedding provider and thresholds
 6. Write config, register stanza, run initial embed
 
-See [docs/skills/contextus-setup.md](../../docs/skills/contextus-setup.md) for:
+See [./reference.md](./reference.md) for:
 - Complete decision tree (Quick vs Power User tracks)
 - State detection JSON schema
 - Ollama installation flow by platform

@@ -5,5 +5,5 @@ description: Merge duplicate patterns — LLM-assisted workflow to combine overl
 
 # context-merge
 
-See [docs/skills/context-merge.md](../../docs/skills/context-merge.md) for complete implementation instructions, flags, examples, and usage guidance.
+See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
 

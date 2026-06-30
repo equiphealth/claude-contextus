@@ -9,7 +9,7 @@ description: Health dashboard for contextus — corpus stats, daemon health, rec
 
 ## When to use
 
-See [docs/skills/context-status.md](../../docs/skills/context-status.md) for:
+See [./reference.md](./reference.md) for:
 - When to invoke this skill
 - Complete implementation instructions
 - Flags, options, and examples

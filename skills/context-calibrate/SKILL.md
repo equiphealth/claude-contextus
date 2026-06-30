@@ -26,7 +26,7 @@ Run the calibration CLI from the target project directory (see implementation gu
 
 Present results, suggest `--diff` to preview changes, then `--apply` to write to config.
 
-See [docs/skills/context-calibrate.md](../../docs/skills/context-calibrate.md) for:
+See [./reference.md](./reference.md) for:
 - How to invoke `calibrate-floor.ts` (tsx by path, NOT pnpm)
 - Floor-replay flags (`--project`, `--limit`, `--json`)
 - Usage-eval campaign lifecycle (`--start`, `--status`, `--report`, `--stop`)

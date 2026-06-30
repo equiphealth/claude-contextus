@@ -25,7 +25,7 @@ When invoked:
 
 ## Implementation
 
-See [docs/skills/context-stats.md](../../docs/skills/context-stats.md) for:
+See [./reference.md](./reference.md) for:
 - CLI command and discovery script
 - All flags and options
 - Result interpretation guide

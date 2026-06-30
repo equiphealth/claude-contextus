@@ -5,5 +5,5 @@ description: Run after installing/updating contextus — migrates config, databa
 
 # contextus-upgrade
 
-See [docs/skills/contextus-upgrade.md](../../docs/skills/contextus-upgrade.md) for complete implementation instructions, flags, examples, and usage guidance.
+See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
 

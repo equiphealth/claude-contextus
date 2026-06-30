@@ -5,5 +5,5 @@ description: Audit corpus quality — structural issues (missing frontmatter, ty
 
 # context-audit
 
-See [docs/skills/context-audit.md](../../docs/skills/context-audit.md) for complete implementation instructions, flags, examples, and usage guidance.
+See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
 

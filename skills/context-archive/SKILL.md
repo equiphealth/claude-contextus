@@ -5,5 +5,5 @@ description: Archive low-value patterns — move noisy/stale/obsolete patterns t
 
 # context-archive
 
-See [docs/skills/context-archive.md](../../docs/skills/context-archive.md) for complete implementation instructions, flags, examples, and usage guidance.
+See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
 

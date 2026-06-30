@@ -5,5 +5,5 @@ description: Create documentation in docs/ with the same frontmatter schema as c
 
 # create-doc
 
-See [docs/skills/create-doc.md](../../docs/skills/create-doc.md) for complete implementation instructions, flags, examples, and usage guidance.
+See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
 

@@ -5,5 +5,5 @@ description: View and edit contextus project config (.claude/contextus.json) —
 
 # configure
 
-See [docs/skills/configure.md](../../docs/skills/configure.md) for complete implementation instructions, flags, examples, and usage guidance.
+See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
 

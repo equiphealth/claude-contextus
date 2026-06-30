@@ -9,7 +9,7 @@ description: Interactive corpus curation — review and improve patterns based o
 
 ## When to use
 
-See [docs/skills/context-review.md](../../docs/skills/context-review.md) for:
+See [./reference.md](./reference.md) for:
 - When to invoke this skill
 - Complete implementation instructions
 - Flags, options, and examples

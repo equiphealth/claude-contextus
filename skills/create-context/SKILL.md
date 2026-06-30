@@ -9,7 +9,7 @@ description: Capture a new pattern/decision/implementation note into .claude/con
 
 ## When to use
 
-See [docs/skills/create-context.md](../../docs/skills/create-context.md) for:
+See [./reference.md](./reference.md) for:
 - When to invoke this skill
 - Complete implementation instructions
 - Flags, options, and examples

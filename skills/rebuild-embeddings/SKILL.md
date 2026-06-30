@@ -9,7 +9,7 @@ description: Intelligently re-embed the corpus — incremental by default (only 
 
 ## When to use
 
-See [docs/skills/rebuild-embeddings.md](../../docs/skills/rebuild-embeddings.md) for:
+See [./reference.md](./reference.md) for:
 - When to invoke this skill
 - Complete implementation instructions
 - Flags, options, and examples
