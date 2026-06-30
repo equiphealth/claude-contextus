@@ -14,14 +14,24 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { commandExists, detectPlatform, hasHomebrew, type Platform } from './install-ollama.js';
 
 const HOME = os.homedir();
 const CONTEXTUS_DATA = path.join(HOME, '.contextus', 'data');
 const USAGE_LOG = path.join(HOME, '.contextus', 'logs', 'usage.jsonl');
 const STANZA_MARKER = '<!-- contextus:start -->';
 
+type OllamaState =
+  | { status: 'installed-running' } // binary exists + service reachable
+  | { status: 'installed-stopped' } // binary exists + service down
+  | { status: 'not-installed' } // binary not found
+  | { status: 'unreachable' }; // network issue / unusual port
+
 interface DetectionResult {
   ollamaReachable: boolean;
+  ollamaState: OllamaState;
+  platform: Platform;
+  hasHomebrew: boolean;
   hasStanza: boolean;
   hasProjectConfig: boolean;
   hasPopulatedContext: boolean;
@@ -162,12 +172,29 @@ async function checkOllama(): Promise<boolean> {
   }
 }
 
+async function detectOllama(): Promise<OllamaState> {
+  // Check if binary exists
+  const hasBinary = await commandExists('ollama');
+
+  // Check if service responds
+  const serviceUp = await checkOllama();
+
+  if (hasBinary && serviceUp) return { status: 'installed-running' };
+  if (hasBinary && !serviceUp) return { status: 'installed-stopped' };
+  if (!hasBinary) return { status: 'not-installed' };
+  return { status: 'unreachable' };
+}
+
 async function main(): Promise<void> {
   const cwd = parseArgs();
   const project = crypto.createHash('sha256').update(path.resolve(cwd)).digest('hex').slice(0, 12);
+  const platform = detectPlatform();
 
   const result: DetectionResult = {
     ollamaReachable: await checkOllama(),
+    ollamaState: await detectOllama(),
+    platform,
+    hasHomebrew: platform === 'macos' ? await hasHomebrew() : false,
     hasStanza: hasStanza(cwd),
     hasProjectConfig: hasProjectConfig(cwd),
     hasPopulatedContext: detectCorpusState(cwd) === 'populated',
