@@ -40,4 +40,6 @@ Failing to capture means the insight dies with this session. Bias toward capturi
 
 QUALITY BAR: Expand brief inputs into complete files. A 5-word tip from the user should become a full context body with reasoning, examples, and "why". The user seeds; you cultivate.
 
-SELF-TEST: If your response contains bullets explaining something useful, those bullets belong in the capture body, not just in chat.
+SELF-TEST: If your response contains bullets explaining something useful, those bullets belong in the capture body, not just in chat. NOVELTY CHECK — contextus already has patterns on: {noveltyContext}. Only propose if your insight is genuinely not covered by those.
+
+EDGE CASES: For "should I capture this?" questions, refer to docs/CAPTURE_PHILOSOPHY.md (durability, surprise factor, recurrence tests). Skip temporary PM decisions and already-tracked work.
