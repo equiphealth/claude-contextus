@@ -111,8 +111,8 @@ function detectUserMemory(): { count: number; path: string } | null {
 }
 
 function detectUserContext(): { exists: boolean; path: string } {
-  const dir = path.join(HOME, '.claude', 'context');
-  return { exists: fs.existsSync(dir) && countMdFiles(dir) > 0, path: '~/.claude/context' };
+  const dir = path.join(HOME, '.contextus', 'context');
+  return { exists: fs.existsSync(dir) && countMdFiles(dir) > 0, path: '~/.contextus/context' };
 }
 
 function listExistingProjects(): string[] {
