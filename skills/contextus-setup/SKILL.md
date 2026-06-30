@@ -38,11 +38,18 @@ cd <target-project-cwd>
 ~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/setup-detect.ts
 ```
 
-This returns JSON with: `ollamaReachable`, `hasStanza`, `hasProjectConfig`,
-`hasPopulatedContext`, `legacyMemory`, `projectDocs`, `userMemory`, `userContext`,
-`existingProjects`, `corpusState`, `usageLogEntries`, `currentConfig`.
+This returns JSON with: `ollamaReachable`, `ollamaState`, `platform`, `hasHomebrew`,
+`hasStanza`, `hasProjectConfig`, `hasPopulatedContext`, `legacyMemory`, `projectDocs`,
+`userMemory`, `userContext`, `existingProjects`, `corpusState`, `usageLogEntries`,
+`currentConfig`.
 
 Read this JSON before presenting anything to the user.
+
+**Helper scripts available for Ollama installation:**
+- `scripts/install-ollama.ts` — Auto-install Ollama (exports `installOllama()`)
+- `scripts/pull-ollama-model.ts` — Pull embedding models (exports `pullModel()`, `OLLAMA_MODELS`)
+
+Import these functions directly when needed, or invoke via `tsx` for CLI use.
 
 ### Step 1: Route Based on State
 
@@ -99,19 +106,77 @@ How would you like to set this up?
 
 ## Quick Track
 
-### Q1: Provider Check (only if `ollamaReachable` is false)
+### Q1: Provider Check (branch on `ollamaState.status`)
 
+#### State: `installed-running`
+Skip this question entirely — Ollama is ready.
+
+#### State: `installed-stopped`
 ```
-Ollama isn't responding at localhost:11434 (needed for embeddings).
+Ollama is installed but not running.
 
-  [1] I'll start it now (ollama serve) — tell me when ready
-  [2] Use Transformers.js instead (downloads ~100MB model on first run)
-  [3] Skip embedding for now (context won't inject until fixed)
+  [1] Start it now (ollama serve in background) — quick
+  [2] I'll start it manually
+  [3] Use Transformers.js instead (~100MB download)
 ```
 
-If [1]: wait for user confirmation, re-check Ollama. If still down, ask again.
-If [2]: note `embeddingProvider: "transformers"` for config write.
-If [3]: pass `--no-embed` to setup script.
+If [1]: run `ollama serve` in background, wait 2s, re-check. Continue to model pull.
+If [2]: wait for user confirmation, re-check. If still down, loop back to this question.
+If [3]: note `embeddingProvider: "transformers"` for config write.
+
+#### State: `not-installed`
+```
+Ollama isn't installed (needed for embeddings).
+
+  [1] Install automatically ({platform-specific-method})
+  [2] Show me how to install manually
+  [3] Use Transformers.js instead (~100MB download)
+  [4] Skip embedding for now
+```
+
+**Option text for [1] by platform:**
+- macOS + Homebrew: "Install automatically (brew install ollama)"
+- macOS - Homebrew: "Install automatically (download from ollama.com)"
+- Linux: "Install automatically (curl | sh from ollama.com)"
+- Windows: (hide [1], only show [2-4])
+
+**If [1]:**
+- macOS + Homebrew: Run `brew install ollama`, wait 5s, verify binary, continue to model pull
+- macOS - Homebrew: Show manual instructions (no auto-install)
+- Linux: Run `curl -fsSL https://ollama.com/install.sh | sh`, wait 10s, verify, continue
+
+Show progress: "Installing Ollama... (may take 1-2 minutes)"
+
+On failure: "Install failed: {error}. Try [2] manual install or [3] Transformers.js?"
+
+**If [2]:**
+```
+Visit https://ollama.com/download to install Ollama.
+
+  macOS:    Download .dmg and drag to Applications
+  Linux:    curl -fsSL https://ollama.com/install.sh | sh
+  Windows:  Download .exe installer
+
+Press Enter when installation is complete...
+```
+Wait for Enter → re-check binary → if still missing, show error and loop back.
+
+**If [3]:** note `embeddingProvider: "transformers"` for config write.
+**If [4]:** pass `--no-embed` to setup script.
+
+#### After Install: Model Pull (if Ollama just installed or verified running)
+```
+Ollama ready! Now pulling embedding model...
+
+  Using: nomic-embed-text (274MB, recommended)
+  
+This is one-time setup (model is cached locally).
+```
+
+Run: `ollama pull nomic-embed-text`
+Show progress or wait silently (~30-60s depending on network).
+
+On failure: "Model pull failed: {error}. Retry? [Y/n] or switch to Transformers.js [t]"
 
 ### Q2: Legacy Migration (only if `legacyMemory` is not null)
 
@@ -203,26 +268,91 @@ Key features:
 Let's configure each one. I'll explain as we go.
 ```
 
-### P2: Embedding Provider
+### P2: Embedding Provider (branch on `ollamaState.status`)
 
+#### State: `installed-running`
 ```
 Embedding provider — how patterns are vectorized for search.
 
   [1] Ollama (recommended) — local, private, ~100-400ms per embed
-      Status: {REACHABLE / NOT REACHABLE}
-      Requires: ollama serve + ollama pull nomic-embed-text
+      Status: INSTALLED, RUNNING ✓
+      Model: nomic-embed-text (274MB)
 
   [2] Transformers.js — in-process ONNX, no external service
       Downloads ~100MB model on first run
-      Slightly slower startup, same embedding quality
 ```
 
-If Ollama unreachable and user picks [1], guide:
+If [1]: Check if model is already pulled. If not, pull it now.
+If [2]: note `embeddingProvider: "transformers"` for config write.
+
+#### State: `installed-stopped`
 ```
-Start Ollama, then tell me when ready:
-  1. ollama serve (in another terminal)
-  2. ollama pull nomic-embed-text (one-time, ~270MB)
+Embedding provider — how patterns are vectorized for search.
+
+  [1] Ollama (recommended) — local, private, ~100-400ms per embed
+      Status: INSTALLED, NOT RUNNING
+      
+      Start Ollama now?
+        [a] Yes — ollama serve (background)
+        [b] I'll start it manually
+
+  [2] Transformers.js — in-process ONNX, no external service
+      Downloads ~100MB model on first run
 ```
+
+If [1a]: run `ollama serve` in background, wait 2s, continue to model selection.
+If [1b]: wait for user confirmation, re-check service.
+If [2]: note `embeddingProvider: "transformers"` for config write.
+
+#### State: `not-installed`
+```
+Embedding provider — how patterns are vectorized for search.
+
+  [1] Ollama (recommended) — local, private, ~100-400ms per embed
+      Status: NOT INSTALLED
+      
+      Install Ollama now?
+        [a] Auto-install ({platform-method})
+        [b] Manual — show download instructions
+        [c] Skip — I'll install later
+
+  [2] Transformers.js — in-process ONNX, no external service
+      Downloads ~100MB model on first run
+```
+
+**Option text for [a] by platform:**
+- macOS + Homebrew: "Auto-install (brew install ollama)"
+- macOS - Homebrew: (hide [a], only show [b] and [c])
+- Linux: "Auto-install (official script)"
+- Windows: (hide [a], only show [b] and [c])
+
+**If [1a]:** Execute install via `scripts/install-ollama.ts`, wait, verify, continue to model selection.
+**If [1b]:** Show manual instructions, wait for Enter, verify, continue if successful.
+**If [1c]:** Set config `embedding.provider: "ollama"` but skip embedding (`--no-embed`).
+**If [2]:** Set config `embedding.provider: "transformers"`.
+
+#### Model Selection (after Ollama verified running)
+```
+Choose embedding model:
+
+  [1] nomic-embed-text (274MB) — recommended, best quality/speed
+  [2] mxbai-embed-large (670MB) — higher quality, slower
+  [3] all-minilm (45MB) — tiny, fast, lower quality
+```
+
+Pull the selected model: `ollama pull {model}`
+
+Store in `.claude/contextus.jsonc`:
+```jsonc
+{
+  "embedding": {
+    "provider": "ollama",
+    "ollamaModel": "{selectedModel}"
+  }
+}
+```
+
+On pull failure: "Model pull failed. Retry [r] or use Transformers.js [t]?"
 
 ### P3: Retrieval Tuning
 
