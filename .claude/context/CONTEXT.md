@@ -97,3 +97,4 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [project-identifier-everywhere](gotchas/gotcha-project-identifier-everywhere.md) — All daemon endpoints must normalize project identifiers (name/hash/path) to canonical hash before DB operations
 - [upgrade-notification-flow](implementation/implementation-upgrade-notification-flow.md) — Automatic upgrade notification flow when plugin is updated via marketplace
 - [token-overflow-protection-architecture](implementation/implementation-token-overflow-protection-architecture.md) — Three-layer statusline bridge architecture for preventing token overflow in long conversations
+- [setup-detect-unified-db](gotchas/gotcha-setup-detect-unified-db.md) — setup-detect.ts must read projects.json for existingProjects, not scan for per-project lance directories
