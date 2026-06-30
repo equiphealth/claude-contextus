@@ -18,6 +18,7 @@ import { commandExists, detectPlatform, hasHomebrew, type Platform } from './ins
 
 const HOME = os.homedir();
 const CONTEXTUS_DATA = path.join(HOME, '.contextus', 'data');
+const PROJECTS_JSON = path.join(CONTEXTUS_DATA, 'projects.json');
 const USAGE_LOG = path.join(HOME, '.contextus', 'logs', 'usage.jsonl');
 const STANZA_MARKER = '<!-- contextus:start -->';
 
@@ -115,15 +116,18 @@ function detectUserContext(): { exists: boolean; path: string } {
   return { exists: fs.existsSync(dir) && countMdFiles(dir) > 0, path: '~/.contextus/context' };
 }
 
-function listExistingProjects(): string[] {
+function listExistingProjects(currentProject: string): string[] {
   try {
-    return fs
-      .readdirSync(CONTEXTUS_DATA, { withFileTypes: true })
-      .filter(
-        (e) =>
-          e.isDirectory() && fs.existsSync(path.join(CONTEXTUS_DATA, e.name, 'contextus.lance'))
-      )
-      .map((e) => e.name);
+    // Read from projects.json (unified DB architecture)
+    if (!fs.existsSync(PROJECTS_JSON)) return [];
+    const raw = fs.readFileSync(PROJECTS_JSON, 'utf8');
+    const projects = JSON.parse(raw) as Record<string, { name: string; path: string }>;
+
+    // Return project names, excluding the current one
+    return Object.entries(projects)
+      .filter(([hash]) => hash !== currentProject)
+      .map(([_, p]) => p.name)
+      .filter((name, idx, arr) => arr.indexOf(name) === idx); // dedupe
   } catch {
     return [];
   }
@@ -202,7 +206,7 @@ async function main(): Promise<void> {
     projectDocs: detectProjectDocs(cwd),
     userMemory: detectUserMemory(),
     userContext: detectUserContext(),
-    existingProjects: listExistingProjects().filter((p) => p !== project),
+    existingProjects: listExistingProjects(project),
     corpusState: detectCorpusState(cwd),
     usageLogEntries: countUsageEntries(),
     embeddingProvider: 'ollama',
