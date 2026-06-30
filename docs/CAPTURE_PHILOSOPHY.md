@@ -87,9 +87,16 @@ See issue #27 for the work.
 
 **Exception:** If docs are incomplete/outdated and you're adding missing context, capture the gap and propose updating the docs.
 
-**Note on "already tracked":** Issues/PRs track **work**, not **knowledge**. If an issue exists but the discussion surfaced non-obvious technical context, capture the context. Example:
+**Note on "already tracked":** Issues/PRs track **work**, not **knowledge**. If an issue exists but the discussion surfaced non-obvious technical context, capture the context. 
+
+**Why this matters:**
+1. Context is **self-contained** — future sessions can use it without external API calls
+2. Issues require **GitHub access** — may not be available in all contexts
+3. Issues track **status** ("open/closed/assigned") — context tracks **insight** ("why/how/tradeoff")
+
+Example:
 - ❌ "Issue #27 exists to reorganize scripts/" (just pointing to work)
-- ✅ "Scripts org affects contributor onboarding because..." (explains why it matters, even though work is tracked)
+- ✅ "Scripts org affects contributor onboarding because..." (explains why it matters, self-contained insight)
 
 ### ❌ Obvious Information
 - "TypeScript requires types" — not a gotcha
