@@ -17,14 +17,15 @@ description: Usage analytics for injected context — show what's working, what'
 
 Execute silently. One sentence intro, then run commands without narration. Present results directly.
 
-
 When invoked:
-1. Run the context-stats CLI (see implementation guide)
-2. Present output to user
+1. Run the context-stats CLI **once** — it outputs complete data including corpus metadata
+2. Present output to user (no supplemental bash commands needed)
 3. Suggest follow-up actions for noisy/stale patterns:
    - **Noisy**: `/context-review --filter noisy`
    - **Stale**: `/context-archive --stale`
    - **Never retrieved**: Check if pattern needs better keywords
+
+**Important**: The CLI includes corpus size and last-embedded timestamp in its output. Do not run `ls | wc -l` or similar commands.
 
 ## Implementation
 

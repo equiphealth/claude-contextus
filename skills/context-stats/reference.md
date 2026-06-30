@@ -4,12 +4,16 @@
 
 ## How it works
 
-Reads `usage-ratings.jsonl` (Phase 1 eval data) and `usage.jsonl` (retrieval events) to compute per-pattern statistics:
+Reads `usage-ratings.jsonl` (Phase 1 eval data) and `usage.jsonl` (retrieval events) to compute per-pattern statistics. Also includes corpus metadata (total files, last embedded timestamp) in output.
 
+Output includes:
+- **Corpus**: Total file count and last-embedded date
 - **Most useful**: High weighted score, min 5 evals
 - **Never retrieved**: Files in corpus with 0 retrievals
 - **Noisy**: High retrieval count but low usage score
 - **Stale**: Not retrieved in 6+ months
+
+**The CLI is self-contained** — no need to run supplemental bash commands for corpus size or timestamps.
 
 ## Implementation
 
@@ -91,3 +95,40 @@ Files in corpus with zero retrieval events. Either:
 ## Cost
 
 Zero — reads local JSONL files only, no LLM calls.
+
+## Output Format
+
+### Human-Readable
+```
+## Context Usage Analytics: claude-contextus
+Window: last 30 days
+
+Corpus: 42 files (last embedded: 2026-06-30)
+Total Queries (with injection): 67
+Total Evaluations: 207
+Avg Weighted Score: 0.73
+
+## Top 10 Most Useful (min 5 evals)
+...
+```
+
+### JSON (with --json flag)
+```json
+{
+  "project": "claude-contextus",
+  "windowDays": 30,
+  "corpus": {
+    "totalFiles": 42,
+    "lastEmbedded": "2026-06-30"
+  },
+  "summary": {
+    "totalQueries": 67,
+    "totalEvaluations": 207,
+    "avgWeightedScore": 0.73,
+    "estimatedCost": 0.062
+  },
+  "patterns": [...]
+}
+```
+
+**Note**: Corpus metadata is included automatically — no need to query it separately.

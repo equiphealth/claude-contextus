@@ -101,3 +101,4 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [extraction-source-candidates](decisions/decision-extraction-source-candidates.md) — Ranked list of potential context extraction sources beyond transcripts — PRs, issues, CI logs, review comments, code comments
 - [skill-token-optimization-strategy](arch/arch-skill-token-optimization-strategy.md) — Skill file architecture — slim SKILL.md files with reference docs in docs/skills/ to minimize system prompt overhead
 - [skill-execution-patterns](reference/reference-skill-execution-patterns.md) — Two skill execution patterns: silent system commands vs conversational wizards
+- [cli-tools-self-contained](reference/reference-cli-tools-self-contained.md) — CLI tools should be comprehensive and self-contained — skills execute once and present results
