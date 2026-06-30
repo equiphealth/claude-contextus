@@ -87,6 +87,10 @@ See issue #27 for the work.
 
 **Exception:** If docs are incomplete/outdated and you're adding missing context, capture the gap and propose updating the docs.
 
+**Note on "already tracked":** Issues/PRs track **work**, not **knowledge**. If an issue exists but the discussion surfaced non-obvious technical context, capture the context. Example:
+- ❌ "Issue #27 exists to reorganize scripts/" (just pointing to work)
+- ✅ "Scripts org affects contributor onboarding because..." (explains why it matters, even though work is tracked)
+
 ### ❌ Obvious Information
 - "TypeScript requires types" — not a gotcha
 - Standard library usage
@@ -102,9 +106,16 @@ Ask:
 1. **Durability:** Will this matter in 6 months?
 2. **Surprise factor:** Would a future dev wonder "why is this like this?"
 3. **Recurrence:** Will this pattern come up again?
-4. **Already tracked:** Is this in an issue/PR/commit message?
+4. **Discussion value:** Would this context help someone working on related code?
 
-If 1-3 are YES and 4 is NO → capture it.
+If 1-3 are YES and 4 is YES → capture it.
+
+**Note:** "Already tracked in an issue" is NOT a blocker. Issues track **what** to do, context captures **why/how**. They serve different purposes:
+
+- **Issue #27:** "Reorganize scripts/ directory" (tracks work)
+- **Potential context:** "Why scripts/ organization matters for contributor onboarding" (explains impact)
+
+The second would be worth capturing if it contains non-obvious insight, even though the work is tracked.
 
 ### "Is this a gotcha or just a bug fix?"
 
