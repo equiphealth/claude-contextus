@@ -189,8 +189,8 @@ All config files support comments and trailing commas. The system strips JSONC b
 **Sources:**
 - `projectContext.enabled` — Enable project `.claude/context/` (default: `true`)
 - `projectDocs.enabled` — Enable project `docs/` (default: `true`)
-- `userContext.enabled` — Enable user `~/.claude/context/` (default: `true`)
-- `userDocs.enabled` — Enable user `~/.claude/docs/` (default: `true`)
+- `userContext.enabled` — Enable user `~/.contextus/context/` (default: `true`)
+- `userDocs.enabled` — Enable user `~/.contextus/docs/` (default: `true`)
 
 ### 🏗️ Architecture
 
