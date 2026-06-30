@@ -98,3 +98,5 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [upgrade-notification-flow](implementation/implementation-upgrade-notification-flow.md) — Automatic upgrade notification flow when plugin is updated via marketplace
 - [token-overflow-protection-architecture](implementation/implementation-token-overflow-protection-architecture.md) — Three-layer statusline bridge architecture for preventing token overflow in long conversations
 - [setup-detect-unified-db](gotchas/gotcha-setup-detect-unified-db.md) — setup-detect.ts must read projects.json for existingProjects, not scan for per-project lance directories
+- [extraction-source-candidates](decisions/decision-extraction-source-candidates.md) — Ranked list of potential context extraction sources beyond transcripts — PRs, issues, CI logs, review comments, code comments
+- [skill-token-optimization-strategy](arch/arch-skill-token-optimization-strategy.md) — Skill file architecture — slim SKILL.md files with reference docs in docs/skills/ to minimize system prompt overhead

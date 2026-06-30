@@ -84,15 +84,15 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 | Skill | Alias | Purpose |
 |-------|-------|---------|
 | `/context-status` | `/ctx-status` | Health dashboard |
-| `/context-calibrate` | `/ctx-calibrate` | Floor calibration works; usage-eval campaigns not yet |
-| `/context-doctor` | `/ctx-doctor` | Troubleshoot issues (not yet implemented) |
+| `/context-stats` | `/ctx-stats` | Usage analytics |
+| `/context-calibrate` | `/ctx-calibrate` | Floor calibration + usage-eval |
+| `/context-doctor` | `/ctx-doctor` | Troubleshoot issues |
 | `/create-context` | `/ctx-create` | Capture a new pattern |
-| `/context-search` | — | Search the corpus |
 | `/contextus-watch` | `/ctx-watch` | Live daemon activity stream |
 | `/migrate-memory` | `/ctx-migrate` | Convert .claude/memory/ → context |
-| `/tag-context` | `/ctx-tag` | Add/manage tags on patterns |
-| `/audit-context` | — | Review for duplicates/staleness |
-| `/rebuild-embeddings` | — | Force full re-embed |
+| `/context-tag` | `/ctx-tag` | Add/manage tags on patterns |
+
+Other skills (no aliases): `/context-search`, `/context-audit`, `/context-review`, `/context-archive`, `/context-merge`, `/rebuild-embeddings`, `/contextus-setup`, `/contextus-upgrade`, `/manage-daemon`, `/configure`, `/link-project`
 
 ## Expansion Pipeline
 

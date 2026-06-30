@@ -1,6 +1,6 @@
 ---
 name: extraction-source-candidates
-description: Ranked list of potential context extraction sources beyond transcripts — PRs, issues, CI logs, review comments
+description: Ranked list of potential context extraction sources beyond transcripts — PRs, issues, CI logs, review comments, code comments
 metadata:
   type: decision
   tags: ["extraction", "sources", "v2", "design"]
@@ -19,6 +19,7 @@ metadata:
 | Source | Signal type | Access | Extraction difficulty |
 |--------|------------|--------|----------------------|
 | **Session transcripts** | Decisions, gotchas, workflows in dialogue | Local `.jsonl` files | SHIPPED (v0.9.0) |
+| **Code comments** | Why-not-what explanations, gotchas, constraints, TODO/FIXME rationale | Local files (grep for JSDoc, inline comments) | Easy — structured, already filtered by developer judgment. Comments that explain "why" are high signal. |
 | **Closed/merged PRs** | Intent (description), enforced patterns (reviews), tradeoffs (discussion) | `gh pr list/view` | Medium — structured fields, but review threads need threading logic |
 | **GitHub Issues (closed)** | Root causes, reproduction steps, domain knowledge, workarounds | `gh issue list/view` | Medium — signal buried in comment threads, need to identify "resolution" comment |
 
@@ -39,6 +40,101 @@ metadata:
 | **Google Docs** | Design docs, RFCs, meeting notes, decision records | Google Drive MCP (future) | Medium — unstructured prose, needs section extraction |
 | **Slack/Teams threads** | Ad-hoc decisions, incident context, tribal knowledge | Slack MCP (future) | Hard — conversational, needs topic extraction + threading |
 | **claude-mem observations** | Reactive patterns, session discoveries | MCP tool | PLANNED (Track B, usage-gated) |
+
+## Code comment extraction (Tier 1)
+
+**Why code comments are valuable:**
+- Already written — no new documentation burden
+- Developer-filtered — if someone wrote a comment, they judged it worth explaining
+- Explains "why" not "what" — good comments don't repeat code, they provide context
+- Local — no external API dependencies
+- Durable — comments change less than implementation
+
+**Extraction approach:**
+```
+1. Scan codebase for comment patterns:
+   - JSDoc blocks (/** ... */)
+   - Multi-line comments (/* ... */)
+   - Inline comments with substance (// ... but only if >1 line or contains keywords)
+   - TODO/FIXME/NOTE/HACK with rationale
+
+2. LLM filter: "Does this comment explain WHY (rationale, constraint, gotcha)
+   or just WHAT (code summary)? Extract only WHY comments."
+
+3. Convert to context pattern:
+   - Extract: filename, line number, comment text, surrounding code context
+   - Classify: gotcha, decision, implementation, or reference
+   - Add provenance: source: "comment:path/to/file.ts:42"
+
+4. Dedup against corpus (0.82 similarity threshold)
+5. Write to .claude/context/ with comment-mined tag
+```
+
+**Example transformation:**
+
+*From code:*
+```typescript
+// CRITICAL: Every lance operation must scope by projectId.
+// Without scoping, two projects with the same filename will
+// overwrite each other's embeddings (learned the hard way).
+function deleteByFilename(file: string, projectId: string) { ... }
+```
+
+*To context:*
+```markdown
+---
+name: lance-operations-must-scope
+metadata:
+  type: gotcha
+  tags: ["unified-db", "lance", "scoping"]
+  source: "comment:lib/storage/lance-client.ts:42"
+  extractedAt: "2026-06-30"
+---
+
+# Every LanceDB Operation Must Scope by projectId
+
+Without scoping, two projects with the same filename will overwrite
+each other's rows in the unified database.
+
+## How to Apply
+Always pass projectId to: deleteByFilename, embedFile, getContentHashes
+
+## Source
+Extracted from lib/storage/lance-client.ts:42
+```
+
+**Configuration:**
+```jsonc
+{
+  "extraction": {
+    "comments": {
+      "enabled": true,
+      "paths": ["src/**/*.ts", "lib/**/*.ts"],  // glob patterns
+      "exclude": ["**/*.test.ts", "**/generated/**"],
+      "minLength": 40,              // skip trivial comments
+      "keywords": ["CRITICAL", "GOTCHA", "WHY:", "HACK:"],
+      "watermark": "comment:last-scan"
+    }
+  }
+}
+```
+
+**Advantages over other sources:**
+- No network calls (unlike PRs/Jira)
+- No external permissions (unlike Confluence)
+- Already curated (unlike git log which needs pattern inference)
+- Self-contained (unlike PR discussions which need threading)
+
+**Challenges:**
+- **Drift risk** — extracted comment may become stale if code changes
+- **Dedup** — comment may overlap with existing hand-authored context
+- **Signal variance** — some codebases have great comments, others have noise
+
+**Mitigation:**
+- LLM filter at extraction time ("explain WHY" test)
+- Corpus similarity check (0.82 threshold)
+- Source provenance lets users trace back to code
+- Re-scan periodically to catch updated/deleted comments
 
 ## External source strategy
 
@@ -114,7 +210,7 @@ Extracted context files carry a `source` metadata field tracking where they came
 metadata:
   type: gotcha
   tags: ["auth", "session"]
-  source: "pr:org/repo#142"        # or "jira:JN-456" or "confluence:page-id"
+  source: "pr:org/repo#142"        # or "jira:JN-456" or "confluence:page-id" or "comment:path/file.ts:42"
   extractedAt: "2026-06-23"
 ```
 
@@ -140,3 +236,4 @@ External sources have HIGH overlap risk — a PR discussion often restates what'
 - How to handle PRs with 50+ review comments? (Chunk by thread? Summarize?)
 - ~~Should filters support regex or just substring match?~~ → **Decided: glob patterns for titles, exact match for labels.** Same shape for all sources (PRs, Jira). Glob is human-readable; regex is overkill for title matching.
 - Jira: mine comments thread or just description + resolution?
+- **Code comments:** Should we extract TODO/FIXME separately with lower priority? Or treat them as gotcha candidates?
