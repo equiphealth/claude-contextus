@@ -15,6 +15,9 @@ description: Usage analytics for injected context — show what's working, what'
 
 ## Instructions
 
+Execute silently. One sentence intro, then run commands without narration. Present results directly.
+
+
 When invoked:
 1. Run the context-stats CLI (see implementation guide)
 2. Present output to user

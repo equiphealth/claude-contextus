@@ -22,6 +22,9 @@ Clean lifecycle: floor-replay → initial floor → usage accumulates → usage-
 
 ## Instructions
 
+Execute silently. One sentence intro, then run commands without narration. Present results directly.
+
+
 Run the calibration CLI from the target project directory (see implementation guide for exact commands).
 
 Present results, suggest `--diff` to preview changes, then `--apply` to write to config.

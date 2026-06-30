@@ -100,3 +100,4 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [setup-detect-unified-db](gotchas/gotcha-setup-detect-unified-db.md) — setup-detect.ts must read projects.json for existingProjects, not scan for per-project lance directories
 - [extraction-source-candidates](decisions/decision-extraction-source-candidates.md) — Ranked list of potential context extraction sources beyond transcripts — PRs, issues, CI logs, review comments, code comments
 - [skill-token-optimization-strategy](arch/arch-skill-token-optimization-strategy.md) — Skill file architecture — slim SKILL.md files with reference docs in docs/skills/ to minimize system prompt overhead
+- [skill-execution-patterns](reference/reference-skill-execution-patterns.md) — Two skill execution patterns: silent system commands vs conversational wizards
