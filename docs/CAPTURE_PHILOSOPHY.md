@@ -32,12 +32,31 @@ Guidelines for what belongs in `.claude/context/` and what doesn't.
 **Example:** `reference-migration-system.md` — How to coordinate breaking changes across 5 files.
 
 ### ✅ Historical Context (When Actionable)
-Decisions are worth capturing if:
+Decisions are worth capturing if they have **technical depth**:
 - They explain surprising code ("why is this async when it doesn't need to be?")
 - They prevent future re-litigation ("we tried X, here's why it failed")
 - They document constraints ("this API must stay stable for backward compat")
+- They explain **what was evaluated** and **why one option won**
+- They state **conditions for reevaluation**
 
-**Example:** `decision-use-lance-over-chroma.md` — Why LanceDB was chosen, what we need from it, what would trigger reevaluation.
+**Good example:** `decision-use-lance-over-chroma.md`
+```markdown
+Evaluated: LanceDB vs Chroma vs pgvector
+Chose Lance because:
+  - Disk-based (low memory footprint at scale)
+  - SQL-like filtering (better than Chroma's dictionary filters)
+  - TypeScript support (Chroma was Python-first)
+Tradeoff: Less mature ecosystem, but better for our embedding scale
+Reconsider if: Need distributed search OR Lance stops Node.js support
+```
+
+**Bad example (skip):** `decision-defer-scripts-reorganization.md`
+```markdown
+We discussed reorganizing scripts/ during PR #26.
+Decided to defer to v2 because: not urgent, wrong timing.
+See issue #27 for the work.
+```
+**Why skip:** No technical depth — just timing/prioritization. Already tracked in issue. No durable knowledge for future sessions.
 
 ## What NOT to Capture
 
