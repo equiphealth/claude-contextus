@@ -4,7 +4,6 @@
 
 ## Project Status
 
-**Version**: 0.3.0  
 **State**: Running in production (dogfooding across multiple repos)  
 **Current work**: See `docs/dev/V2_ROADMAP.md` for backlog
 
@@ -65,6 +64,11 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 - Comprehensive guides → `docs/`
 - **You MUST propose context capture** (`Context: propose: <topic>`) after implementation work that surfaces new patterns, decisions, gotchas, or workflow knowledge. Don't wait to be asked — insights that aren't proposed die with the session.
 
+**When testing skills**:
+- **Always execute skills fully** — Run all commands, show actual results, don't skip steps or summarize "what would happen"
+- **Minimal narration** — Present results directly with minimal descriptive overhead (unless context is needed)
+- Show real diagnostic output, real status dashboards, real search results
+
 **Documentation standards**:
 - Use generic placeholders (`my-project`, `example-app`) or contextus self-references only
 - Never reference other real project names from this machine in docs/contexts/examples
@@ -112,22 +116,13 @@ Multi-vector query expansion generates alternate phrasings when initial search s
 
 Provider chain: ollama (qwen2.5:3b, ~100-400ms) → bedrock fallback (Haiku, ~2s) on fast failures. Shared time budget — slow timeouts don't fall back.
 
-## Related Projects
-
-- **claude-mem** — Session memory/observations (complementary: contextus = normative patterns, claude-mem = observational history)
-- **vector-inspector** — Embedding visualization (informed Ollama quality assessment)
-
-## Hardware Context
-
-M4 Pro 48GB — makes local Ollama viable for both embedding and expansion. Bedrock (Haiku) for fallback/calibration via AWS default credential chain.
-
 <!-- contextus:start -->
 ## Context (claude-contextus)
 
 This project uses [claude-contextus](https://github.com/equiphealth/claude-contextus):
-relevant patterns from `.claude/context/` are **retrieved and injected automatically**
-on each prompt — you don't need to search for them. Injected blocks are tagged
-`[contextus — …]`.
+relevant patterns from `.claude/context/`, `docs/`, `~/.contextus/`, and linked projects 
+are **retrieved and injected automatically** on each prompt — you don't need to search 
+for them. Injected blocks are tagged `[contextus — …]`.
 
 Context capture behavior is controlled by the per-prompt injected footer — follow
 its instructions exactly (it may tell you to propose, write directly, or stay silent).

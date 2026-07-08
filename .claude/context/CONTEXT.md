@@ -104,3 +104,5 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [cli-tools-self-contained](reference/reference-cli-tools-self-contained.md) — CLI tools should be comprehensive and self-contained — skills execute once and present results
 - [skill-alias-context-cost-tradeoff](tradeoffs/tradeoff-skill-alias-context-cost-tradeoff.md) — Skill aliases cost context in Claude Code (no native aliasing primitive); slim SKILL.md files are the best available workaround
 - [claude-code-skill-system-feature-requests](reference/reference-claude-code-skill-system-feature-requests.md) — Feature requests for Claude Code skill system discovered while building contextus — native aliasing and argument autocomplete
+- [skill-token-optimization-strategy](arch/arch-skill-token-optimization-strategy.md) — Skill file architecture — slim SKILL.md with reference docs, but triggers MUST stay in SKILL.md
+- [skill-testing-execution-philosophy](reference/reference-skill-testing-execution-philosophy.md) — Skills must execute fully during testing with minimal narration - show real results, not summaries
