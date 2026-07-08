@@ -1,6 +1,6 @@
 ---
 name: ctx
-description: Quick dispatcher — /ctx status|stats|create|calibrate|doctor|watch|daemon|setup|search|review|rebuild
+description: Quick dispatcher — /ctx status|stats|create|calibrate|doctor|watch|daemon|setup|link|search|review|rebuild
 ---
 
 # ctx — Context Skill Shortcuts
@@ -32,6 +32,7 @@ Quick shortcuts for contextus commands. Think `npm run` but for contextus.
 /ctx daemon      → /manage-daemon       (start/stop/restart daemon)
 /ctx configure   → /configure           (edit config)
 /ctx upgrade     → /contextus-upgrade   (upgrade migration)
+/ctx link        → /link-project        (share context with another project)
 ```
 
 **Advanced:**
@@ -62,6 +63,7 @@ When the user invokes `/ctx <subcommand>`:
    - daemon → /manage-daemon
    - configure → /configure
    - upgrade → /contextus-upgrade
+   - link → /link-project
    - watch → /contextus-watch
    - migrate → /migrate-memory
    - audit → /context-audit
