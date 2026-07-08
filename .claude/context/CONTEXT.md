@@ -102,3 +102,5 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [skill-token-optimization-strategy](arch/arch-skill-token-optimization-strategy.md) — Skill file architecture — slim SKILL.md files with reference docs in docs/skills/ to minimize system prompt overhead
 - [skill-execution-patterns](reference/reference-skill-execution-patterns.md) — Two skill execution patterns: silent system commands vs conversational wizards
 - [cli-tools-self-contained](reference/reference-cli-tools-self-contained.md) — CLI tools should be comprehensive and self-contained — skills execute once and present results
+- [skill-alias-context-cost-tradeoff](tradeoffs/tradeoff-skill-alias-context-cost-tradeoff.md) — Skill aliases cost context in Claude Code (no native aliasing primitive); slim SKILL.md files are the best available workaround
+- [claude-code-skill-system-feature-requests](reference/reference-claude-code-skill-system-feature-requests.md) — Feature requests for Claude Code skill system discovered while building contextus — native aliasing and argument autocomplete

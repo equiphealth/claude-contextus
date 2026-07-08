@@ -40,7 +40,7 @@ Provider connections (ollama, bedrock, anthropic) are defined once in `providers
 - `lib/` — Core logic (config, embedding, retrieval, calibration, logging)
 - `scripts/` — Hook scripts (plain JS, no build step) + CLI tools (TS, run via tsx)
 - `hooks/` — Hook registration (`hooks.json`)
-- `skills/` — 26 plugin skills (`/ctx-*` aliases for the primary ones)
+- `skills/` — 26 plugin skills (`/ctx <subcommand>` dispatcher for shortcuts)
 - `prompts/` — Externalized prompt templates (editable without code changes)
 - `.claude/context/` — This project's own context patterns (dogfood corpus)
 - `docs/dev/` — Design docs, logging schema, roadmap
@@ -79,20 +79,29 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 6. **File-based everything** — Session state, configs, logs. No external services.
 7. **Transparency** — Log what was dropped, what was skipped, what fired. `contextus watch` for live tail.
 
-## Skills (primary)
+## Skills
 
-| Skill | Alias | Purpose |
-|-------|-------|---------|
-| `/context-status` | `/ctx-status` | Health dashboard |
-| `/context-stats` | `/ctx-stats` | Usage analytics |
-| `/context-calibrate` | `/ctx-calibrate` | Floor calibration + usage-eval |
-| `/context-doctor` | `/ctx-doctor` | Troubleshoot issues |
-| `/create-context` | `/ctx-create` | Capture a new pattern |
-| `/contextus-watch` | `/ctx-watch` | Live daemon activity stream |
-| `/migrate-memory` | `/ctx-migrate` | Convert .claude/memory/ → context |
-| `/context-tag` | `/ctx-tag` | Add/manage tags on patterns |
+**Quick access:** Use `/ctx <subcommand>` for common operations (like `npm run`):
 
-Other skills (no aliases): `/context-search`, `/context-audit`, `/context-review`, `/context-archive`, `/context-merge`, `/rebuild-embeddings`, `/contextus-setup`, `/contextus-upgrade`, `/manage-daemon`, `/configure`, `/link-project`
+| Shortcut | Canonical Skill | Purpose |
+|----------|-----------------|---------|
+| `/ctx status` | `/context-status` | Health dashboard |
+| `/ctx stats` | `/context-stats` | Usage analytics |
+| `/ctx create` | `/create-context` | Capture a new pattern |
+| `/ctx calibrate` | `/context-calibrate` | Floor calibration + usage-eval |
+| `/ctx doctor` | `/context-doctor` | Troubleshoot issues |
+| `/ctx watch` | `/contextus-watch` | Live daemon activity stream |
+| `/ctx migrate` | `/migrate-memory` | Convert .claude/memory/ → context |
+| `/ctx tag` | `/context-tag` | Add/manage tags |
+| `/ctx daemon` | `/manage-daemon` | Start/stop/restart daemon |
+| `/ctx setup` | `/contextus-setup` | Setup wizard |
+| `/ctx search` | `/context-search` | Find patterns |
+| `/ctx review` | `/context-review` | Curate corpus |
+| `/ctx rebuild` | `/rebuild-embeddings` | Rebuild embeddings |
+
+Run `/ctx` with no args to see all 18 shortcuts.
+
+Other skills: `/configure`, `/link-project`, `/context-audit`, `/context-archive`, `/context-merge`, `/contextus-upgrade`
 
 ## Expansion Pipeline
 
