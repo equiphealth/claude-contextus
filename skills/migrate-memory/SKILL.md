@@ -1,17 +1,23 @@
 ---
 name: migrate-memory
-description: Convert legacy .claude/memory/ slug files into .claude/context/ prefix-scoped, typed, tagged files (dry-run by default, idempotent, verify-before-embed)
+description: Convert .claude/memory/ to .claude/context/ with proper typing, tags, and retrieval-optimized frontmatter
 ---
 
 # migrate-memory
 
-**Convert .claude/memory/ to contextus patterns** — see implementation guide for details.
+**Migrate legacy memory** — convert `.claude/memory/` → `.claude/context/`.
 
 ## When to use
 
-See [./reference.md](./reference.md) for:
-- When to invoke this skill
-- Complete implementation instructions
-- Flags, options, and examples
-- Result interpretation and follow-up actions
+- User has existing `.claude/memory/` files to convert
+- During initial contextus setup (wizard offers this)
+- User asks to "migrate memory" or "convert memory to context"
 
+## Instructions
+
+Conversational wizard. Show dry-run first, confirm before writing.
+
+See [./reference.md](./reference.md) for:
+- Complete migration workflow
+- Scope triage (user vs project)
+- Implementation details

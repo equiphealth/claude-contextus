@@ -1,6 +1,6 @@
 ---
 name: skill-token-optimization-strategy
-description: Skill file architecture — slim SKILL.md files with reference docs in docs/skills/ to minimize system prompt overhead
+description: Skill file architecture — slim SKILL.md with reference docs, but triggers MUST stay in SKILL.md
 metadata:
   type: arch
   tags: ["skills", "performance", "token-optimization"]
@@ -9,34 +9,60 @@ metadata:
 # Skill Token Optimization Architecture
 
 ## Problem
-Claude Code loads ALL skill SKILL.md files into the system prompt on every session. The original contextus skills totaled ~12,700 tokens:
-- `contextus-setup`: 628 lines (3,773 tokens)
-- `context-calibrate`: 402 lines (4,095 tokens)
-- `context-stats`: 117 lines (1,081 tokens)
-- 14 duplicate alias skills (ctx-*) adding ~400 tokens
-- 17 other skills ranging 50-250 lines each
+Claude Code loads ALL skill SKILL.md files into the system prompt on every session. Heavy skills eat context budget.
 
-This ate significant context budget before any user prompt.
+## Solution: Two-File Pattern
 
-## Solution
-**Two-part optimization:**
+**SKILL.md (eager-loaded, in system prompt):**
+- Frontmatter with `name` and `description`
+- **When to use** — Trigger conditions (CRITICAL: Claude needs this BEFORE invocation)
+- Brief summary (1-2 sentences)
+- Instructions (execution steps or pointer to reference.md)
 
-1. **Move reference material to `docs/skills/`** — Implementation details, flag tables, examples, interpretation guides live in docs/ (loaded on-demand during skill execution, NOT in system prompt)
-2. **Slim SKILL.md to dispatch logic only** — When to use, 1-2 sentence summary, pointer to docs/
-3. **Keep only high-traffic aliases** — Deleted 6 low-use ctx-* aliases (archive, audit, merge, review, search, setup), kept 8 primary ones (status, stats, calibrate, doctor, create, watch, migrate, tag)
+Target: 15-40 lines
 
-## Results
-- **9,300 tokens saved** (~73% reduction)
-- Registry: ~12,700 → ~3,400 tokens
-- 30 skills + 8 aliases (down from 34 total)
-- No functionality lost — full docs available when skill executes
+**reference.md (loaded on-demand during execution):**
+- Implementation details
+- Flags, options, examples
+- Result interpretation
+- Troubleshooting
+- Edge cases
 
-## Pattern
-**Slim SKILL.md template:**
+Can be 100+ lines — not counted against system prompt.
+
+## Critical Gotcha
+
+**"When to use" MUST be in SKILL.md**, not reference.md.
+
+**Why**: Claude decides whether to invoke a skill based on trigger conditions. If those are in reference.md, they're not loaded until AFTER the skill executes. Catch-22.
+
+**Bad example:**
+```markdown
+# SKILL.md
+## When to use
+See [./reference.md](./reference.md) for when to invoke this skill
+```
+❌ Claude can't see the triggers, won't invoke the skill.
+
+**Good example:**
+```markdown
+# SKILL.md
+## When to use
+- User asks for status/health check
+- Something feels off with retrieval
+- After config changes
+
+## Instructions
+See [./reference.md](./reference.md) for implementation details.
+```
+✅ Claude sees triggers, knows when to invoke.
+
+## Template
+
 ```markdown
 ---
 name: skill-name
-description: One-line topical signal
+description: One-line summary (shown in autocomplete)
 ---
 
 # skill-name
@@ -46,30 +72,40 @@ description: One-line topical signal
 ## When to use
 - Trigger condition 1
 - Trigger condition 2
+- Trigger condition 3
 
 ## Instructions
-Core dispatch logic (what to run, how to present results).
-
-See [docs/skills/skill-name.md](../../docs/skills/skill-name.md) for:
+[Brief execution steps, or:]
+See [./reference.md](./reference.md) for:
 - Implementation details
 - Flags and options
 - Examples and edge cases
 ```
 
-Target: 10-40 lines per SKILL.md (down from 50-628).
+## What We Achieved
 
-## Why This Works
-Claude Code skill registry is eager-loaded (all files parsed at session start). Moving 90% of content to docs/ means:
-- System prompt stays lean
-- Skills remain fully documented (Read the doc during execution)
-- Aliases cost ~6 lines instead of ~30-100
+**Before:** 34 skills, ~12,700 tokens
+**After:** 30 skills, ~3,400 tokens (73% reduction)
+
+**Biggest savings:**
+- `contextus-setup`: 628 → 43 lines
+- `context-calibrate`: 402 → 34 lines
+- `context-stats`: 117 → 32 lines
 
 ## When NOT to Slim
-- Skills with <20 lines already (add-patterns, etc.) — no savings
-- Critical decision trees that must be in-prompt (none identified yet)
+
+- Skills already <20 lines (no savings)
+- Critical decision trees that must be in-prompt (rare)
+- Trigger conditions are complex and need examples inline
 
 ## Maintenance
+
 When adding new skills:
-1. Write full guide in `docs/skills/<name>.md`
-2. Create slim `skills/<name>/SKILL.md` following template
-3. If adding an alias, keep it ≤10 lines (just frontmatter + pointer to canonical skill)
+1. Write full guide in `skills/<name>/reference.md`
+2. Write slim `skills/<name>/SKILL.md` with triggers + pointer
+3. Verify: Can Claude decide to invoke this skill from SKILL.md alone?
+
+## Related Patterns
+
+- `reference-skill-execution-patterns.md` — Silent vs conversational
+- `tradeoff-skill-alias-context-cost-tradeoff.md` — Why aliases matter

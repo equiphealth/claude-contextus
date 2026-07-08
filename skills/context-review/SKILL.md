@@ -1,17 +1,24 @@
 ---
 name: context-review
-description: Interactive corpus curation — review and improve patterns based on usage data. Filter by --noisy, --stale, --unused, --duplicates. Actions: archive, rewrite, merge, or keep.
+description: Curate corpus — archive noisy patterns, merge duplicates, flag for rewrite
 ---
 
 # context-review
 
-**Interactive corpus curation** — see implementation guide for details.
+**Corpus curation** — clean up low-quality, stale, or duplicate patterns.
 
 ## When to use
 
-See [./reference.md](./reference.md) for:
-- When to invoke this skill
-- Complete implementation instructions
-- Flags, options, and examples
-- Result interpretation and follow-up actions
+- User wants to curate the corpus (archive noisy, merge duplicates)
+- After identifying stale or low-quality patterns via `/context-stats`
+- Corpus cleanup or quality improvement
+- User asks to "clean up context" or "remove bad patterns"
 
+## Instructions
+
+Conversational wizard. Explain options, preview changes, confirm before writing.
+
+See [./reference.md](./reference.md) for:
+- Complete implementation instructions
+- Filter options and workflow
+- Examples

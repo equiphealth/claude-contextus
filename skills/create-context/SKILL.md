@@ -5,13 +5,20 @@ description: Capture a new pattern/decision/implementation note into .claude/con
 
 # create-context
 
-**Capture new patterns with validation and auto-embedding** — see implementation guide for details.
+**Capture new patterns** — write to `.claude/context/` with proper structure.
 
 ## When to use
 
-See [./reference.md](./reference.md) for:
-- When to invoke this skill
-- Complete implementation instructions
-- Flags, options, and examples
-- Result interpretation and follow-up actions
+- User says "capture this" or "remember this pattern"
+- After surfacing reusable knowledge during implementation
+- When a decision, gotcha, or workflow is worth persisting
+- User explicitly asks to create a context file
 
+## Instructions
+
+Conversational. Ask for details if needed, validate structure, write to `.claude/context/`.
+
+See [./reference.md](./reference.md) for:
+- Complete implementation instructions
+- Category guidance and examples
+- Validation rules

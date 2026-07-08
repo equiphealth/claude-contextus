@@ -5,13 +5,19 @@ description: Live activity stream — colored, formatted follower over daemon.lo
 
 # contextus-watch
 
-**Live daemon activity stream** — see implementation guide for details.
+**Live daemon activity stream** — see what contextus is doing right now.
 
 ## When to use
 
+- User asks "what is contextus doing right now"
+- Debugging retrieval behavior or injection decisions
+- Watching live daemon activity during development
+- User wants to see real-time logs
+
+## Instructions
+
+Execute silently. Stream daemon activity log.
+
 See [./reference.md](./reference.md) for:
-- When to invoke this skill
 - Complete implementation instructions
 - Flags, options, and examples
-- Result interpretation and follow-up actions
-

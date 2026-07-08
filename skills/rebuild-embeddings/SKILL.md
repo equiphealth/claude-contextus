@@ -1,17 +1,24 @@
 ---
 name: rebuild-embeddings
-description: Intelligently re-embed the corpus — incremental by default (only changed/new files), full rebuild when needed (model switch, corruption). Reports what changed, what was skipped, what was removed.
+description: Rebuild entire corpus — re-embed all context files, docs, and user memory
 ---
 
 # rebuild-embeddings
 
-**Force full corpus re-embed** — see implementation guide for details.
+**Rebuild corpus** — re-embed all files from scratch.
 
 ## When to use
 
-See [./reference.md](./reference.md) for:
-- When to invoke this skill
-- Complete implementation instructions
-- Flags, options, and examples
-- Result interpretation and follow-up actions
+- After adding/editing many context files
+- User says "rebuild corpus" or "re-embed everything"
+- Switching embedding providers
+- After DB corruption or stale vector data
 
+## Instructions
+
+Execute silently. Rebuild entire corpus, show progress.
+
+See [./reference.md](./reference.md) for:
+- Complete implementation instructions
+- Flags and options
+- When full rebuild is needed
