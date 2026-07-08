@@ -5,5 +5,20 @@ description: Audit corpus quality — structural issues (missing frontmatter, ty
 
 # context-audit
 
-See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
+**Corpus quality audit** — find structural issues, stale files, validation errors.
 
+## When to use
+
+- Regular corpus health checks (quarterly recommended)
+- Before major releases
+- User asks to "audit context" or "check corpus health"
+- Investigating retrieval quality issues
+
+## Instructions
+
+Execute silently. Scan corpus, report issues with severity, suggest fixes.
+
+See [./reference.md](./reference.md) for:
+- Complete audit checklist
+- Issue categories and severity
+- Auto-fix options

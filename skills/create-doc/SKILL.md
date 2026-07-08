@@ -5,5 +5,19 @@ description: Create documentation in docs/ with the same frontmatter schema as c
 
 # create-doc
 
-See [./reference.md](./reference.md) for complete implementation instructions, flags, examples, and usage guidance.
+**Create documentation** — write to `docs/` with contextus frontmatter.
 
+## When to use
+
+- User asks to document a feature or decision
+- Creating user-facing guides
+- Adding to docs/ (vs context/ for internal patterns)
+
+## Instructions
+
+Conversational. Gather content, write with proper frontmatter.
+
+See [./reference.md](./reference.md) for:
+- Docs vs context distinction
+- Frontmatter requirements
+- Examples
