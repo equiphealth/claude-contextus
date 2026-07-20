@@ -147,11 +147,16 @@ Useful for building help commands, skill discovery UIs, or validation.
 
 ## Status
 
-**Not yet submitted** (as of 2026-07-08). TODO:
+**Partially actioned** (as of 2026-07-10):
 - [ ] Compile these into a single feature request document
 - [ ] Share in Claude Code Discord
 - [ ] Reference in Anthropic feedback channels
 - [ ] Track response/adoption
+
+**Bug report filed:** https://github.com/anthropics/claude-code/issues/76471
+- Related issue: local-command-caveat wraps skill invocations, creating contradictory instructions
+- Not a feature request but surfaced during skill development
+- Note: anthropics/claude-code has 10,305+ open issues (as of 2026-07-10)
 
 ## Notes
 

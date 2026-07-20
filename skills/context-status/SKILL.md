@@ -1,6 +1,14 @@
 ---
 name: context-status
 description: Health dashboard for contextus — corpus stats, daemon health, recent embeddings, injection coverage, calibration quality metrics. The go-to diagnostic when something feels off.
+inputs:
+  - name: flags
+    description: Optional flags (--verbose, --json)
+    required: false
+outputs:
+  - name: status_report
+    description: Dashboard showing daemon health, corpus stats, and activity metrics
+    schema: string
 ---
 
 # context-status
