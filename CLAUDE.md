@@ -65,6 +65,7 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 - Pre-commit hook checks prettier (install: `pnpm prepare`)
 - Target ~80% test coverage — exports + edge cases + failures, skip internal-helper obsession
 - JSONC everywhere — use `//` comments, no trailing commas
+- **Daemon code changes**: Restart daemon before verification (`/manage-daemon restart`) — tests actual deployment path, not shortcuts. Direct script execution (`npx tsx ...`) bypasses daemon and may show false positive.
 
 **When documenting discoveries**:
 - Durable patterns → `.claude/context/<category>/` (auto-embedded)
