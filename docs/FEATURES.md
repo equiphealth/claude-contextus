@@ -95,16 +95,22 @@
 **Daemon Control:**
 - `/manage-daemon` — Stop, start, restart daemon (needed after config changes)
 
-**Aliases:**
-Primary skills have `/ctx-*` aliases for brevity:
-- `/ctx-setup` → `/contextus-setup`
-- `/ctx-status` → `/context-status`
-- `/ctx-calibrate` → `/context-calibrate`
-- `/ctx-doctor` → `/context-doctor`
-- `/ctx-watch` → `/contextus-watch`
-- `/ctx-create` → `/create-context`
-- `/ctx-tag` → `/tag-context`
-- `/ctx-migrate` → `/migrate-memory`
+**Quick Shortcuts:**
+Use `/ctx <subcommand>` dispatcher (like `npm run`) for common operations:
+- `/ctx status` — daemon health + activity
+- `/ctx stats` — usage analytics
+- `/ctx create` — capture new pattern
+- `/ctx search` — find patterns
+- `/ctx calibrate` — tune injection floor
+- `/ctx doctor` — troubleshoot issues
+- `/ctx daemon` — start/stop/restart daemon
+- `/ctx setup` — initial setup wizard
+- `/ctx watch` — live activity stream
+- `/ctx review` — curate corpus
+- `/ctx tag` — manage tags
+- `/ctx rebuild` — rebuild embeddings
+
+Run `/ctx` with no args to see all 18 shortcuts.
 
 #### Automatic Hooks
 
@@ -189,8 +195,8 @@ All config files support comments and trailing commas. The system strips JSONC b
 **Sources:**
 - `projectContext.enabled` — Enable project `.claude/context/` (default: `true`)
 - `projectDocs.enabled` — Enable project `docs/` (default: `true`)
-- `userContext.enabled` — Enable user `~/.claude/context/` (default: `true`)
-- `userDocs.enabled` — Enable user `~/.claude/docs/` (default: `true`)
+- `userContext.enabled` — Enable user `~/.contextus/context/` (default: `true`)
+- `userDocs.enabled` — Enable user `~/.contextus/docs/` (default: `true`)
 
 ### 🏗️ Architecture
 

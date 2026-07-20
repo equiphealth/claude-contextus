@@ -97,3 +97,12 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [project-identifier-everywhere](gotchas/gotcha-project-identifier-everywhere.md) — All daemon endpoints must normalize project identifiers (name/hash/path) to canonical hash before DB operations
 - [upgrade-notification-flow](implementation/implementation-upgrade-notification-flow.md) — Automatic upgrade notification flow when plugin is updated via marketplace
 - [token-overflow-protection-architecture](implementation/implementation-token-overflow-protection-architecture.md) — Three-layer statusline bridge architecture for preventing token overflow in long conversations
+- [setup-detect-unified-db](gotchas/gotcha-setup-detect-unified-db.md) — setup-detect.ts must read projects.json for existingProjects, not scan for per-project lance directories
+- [extraction-source-candidates](decisions/decision-extraction-source-candidates.md) — Ranked list of potential context extraction sources beyond transcripts — PRs, issues, CI logs, review comments, code comments
+- [skill-token-optimization-strategy](arch/arch-skill-token-optimization-strategy.md) — Skill file architecture — slim SKILL.md files with reference docs in docs/skills/ to minimize system prompt overhead
+- [skill-execution-patterns](reference/reference-skill-execution-patterns.md) — Two skill execution patterns: silent system commands vs conversational wizards
+- [cli-tools-self-contained](reference/reference-cli-tools-self-contained.md) — CLI tools should be comprehensive and self-contained — skills execute once and present results
+- [skill-alias-context-cost-tradeoff](tradeoffs/tradeoff-skill-alias-context-cost-tradeoff.md) — Skill aliases cost context in Claude Code (no native aliasing primitive); slim SKILL.md files are the best available workaround
+- [claude-code-skill-system-feature-requests](reference/reference-claude-code-skill-system-feature-requests.md) — Feature requests for Claude Code skill system discovered while building contextus — native aliasing and argument autocomplete
+- [skill-token-optimization-strategy](arch/arch-skill-token-optimization-strategy.md) — Skill file architecture — slim SKILL.md with reference docs, but triggers MUST stay in SKILL.md
+- [skill-testing-execution-philosophy](reference/reference-skill-testing-execution-philosophy.md) — Skills must execute fully during testing with minimal narration - show real results, not summaries

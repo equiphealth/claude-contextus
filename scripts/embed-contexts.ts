@@ -23,7 +23,7 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
-import { loadProjectConfig, resolveDBPath, findPluginConfig, projectHash } from '../lib/config.js';
+import { loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
 import { embedDocuments } from '../lib/embedding/embedder.js';
@@ -31,7 +31,6 @@ import { createTable, type ContextRow } from '../lib/storage/lance-client.js';
 import { planChunks, buildRows, type PendingChunk } from '../lib/embedding/file-to-rows.js';
 
 async function main(): Promise<void> {
-  const pluginCfg = findPluginConfig();
   // Unified DB: project identity is a hash of the absolute path.
   const projectId = projectHash(process.cwd());
 
@@ -40,11 +39,11 @@ async function main(): Promise<void> {
   const { provider, model, ollamaModel } = cfg.embedding;
   const modelId = provider === 'ollama' ? ollamaModel : model;
 
-  // Resolve every ENABLED source from plugin.json (projectContext + docs + user
-  // packs), each relative to the project root (process.cwd()). The daemon's
-  // incremental path stays context-only; doc sources refresh here, on a full
-  // rebuild — matching their slower-changing, noisier nature.
-  const sources = resolveSources(pluginCfg);
+  // Resolve every ENABLED source from merged config (includes project overrides like
+  // custom exclude patterns). The daemon's incremental path stays context-only; doc
+  // sources refresh here, on a full rebuild — matching their slower-changing, noisier
+  // nature.
+  const sources = resolveSources(cfg.sources);
   if (sources.length === 0) {
     console.error(`\n✗ No enabled sources resolved from plugin.json config.sources`);
     process.exit(1);

@@ -1579,7 +1579,7 @@ PostToolUse hook fires on Write/Edit. If the changed file is in a context or doc
 **User context changes propagate to all project DBs:**
 
 ```bash
-vim ~/.claude/context/feedback_git.md
+vim ~/.contextus/context/feedback_git.md
 
 # File watcher detects change
 → Rebuilding automation: ~/.contextus/data/automation/
@@ -1710,7 +1710,7 @@ Custom sources (parent repos, siblings, frameworks) are read-only for retrieval.
 /configure list-sources
 ✓ projectContext: .claude/context (70 files)
 ✓ projectDocs: docs (20 files)
-✓ userContext: ~/.claude/context (12 files)
+✓ userContext: ~/.contextus/context (12 files)
 Total: 102 knowledge files indexed
 ```
 
