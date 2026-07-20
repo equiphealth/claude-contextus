@@ -123,6 +123,17 @@ const stats = { queries: 0, expansionFired: 0, expansionSkipped: 0 };
  */
 let warmupError: string | null = null;
 
+/**
+ * Capture request queue — prevents silent drops when daemon is busy embedding.
+ * Requests queue up and process sequentially without blocking the event loop.
+ */
+interface CaptureQueueItem {
+  body: Record<string, unknown>;
+  res: http.ServerResponse;
+}
+const captureQueue: CaptureQueueItem[] = [];
+let processingCapture = false;
+
 /** Read a JSON request body (bounded; rejects malformed/oversized). */
 function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -647,7 +658,42 @@ async function handleNotify(
  * target: "context" (default) — structured frontmatter, category dirs, CONTEXT.md index
  * target: "doc" — free-form markdown, flat in docs/, DOCS.md index
  */
+/**
+ * Queue a capture request to prevent silent drops when daemon is busy.
+ * Requests process sequentially without blocking other endpoints.
+ */
 async function handleCapture(
+  body: Record<string, unknown>,
+  res: http.ServerResponse
+): Promise<void> {
+  captureQueue.push({ body, res });
+  if (!processingCapture) {
+    await processCaptureQueue();
+  }
+}
+
+/**
+ * Process capture queue sequentially. Each capture completes (including async
+ * embedding) before the next starts, preventing resource contention.
+ */
+async function processCaptureQueue(): Promise<void> {
+  if (processingCapture || captureQueue.length === 0) return;
+  processingCapture = true;
+
+  while (captureQueue.length > 0) {
+    const item = captureQueue.shift();
+    if (item) {
+      await executeCaptureRequest(item.body, item.res);
+    }
+  }
+
+  processingCapture = false;
+}
+
+/**
+ * Execute a single capture request (renamed from original handleCapture logic).
+ */
+async function executeCaptureRequest(
   body: Record<string, unknown>,
   res: http.ServerResponse
 ): Promise<void> {
