@@ -123,6 +123,23 @@ const stats = { queries: 0, expansionFired: 0, expansionSkipped: 0 };
  */
 let warmupError: string | null = null;
 
+/**
+ * Capture request queue — prevents silent drops when daemon is busy embedding.
+ * Requests queue up and process sequentially without blocking the event loop.
+ *
+ * ROOT CAUSE: When daemon is busy (e.g., embedSingleFile in progress), any handler
+ * that throws propagates to the catch block at line ~1162, which returns
+ * `{continue: true}` (hook response) instead of proper capture response. This queue
+ * ensures captures never throw to that catch by serializing and error-handling them.
+ */
+interface CaptureQueueItem {
+  body: Record<string, unknown>;
+  res: http.ServerResponse;
+}
+const MAX_CAPTURE_QUEUE_SIZE = 100; // Prevent memory exhaustion under load
+const captureQueue: CaptureQueueItem[] = [];
+let processingCapture = false;
+
 /** Read a JSON request body (bounded; rejects malformed/oversized). */
 function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -647,7 +664,68 @@ async function handleNotify(
  * target: "context" (default) — structured frontmatter, category dirs, CONTEXT.md index
  * target: "doc" — free-form markdown, flat in docs/, DOCS.md index
  */
+/**
+ * Queue a capture request to prevent silent drops when daemon is busy.
+ * Requests process sequentially without blocking other endpoints.
+ */
 async function handleCapture(
+  body: Record<string, unknown>,
+  res: http.ServerResponse
+): Promise<void> {
+  if (captureQueue.length >= MAX_CAPTURE_QUEUE_SIZE) {
+    sendJson(res, 503, {
+      error: `capture queue full (${MAX_CAPTURE_QUEUE_SIZE} items) — daemon overloaded`
+    });
+    return;
+  }
+
+  captureQueue.push({ body, res });
+  if (!processingCapture) {
+    await processCaptureQueue();
+  }
+}
+
+/**
+ * Process capture queue sequentially. Each capture completes (including async
+ * embedding) before the next starts, preventing resource contention.
+ * Error handling ensures one bad request doesn't wedge the queue permanently.
+ */
+async function processCaptureQueue(): Promise<void> {
+  if (processingCapture || captureQueue.length === 0) return;
+  processingCapture = true;
+
+  try {
+    while (captureQueue.length > 0) {
+      const item = captureQueue.shift();
+      if (item) {
+        try {
+          await executeCaptureRequest(item.body, item.res);
+        } catch (err) {
+          // executeCaptureRequest should send error responses on its own paths,
+          // but if it throws before responding, ensure we send one.
+          logError('error', 'capture-queue', 'capture request failed', {
+            message: err instanceof Error ? err.message : String(err)
+          });
+          try {
+            sendJson(item.res, 500, {
+              error: `capture failed: ${err instanceof Error ? err.message : 'unknown'}`
+            });
+          } catch {
+            // Response already sent, ignore
+          }
+        }
+      }
+    }
+  } finally {
+    // Reset flag even if something above throws, so queue never wedges
+    processingCapture = false;
+  }
+}
+
+/**
+ * Execute a single capture request (renamed from original handleCapture logic).
+ */
+async function executeCaptureRequest(
   body: Record<string, unknown>,
   res: http.ServerResponse
 ): Promise<void> {
