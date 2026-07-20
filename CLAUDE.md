@@ -34,6 +34,13 @@ Provider connections (ollama, bedrock, anthropic) are defined once in `providers
 
 ## Working with This Codebase
 
+**Git workflow** (CRITICAL — no branch protection, manual discipline required):
+- **NEVER commit directly to main** — all changes must go through a feature branch and PR
+- Branch naming: `feat/`, `fix/`, `docs/`, `chore/`
+- Create PR for every change (even typos, docs, context updates)
+- Squash-merge to keep main history clean
+- See `decisions/decision-pr-workflow-no-direct-main-commits.md` for full rationale
+
 **Key directories**:
 - `daemon/` — HTTP server (query, notify, reconcile, health endpoints)
 - `lib/` — Core logic (config, embedding, retrieval, calibration, logging)
