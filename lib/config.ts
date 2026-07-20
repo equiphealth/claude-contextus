@@ -257,6 +257,19 @@ export interface CapacityProtectionConfig {
   disableAt: number;
 }
 
+export interface SourceConfig {
+  type?: string;
+  scope?: string;
+  path?: string;
+  enabled?: boolean;
+  indexFile?: string;
+  exclude?: string[];
+}
+
+export interface SourcesConfig {
+  [key: string]: SourceConfig;
+}
+
 export interface ContextusConfig {
   providers: ProvidersConfig;
   embedding: EmbeddingConfig;
@@ -268,6 +281,7 @@ export interface ContextusConfig {
   logging: LoggingConfig;
   usageEvaluation: UsageEvaluationConfig;
   capacityProtection: CapacityProtectionConfig;
+  sources: SourcesConfig;
 }
 
 /** Hard defaults — embedding locked to Transformers.js + nomic. */
@@ -347,6 +361,40 @@ const DEFAULTS: ContextusConfig = {
     reduceAt: 70,
     minimalAt: 80,
     disableAt: 85
+  },
+  sources: {
+    projectContext: {
+      type: 'context',
+      scope: 'project',
+      path: '.claude/context',
+      enabled: true,
+      indexFile: 'CONTEXT.md',
+      exclude: ['**/CONTEXT.md', '**/README.md']
+    },
+    projectDocs: {
+      type: 'doc',
+      scope: 'project',
+      path: 'docs',
+      enabled: true,
+      indexFile: 'DOCS.md',
+      exclude: ['**/DOCS.md', '**/README.md']
+    },
+    userContext: {
+      type: 'context',
+      scope: 'user',
+      path: '~/.contextus/context',
+      enabled: true,
+      indexFile: 'CONTEXT.md',
+      exclude: ['**/CONTEXT.md', '**/README.md']
+    },
+    userDocs: {
+      type: 'doc',
+      scope: 'user',
+      path: '~/.contextus/docs',
+      enabled: true,
+      indexFile: 'DOCS.md',
+      exclude: ['**/DOCS.md', '**/README.md']
+    }
   }
 };
 
@@ -465,6 +513,17 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
     if (staleOverride) Object.assign(merged.usageEvaluation.staleness, staleOverride);
   }
   if (c.capacityProtection) Object.assign(merged.capacityProtection, c.capacityProtection);
+  if (c.sources) {
+    for (const [key, sourceOverride] of Object.entries(c.sources)) {
+      if (!merged.sources[key]) {
+        // New source added in override
+        merged.sources[key] = sourceOverride as SourceConfig;
+      } else {
+        // Merge into existing source
+        Object.assign(merged.sources[key], sourceOverride);
+      }
+    }
+  }
 }
 
 /** Read a JSON/JSONC config file's `config` object (or the whole file if no `config` key). */

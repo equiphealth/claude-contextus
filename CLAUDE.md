@@ -64,6 +64,12 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 - Comprehensive guides → `docs/`
 - **You MUST propose context capture** (`Context: propose: <topic>`) after implementation work that surfaces new patterns, decisions, gotchas, or workflow knowledge. Don't wait to be asked — insights that aren't proposed die with the session.
 
+**Bug documentation lifecycle** (see `decisions/decision-bug-documentation-lifecycle.md`):
+- **Bug discovered** → Capture as `gotcha/gotcha-<slug>.md` with symptoms, root cause, workaround
+- **Bug fixed** → In the SAME commit: (1) Remove the gotcha file, (2) Create `implementation/implementation-<slug>.md` with fix details
+- **Rationale**: Prevents stale advice. A gotcha saying "X is broken, use workaround Y" becomes WRONG after the fix. Implementation notes document the fix for future reference without misleading readers.
+- **Exception**: Upstream bugs stay as gotchas until fixed upstream
+
 **When testing skills**:
 - **Always execute skills fully** — Run all commands, show actual results, don't skip steps or summarize "what would happen"
 - **Minimal narration** — Present results directly with minimal descriptive overhead (unless context is needed)
