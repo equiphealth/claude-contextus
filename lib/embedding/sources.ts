@@ -59,12 +59,13 @@ interface RawSource {
 }
 
 /**
- * Resolve every enabled source from plugin.json `config.sources` to a loadable
- * dir. Skips disabled sources and ones whose directory doesn't exist (a user
+ * Resolve every enabled source from merged config to a loadable dir.
+ * Skips disabled sources and ones whose directory doesn't exist (a user
  * without `~/.claude/docs` just doesn't get that pack — not an error).
+ *
+ * @param sources - The merged sources config (includes 3-tier overrides)
  */
-export function resolveSources(pluginConfig: Record<string, unknown>): ResolvedSource[] {
-  const sources = (pluginConfig.sources ?? {}) as Record<string, RawSource>;
+export function resolveSources(sources: Record<string, RawSource>): ResolvedSource[] {
   const out: ResolvedSource[] = [];
   for (const [key, s] of Object.entries(sources)) {
     if (!s || s.enabled === false || !s.path) continue;

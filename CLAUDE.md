@@ -4,7 +4,6 @@
 
 ## Project Status
 
-**Version**: 0.3.0  
 **State**: Running in production (dogfooding across multiple repos)  
 **Current work**: See `docs/dev/V2_ROADMAP.md` for backlog
 
@@ -40,7 +39,7 @@ Provider connections (ollama, bedrock, anthropic) are defined once in `providers
 - `lib/` — Core logic (config, embedding, retrieval, calibration, logging)
 - `scripts/` — Hook scripts (plain JS, no build step) + CLI tools (TS, run via tsx)
 - `hooks/` — Hook registration (`hooks.json`)
-- `skills/` — 26 plugin skills (`/ctx-*` aliases for the primary ones)
+- `skills/` — 26 plugin skills (`/ctx <subcommand>` dispatcher for shortcuts)
 - `prompts/` — Externalized prompt templates (editable without code changes)
 - `.claude/context/` — This project's own context patterns (dogfood corpus)
 - `docs/dev/` — Design docs, logging schema, roadmap
@@ -65,6 +64,17 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 - Comprehensive guides → `docs/`
 - **You MUST propose context capture** (`Context: propose: <topic>`) after implementation work that surfaces new patterns, decisions, gotchas, or workflow knowledge. Don't wait to be asked — insights that aren't proposed die with the session.
 
+**Bug documentation lifecycle** (see `decisions/decision-bug-documentation-lifecycle.md`):
+- **Bug discovered** → Capture as `gotcha/gotcha-<slug>.md` with symptoms, root cause, workaround
+- **Bug fixed** → In the SAME commit: (1) Remove the gotcha file, (2) Create `implementation/implementation-<slug>.md` with fix details
+- **Rationale**: Prevents stale advice. A gotcha saying "X is broken, use workaround Y" becomes WRONG after the fix. Implementation notes document the fix for future reference without misleading readers.
+- **Exception**: Upstream bugs stay as gotchas until fixed upstream
+
+**When testing skills**:
+- **Always execute skills fully** — Run all commands, show actual results, don't skip steps or summarize "what would happen"
+- **Minimal narration** — Present results directly with minimal descriptive overhead (unless context is needed)
+- Show real diagnostic output, real status dashboards, real search results
+
 **Documentation standards**:
 - Use generic placeholders (`my-project`, `example-app`) or contextus self-references only
 - Never reference other real project names from this machine in docs/contexts/examples
@@ -79,20 +89,29 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 6. **File-based everything** — Session state, configs, logs. No external services.
 7. **Transparency** — Log what was dropped, what was skipped, what fired. `contextus watch` for live tail.
 
-## Skills (primary)
+## Skills
 
-| Skill | Alias | Purpose |
-|-------|-------|---------|
-| `/context-status` | `/ctx-status` | Health dashboard |
-| `/context-calibrate` | `/ctx-calibrate` | Floor calibration works; usage-eval campaigns not yet |
-| `/context-doctor` | `/ctx-doctor` | Troubleshoot issues (not yet implemented) |
-| `/create-context` | `/ctx-create` | Capture a new pattern |
-| `/context-search` | — | Search the corpus |
-| `/contextus-watch` | `/ctx-watch` | Live daemon activity stream |
-| `/migrate-memory` | `/ctx-migrate` | Convert .claude/memory/ → context |
-| `/tag-context` | `/ctx-tag` | Add/manage tags on patterns |
-| `/audit-context` | — | Review for duplicates/staleness |
-| `/rebuild-embeddings` | — | Force full re-embed |
+**Quick access:** Use `/ctx <subcommand>` for common operations (like `npm run`):
+
+| Shortcut | Canonical Skill | Purpose |
+|----------|-----------------|---------|
+| `/ctx status` | `/context-status` | Health dashboard |
+| `/ctx stats` | `/context-stats` | Usage analytics |
+| `/ctx create` | `/create-context` | Capture a new pattern |
+| `/ctx calibrate` | `/context-calibrate` | Floor calibration + usage-eval |
+| `/ctx doctor` | `/context-doctor` | Troubleshoot issues |
+| `/ctx watch` | `/contextus-watch` | Live daemon activity stream |
+| `/ctx migrate` | `/migrate-memory` | Convert .claude/memory/ → context |
+| `/ctx tag` | `/context-tag` | Add/manage tags |
+| `/ctx daemon` | `/manage-daemon` | Start/stop/restart daemon |
+| `/ctx setup` | `/contextus-setup` | Setup wizard |
+| `/ctx search` | `/context-search` | Find patterns |
+| `/ctx review` | `/context-review` | Curate corpus |
+| `/ctx rebuild` | `/rebuild-embeddings` | Rebuild embeddings |
+
+Run `/ctx` with no args to see all 18 shortcuts.
+
+Other skills: `/configure`, `/link-project`, `/context-audit`, `/context-archive`, `/context-merge`, `/contextus-upgrade`
 
 ## Expansion Pipeline
 
@@ -103,22 +122,13 @@ Multi-vector query expansion generates alternate phrasings when initial search s
 
 Provider chain: ollama (qwen2.5:3b, ~100-400ms) → bedrock fallback (Haiku, ~2s) on fast failures. Shared time budget — slow timeouts don't fall back.
 
-## Related Projects
-
-- **claude-mem** — Session memory/observations (complementary: contextus = normative patterns, claude-mem = observational history)
-- **vector-inspector** — Embedding visualization (informed Ollama quality assessment)
-
-## Hardware Context
-
-M4 Pro 48GB — makes local Ollama viable for both embedding and expansion. Bedrock (Haiku) for fallback/calibration via AWS default credential chain.
-
 <!-- contextus:start -->
 ## Context (claude-contextus)
 
 This project uses [claude-contextus](https://github.com/equiphealth/claude-contextus):
-relevant patterns from `.claude/context/` are **retrieved and injected automatically**
-on each prompt — you don't need to search for them. Injected blocks are tagged
-`[contextus — …]`.
+relevant patterns from `.claude/context/`, `docs/`, `~/.contextus/`, and linked projects 
+are **retrieved and injected automatically** on each prompt — you don't need to search 
+for them. Injected blocks are tagged `[contextus — …]`.
 
 Context capture behavior is controlled by the per-prompt injected footer — follow
 its instructions exactly (it may tell you to propose, write directly, or stay silent).

@@ -3,91 +3,22 @@ name: context-tag
 description: Manage tags on context files — backfill missing (--backfill), AI-suggested improvements (--suggest), or bulk-update. Improves discoverability and classification.
 ---
 
-# Tag Context
+# context-tag
 
-Backfill `tags` on context files that don't have any. The memory→context migration
-deliberately never fabricated tags, so some files arrived tagless. Tags are inert
-until the v2 CAE consumes them, but this gives a path to seed them now so the
-corpus is ready when tag-driven gating lands.
+**Manage tags** — add, update, or suggest tags for better retrieval.
 
-## When to Use
+## When to use
 
-- After `/migrate-memory` (which leaves tagless files by design).
-- Any time `/context-status` or you notice context files without tags.
-- Re-runnable: it only touches files that are still tagless, and writing the same
-  tags twice is a no-op.
+- After creating many untagged patterns
+- User asks to "add tags" or "improve tagging"
+- Improving corpus discoverability
+- Bulk tag operations
 
-## How It Works
+## Instructions
 
-The proposal step is offloaded to a **lightweight subagent**, not the (expensive)
-session model — "read a file, suggest 3-5 topic tags" is a small bounded task.
+Execute silently for bulk ops. Conversational for suggestions.
 
-1. **List** — `tag-context --list` (run via tsx-by-path, see Usage) returns the
-   tagless files (relpath, name, description) as JSON. This CLI is a pure
-   deterministic engine: no model call.
-2. **Propose (subagent)** — dispatch a subagent with a **lightweight model**
-   (default `claude-haiku-4-5-20251001`; configurable — see below) to READ the
-   tagless files and propose 2-5 topical tags each from their actual content (not
-   guessed from filenames). Tell it to prefer the existing corpus tag vocabulary
-   (sample other files' `metadata.tags` + `docs/CATEGORIES_AND_TAGS.md`) so tags
-   stay consistent. The subagent returns `{relpath → [tags]}`; batch the files into
-   one subagent call rather than one-per-file. Use the `Agent`/Task tool with the
-   model set to the lightweight default.
-3. **Approve** — show the user the subagent's proposals; they confirm or edit per
-   file. Tags are never written without approval.
-4. **Apply** — `tag-context --apply <relpath> tag1,tag2,tag3` (run via tsx-by-path,
-   see Usage) writes the approved tags into the file's frontmatter (nested
-   `metadata.tags`, idempotent, preserves everything else). Add `--embed` to
-   re-embed the file immediately.
-
-### Proposal model (configurable)
-
-The subagent that proposes tags defaults to a lightweight model (Haiku) — a tag
-suggestion doesn't warrant the session model. To override, the user can name a
-different model when invoking the skill ("use sonnet for tagging") or, offline,
-point at a local Ollama model. The deterministic `--list`/`--apply` engine never
-calls a model, so only this proposal step is affected.
-
-## Usage
-
-Run the repo-local `tsx` **by path** from the TARGET project — NOT `pnpm` (the
-contextus repo needs Node 22 and your shell may be on a different Node, so `pnpm`
-errors out):
-
-```bash
-cd <target-project>   # the project whose corpus you're tagging
-TSX=~/src/claude-contextus/node_modules/.bin/tsx
-TAG=~/src/claude-contextus/scripts/tag-context.ts
-
-# 1. Find what's tagless
-$TSX $TAG --list
-
-# 2. (a lightweight Haiku subagent reads the files + proposes tags; you approve)
-
-# 3. Write approved tags to a file
-$TSX $TAG --apply decisions/decision-injection-format.md injection,ux,attention
-
-# 3b. …and re-embed it right away
-$TSX $TAG --apply gotchas/gotcha-foo.md lancedb,gotcha --embed
-```
-
-## Safety
-
-- **You propose, the user approves** — tags are never auto-written from a guess.
-- **Idempotent** — applying tags already present is a no-op; safe to re-run.
-- **Scoped** — refuses to write outside `.claude/context/`.
-- **Content-preserving** — only the frontmatter `tags` field changes; body and
-  other frontmatter keys are untouched.
-
-## Note on Value
-
-Tags are **stored but inert in v1** — nothing reads them yet. They future-proof the
-corpus for the v2 CAE's tag-driven gating (`docs/CATEGORIES_AND_TAGS.md` §8,
-`docs/CONTEXT_APPLICABILITY_EVALUATOR.md`). Seeding them now is cheap; backfilling a
-large corpus later is not.
-
-## Related
-
-- `/migrate-memory` — the source of tagless files (never fabricates tags)
-- `/create-context` — authoring new context (tag at creation time)
-- `docs/CATEGORIES_AND_TAGS.md` — the tag vocabulary
+See [./reference.md](./reference.md) for:
+- Tag strategies and conventions
+- AI suggestion workflow
+- Bulk operations

@@ -151,7 +151,7 @@ fi
 
 ## 7. User Context Pattern Duplication: Note for v2
 
-**Current design:** User context patterns are embedded into every project DB, triggering cascading rebuilds across all projects when `~/.claude/context/` changes.
+**Current design:** User context patterns are embedded into every project DB, triggering cascading rebuilds across all projects when `~/.contextus/context/` changes.
 
 **Not blocking for v1** at current scale, but worth revisiting at 10+ projects. The alternative — a shared `~/.contextus/data/user/` with a union query (two Chroma calls instead of one) — eliminates cascading rebuilds at the cost of slightly more query complexity.
 

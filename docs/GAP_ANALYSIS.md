@@ -35,7 +35,7 @@ Comparison between your existing hooks + memory system and what contextus v1 pro
 ✅ **Hit tracking** — Used patterns get boosted in re-ranking  
 ✅ **Incremental re-embed** — Edit a context file → automatic re-embedding  
 ✅ **Calibration** — Quality measurement (is injected context actually used?)  
-✅ **Multi-source** — Can ingest `.claude/context/`, `docs/`, `~/.claude/memory/`, `~/.claude/docs/`  
+✅ **Multi-source** — Can ingest `.claude/context/`, `docs/`, `~/.contextus/context/`, `~/.contextus/docs/`  
 
 ### Hooks (Automatic)
 ✅ `SessionStart` → `session-start-hook.js` — Ensure daemon running, auto-reconcile corpus  

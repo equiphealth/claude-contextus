@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-08
+
+### Added
+- **`/ctx` dispatcher skill** — Unified shortcut interface for 18 contextus commands (like `npm run`). Type `/ctx` to see all available shortcuts, `/ctx <subcommand>` to execute. Replaces 8 individual `ctx-*` alias skills with one self-documenting dispatcher.
+- **Ollama auto-install in setup wizard** — `/contextus-setup` now detects Ollama installation state and offers automatic installation on macOS (Homebrew) and Linux (official script). Includes model download progress tracking.
+- **Corpus metadata in `/context-stats`** — Status output now includes total file count and last-embedded timestamp without requiring supplemental bash commands.
+- **Execution pattern directives** — Skills explicitly distinguish between silent system commands (status, stats) and conversational wizards (setup, migrate) to reduce over-narration.
+- **CAPTURE_PHILOSOPHY.md** — Comprehensive guide on what belongs in `.claude/context/` vs docs vs memory, with durability tests and good/bad examples.
+
+### Changed
+- **Skill token optimization** — Moved implementation details from SKILL.md (eager-loaded) to colocated `reference.md` files (loaded on-demand). Skills now 10-40 lines instead of 50-628 lines. Total registry reduced from ~12,700 → ~3,400 tokens (73% reduction).
+- **Skill namespace cleanup** — `/ctx status|stats|create|calibrate|doctor|watch|daemon|setup|search|review|rebuild|configure|upgrade|migrate|audit|archive|merge` all accessible via dispatcher.
+- **Setup detection improvements** — `setup-detect.ts` now reads unified `projects.json` instead of scanning filesystem for per-project lance directories.
+- **Package version**: 0.13.0 → 0.14.0
+
+### Fixed
+- **Setup skill CLAUDE_PLUGIN_ROOT usage** — Fixed hardcoded paths; now uses environment variable correctly.
+- **User context path docs** — Corrected references from `~/.claude/context` to `~/.contextus/context`.
+
+### Documentation
+- Added `docs/dev/design/ollama-install-integration.md` — Design for Ollama detection and auto-install flow
+- Added `docs/dev/design/IMPLEMENTATION_STATUS.md` — Implementation tracking across features
+- Context patterns captured: `arch-skill-token-optimization-strategy.md`, `reference-skill-execution-patterns.md`, `reference-cli-tools-self-contained.md`, `tradeoff-skill-alias-context-cost-tradeoff.md`, `reference-claude-code-skill-system-feature-requests.md`
+
 ## [0.13.0] - 2026-06-27
 
 ### Added

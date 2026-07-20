@@ -107,6 +107,53 @@ function friendlyName(hash: string): string {
   }
 }
 
+/** Get corpus metadata for a project. */
+function getCorpusMetadata(projectId: string): {
+  totalFiles: number;
+  contextPath: string | null;
+  lastEmbedded: string | null;
+} {
+  try {
+    const reg: Record<string, { path: string }> = JSON.parse(
+      fs.readFileSync(REGISTRY_PATH, 'utf-8')
+    );
+    const projectPath = reg[projectId]?.path;
+    if (!projectPath) return { totalFiles: 0, contextPath: null, lastEmbedded: null };
+
+    const contextPath = path.join(projectPath, '.claude', 'context');
+    if (!fs.existsSync(contextPath)) return { totalFiles: 0, contextPath, lastEmbedded: null };
+
+    // Count .md files recursively
+    const countFiles = (dir: string): number => {
+      let count = 0;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          count += countFiles(fullPath);
+        } else if (entry.isFile() && entry.name.endsWith('.md')) {
+          count++;
+        }
+      }
+      return count;
+    };
+
+    const totalFiles = countFiles(contextPath);
+
+    // Get last embedded timestamp from LanceDB metadata (if available)
+    const dbPath = path.join(CONTEXTUS_DATA, projectId, 'lancedb');
+    let lastEmbedded: string | null = null;
+    if (fs.existsSync(dbPath)) {
+      const stats = fs.statSync(dbPath);
+      lastEmbedded = new Date(stats.mtime).toISOString().split('T')[0];
+    }
+
+    return { totalFiles, contextPath, lastEmbedded };
+  } catch {
+    return { totalFiles: 0, contextPath: null, lastEmbedded: null };
+  }
+}
+
 /** Read usage-ratings.jsonl for a project, filter by time window. */
 function readUsageRatings(projectId: string, windowDays: number): UsageRating[] {
   const ratingsPath = path.join(CONTEXTUS_DATA, projectId, 'usage-ratings.jsonl');
@@ -240,6 +287,7 @@ function inferCategory(filename: string): string {
 /** Format human-readable output. */
 function formatOutput(
   projectName: string,
+  projectId: string,
   stats: Map<string, PatternStats>,
   ratings: UsageRating[],
   windowDays: number,
@@ -247,6 +295,12 @@ function formatOutput(
 ): void {
   console.log(`\n## Context Usage Analytics: ${projectName}`);
   console.log(`Window: ${windowDays === Infinity ? 'all time' : `last ${windowDays} days`}\n`);
+
+  // Corpus metadata
+  const corpus = getCorpusMetadata(projectId);
+  console.log(
+    `Corpus: ${corpus.totalFiles} files${corpus.lastEmbedded ? ` (last embedded: ${corpus.lastEmbedded})` : ''}`
+  );
 
   // Summary
   const totalQueries = new Set(ratings.map((r) => r.promptHash)).size;
@@ -316,6 +370,7 @@ function formatOutput(
 /** Format JSON output. */
 function formatJson(
   projectName: string,
+  projectId: string,
   stats: Map<string, PatternStats>,
   ratings: UsageRating[],
   windowDays: number
@@ -325,9 +380,15 @@ function formatJson(
   const avgScore =
     ratings.length > 0 ? ratings.reduce((sum, r) => sum + r.weightedScore, 0) / ratings.length : 0;
 
+  const corpus = getCorpusMetadata(projectId);
+
   const output = {
     project: projectName,
     windowDays: windowDays === Infinity ? null : windowDays,
+    corpus: {
+      totalFiles: corpus.totalFiles,
+      lastEmbedded: corpus.lastEmbedded
+    },
     summary: {
       totalQueries,
       totalEvaluations: totalEvals,
@@ -411,9 +472,9 @@ async function main() {
 
   // Output
   if (jsonOutput) {
-    formatJson(projectName, stats, ratings, windowDays);
+    formatJson(projectName, projectId, stats, ratings, windowDays);
   } else {
-    formatOutput(projectName, stats, ratings, windowDays, showCost);
+    formatOutput(projectName, projectId, stats, ratings, windowDays, showCost);
   }
 }
 

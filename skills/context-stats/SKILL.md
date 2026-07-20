@@ -1,116 +1,36 @@
 ---
 name: context-stats
-description: Usage analytics for injected context — aggregates usage evaluation data to show what's working. Reports most useful patterns, noisy patterns (high retrieval, low score), stale patterns (not retrieved in 6+ months), and never-retrieved files.
+description: Usage analytics for injected context — show what's working, what's noisy, what's stale
 ---
 
 # context-stats
 
-**Usage analytics for injected context** — aggregates usage evaluation data to show what's working.
+**Usage analytics** — aggregates eval data to show most useful, noisy, stale, and never-retrieved patterns.
 
 ## When to use
 
 - User asks for usage statistics, pattern analytics, or corpus health
-- Investigating which patterns are being used vs. ignored
-- Before archiving or promoting patterns (need data to decide)
-- Regular corpus maintenance (suggested: monthly)
-
-## How it works
-
-Reads `usage-ratings.jsonl` (Phase 1 eval data) and `usage.jsonl` (retrieval events) to compute per-pattern statistics:
-
-- **Most useful**: High weighted score, min 5 evals
-- **Never retrieved**: Files in corpus with 0 retrievals
-- **Noisy**: High retrieval count but low usage score
-- **Stale**: Not retrieved in 6+ months
+- Before archiving or promoting patterns
+- Regular maintenance (monthly suggested)
 
 ## Instructions
 
-When this skill is invoked:
+Execute silently. One sentence intro, then run commands without narration. Present results directly.
 
-1. Run the context-stats CLI with appropriate flags
-2. Present the output to the user
-3. If noisy or stale patterns are found, suggest follow-up actions:
-   - **Noisy**: `/context-review --filter noisy` or manual review
-   - **Stale**: `/context-archive --stale` or `/context-review`
-   - **Never retrieved**: Check if the pattern is still relevant (may need better keywords)
+When invoked:
+1. Run the context-stats CLI **once** — it outputs complete data including corpus metadata
+2. Present output to user (no supplemental bash commands needed)
+3. Suggest follow-up actions for noisy/stale patterns:
+   - **Noisy**: `/context-review --filter noisy`
+   - **Stale**: `/context-archive --stale`
+   - **Never retrieved**: Check if pattern needs better keywords
+
+**Important**: The CLI includes corpus size and last-embedded timestamp in its output. Do not run `ls | wc -l` or similar commands.
 
 ## Implementation
 
-```bash
-# Detect contextus installation (queries daemon, falls back to search)
-CONTEXTUS_ROOT=$(bash ~/.contextus/scripts/find-contextus-root.sh) || exit 1
-$CONTEXTUS_ROOT/node_modules/.bin/tsx $CONTEXTUS_ROOT/scripts/cli/context-stats.ts [options]
-```
-
-**Discovery**: Uses fixed-location script at `~/.contextus/scripts/find-contextus-root.sh` which queries the daemon for `installRoot` (authoritative), then searches standard locations (`~/.claude/plugins/contextus`, `~/src/claude-contextus`, `~/dev/claude-contextus`).
-
-### Flags
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--project <name>` | Target project (name, hash, or path) | Current directory (sha256) |
-| `--window N` | Days of history to analyze | 30 |
-| `--all` | Analyze all history (no time window) | - |
-| `--json` | Output JSON instead of human-readable | - |
-| `--cost` | Include eval cost breakdown | - |
-
-### Examples
-
-```bash
-# Detect contextus location once, then use it
-CONTEXTUS_ROOT=$(bash ~/.contextus/scripts/find-contextus-root.sh) || exit 1
-TSX=$CONTEXTUS_ROOT/node_modules/.bin/tsx
-STATS="$TSX $CONTEXTUS_ROOT/scripts/cli/context-stats.ts"
-
-# Current project, last 30 days
-$STATS
-
-# Specific project, last 7 days with cost
-$STATS --project automation --window 7 --cost
-
-# All history as JSON
-$STATS --all --json
-```
-
-## Interpreting Results
-
-### Top 10 Most Useful
-Patterns with high weighted scores (min 5 evaluations). These are high-value patterns that are working well (informational only).
-
-### Noisy Patterns
-Retrieved frequently but low usage scores (< 0.3). These are false positives — the retrieval is matching but the content isn't helping.
-
-**Causes:**
-- Generic keywords causing over-retrieval
-- Outdated information that was useful once but isn't now
-- Overly broad pattern coverage
-
-**Fix:** Rewrite for specificity, add more targeted keywords, or archive
-
-### Stale Patterns
-Not retrieved in 6+ months. May be obsolete, may need better keywords, or may be niche patterns that rarely apply.
-
-**Action:** Review content — if still relevant, improve keywords to help discoverability. If obsolete, archive.
-
-### Never Retrieved
-Files in corpus with zero retrieval events. Either:
-1. Genuinely unused (archive or delete)
-2. Keywords don't match how users phrase questions (improve frontmatter)
-3. Too new to have data yet (wait)
-
-## Related Skills
-
-- `/context-review` — Interactive curation workflow
-- `/context-archive` — Move stale patterns out of active corpus
-- `/context-doctor` — Full health check (includes staleness detection)
-- `/tag-context --suggest` — AI-suggested tags based on co-occurrence
-
-## Requirements
-
-- Phase 1 implementation (usage evaluation active)
-- At least 5-10 evaluations for meaningful statistics
-- `usage-ratings.jsonl` and `usage.jsonl` logs present
-
-## Cost
-
-Zero — reads local JSONL files only, no LLM calls.
+See [./reference.md](./reference.md) for:
+- CLI command and discovery script
+- All flags and options
+- Result interpretation guide
+- Examples and troubleshooting

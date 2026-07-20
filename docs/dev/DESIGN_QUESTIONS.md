@@ -208,7 +208,7 @@ for (const pattern of rankedPatterns) {
 **Partial answer**: Configurable sources
 - `.claude/context/` (always scanned)
 - `docs/` (opt-in)
-- `~/.claude/context/` user patterns (always scanned)
+- `~/.contextus/context/` user patterns (always scanned)
 - Custom paths via config
 
 **Open detail**: Should we auto-detect common doc locations?
