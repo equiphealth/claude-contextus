@@ -106,3 +106,8 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [claude-code-skill-system-feature-requests](reference/reference-claude-code-skill-system-feature-requests.md) — Feature requests for Claude Code skill system discovered while building contextus — native aliasing and argument autocomplete
 - [skill-token-optimization-strategy](arch/arch-skill-token-optimization-strategy.md) — Skill file architecture — slim SKILL.md with reference docs, but triggers MUST stay in SKILL.md
 - [skill-testing-execution-philosophy](reference/reference-skill-testing-execution-philosophy.md) — Skills must execute fully during testing with minimal narration - show real results, not summaries
+- [skill-execution-model-capability-gap](gotchas/gotcha-skill-execution-model-capability-gap.md) — Smaller models (Haiku) often ignore skill execution directives in favor of conversational responses
+- [v3-pull-based-retrieval-evolution](phase/phase-v3-pull-based-retrieval-evolution.md) — V3+ architectural evolution toward pull-based retrieval alongside current push injection
+- [source-exclude-config-not-merged](gotchas/gotcha-source-exclude-config-not-merged.md) — sources.*.exclude overrides in .claude/contextus.json are ignored — resolveSources uses raw plugin.json instead of merged config
+- [source-exclude-config-not-merged](implementation/implementation-source-exclude-config-not-merged.md) — FIXED 2026-07-20: sources.*.exclude patterns now properly merge from project config (was: resolveSources used raw plugin.json)
+- [bug-documentation-lifecycle](decisions/decision-bug-documentation-lifecycle.md) — How to manage gotcha/implementation documentation as bugs move from discovered → fixed → historical
