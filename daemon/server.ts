@@ -18,6 +18,7 @@
  *   POST /query   {project, prompt}                              → { continue, hookSpecificOutput?: { additionalContext } }
  *   POST /notify  {project, file, cwd?}                          → { ok, embedded, id? }
  *   POST /capture {category, slug, description, body, cwd, ...}  → { ok, file, embedded, scope } (overwrites existing)
+ *   POST /delete  {relPath, cwd, scope?, project?}               → { ok, archived, removedFromIndex, embeddingsRemoved }
  *   POST /reconcile {project, cwd, check?}                       → { state, started? } | { state, embedded, removed }
  *
  * The pipeline on /query is the spine: embedQuery → vector search → rerank →
@@ -46,7 +47,8 @@ import {
   tableExists,
   readTableMeta,
   incrementHits,
-  getContentHashes
+  getContentHashes,
+  deleteByFilename
 } from '../lib/storage/lance-client.js';
 import { estimateTokens } from '../lib/retrieval/inject-format.js';
 import { expandQuery, shouldExpand } from '../lib/retrieval/expand.js';
@@ -910,6 +912,129 @@ ${content}
     });
 }
 
+/**
+ * POST /delete — archive a context file: move it out of the corpus, drop its
+ * embeddings, and remove its CONTEXT.md index entry. Never a hard delete —
+ * the file lands in `.claude/context/.archive/` (flat, no category subdir,
+ * matching /context-archive's existing documented layout) so a bad archive
+ * is one `mv`/`git mv` away from being undone. Cleanup of `.archive/` itself
+ * is left to the user (`rm -rf .claude/context/.archive`) — no auto-purge.
+ *
+ * `.archive/**` is excluded from every source's embed glob by default (see
+ * lib/config.ts DEFAULTS.sources), so archived files never get swept back
+ * into the corpus by a full `pnpm embed` rebuild.
+ */
+async function handleDelete(
+  body: Record<string, unknown>,
+  res: http.ServerResponse
+): Promise<void> {
+  const relPathRaw = typeof body.relPath === 'string' ? body.relPath.trim() : '';
+  const scope = typeof body.scope === 'string' ? body.scope : 'project';
+  const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
+  const project = typeof body.project === 'string' && body.project ? body.project : undefined;
+
+  if (!relPathRaw) {
+    sendJson(res, 400, { ok: false, error: 'missing required field: relPath' });
+    return;
+  }
+  if (scope === 'project' && !cwd) {
+    sendJson(res, 400, { ok: false, error: 'cwd is required for project-scoped delete' });
+    return;
+  }
+
+  const contextDir =
+    scope === 'user' ? expandHome('~/.contextus/context') : path.join(cwd!, '.claude', 'context');
+
+  // Resolve + contain: relPath must land inside contextDir. Blocks `../../etc/passwd`
+  // style traversal — same guard embedSingleFile uses for the mirror-image write path.
+  const absFile = path.resolve(contextDir, relPathRaw);
+  const normDir = path.resolve(contextDir);
+  if (!absFile.startsWith(normDir + path.sep)) {
+    sendJson(res, 400, { ok: false, error: 'relPath escapes the context directory' });
+    return;
+  }
+  if (!fs.existsSync(absFile)) {
+    sendJson(res, 404, { ok: false, error: `file not found: ${relPathRaw}` });
+    return;
+  }
+
+  // relPath as stored in the corpus (rows are keyed by path relative to contextDir,
+  // forward-slashed — matches embedSingleFile/buildRows).
+  const relPath = path.relative(normDir, absFile).replace(/\\/g, '/');
+
+  const archiveDir = path.join(contextDir, '.archive');
+  const archiveDest = path.join(archiveDir, path.basename(absFile));
+  try {
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.renameSync(absFile, archiveDest);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logError('error', 'delete', 'failed to archive file', { file: relPath, message: msg });
+    sendJson(res, 500, { ok: false, error: `archive failed: ${msg}` });
+    return;
+  }
+
+  // Remove from CONTEXT.md index — best-effort text munging, matches the append
+  // format capture uses (`- [slug](relPath) — description`). Non-fatal: the file
+  // move + embedding delete already succeeded, a stale index line just means a
+  // dead link, not a broken corpus.
+  let removedFromIndex = false;
+  const indexFile = path.join(contextDir, 'CONTEXT.md');
+  try {
+    if (fs.existsSync(indexFile)) {
+      const before = fs.readFileSync(indexFile, 'utf-8');
+      const marker = `](${relPath})`;
+      const lines = before.split('\n');
+      const filtered = lines.filter((line) => !line.includes(marker));
+      if (filtered.length !== lines.length) {
+        fs.writeFileSync(indexFile, filtered.join('\n'));
+        removedFromIndex = true;
+      }
+    }
+  } catch (err) {
+    logError('warn', 'delete', 'failed to update CONTEXT.md index (non-fatal)', {
+      file: relPath,
+      message: err instanceof Error ? err.message : String(err)
+    });
+  }
+
+  // Drop embeddings. Check first so the response can report whether there was
+  // anything to remove (a file that was never embedded — e.g. prefix/type
+  // mismatch quarantine — archives fine but has nothing to delete here).
+  const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
+  let embeddingsRemoved = false;
+  try {
+    const hashes = await getContentHashes(project, undefined, projectId);
+    embeddingsRemoved = hashes.has(relPath);
+    if (embeddingsRemoved) {
+      await deleteByFilename(relPath, project, projectId);
+      invalidateCorpusCache(project);
+    }
+  } catch (err) {
+    logError('error', 'delete', 'failed to delete embeddings', {
+      file: relPath,
+      message: err instanceof Error ? err.message : String(err)
+    });
+    sendJson(res, 500, {
+      ok: false,
+      error: `file archived but embedding cleanup failed: ${err instanceof Error ? err.message : 'unknown'}`,
+      archived: archiveDest
+    });
+    return;
+  }
+
+  logCapture(scope, relPath, `archived → .archive/${path.basename(absFile)}`);
+  logInfo('Context archived', { file: relPath, removedFromIndex, embeddingsRemoved });
+
+  sendJson(res, 200, {
+    ok: true,
+    archived: archiveDest,
+    archivedRelPath: `.archive/${path.basename(absFile)}`,
+    removedFromIndex,
+    embeddingsRemoved
+  });
+}
+
 /* ── Directory watcher — live deletion detection ────────────────────────────── */
 
 /**
@@ -1226,6 +1351,19 @@ export function requestHandler(req: http.IncomingMessage, res: http.ServerRespon
         const message = err instanceof Error ? err.message : String(err);
         logError('error', 'daemon', 'capture request failed', { message });
         sendJson(res, 400, { ok: false, error: `capture failed: ${message}` });
+      });
+    return;
+  }
+
+  // Same reasoning as /capture above — /delete is never hook-triggered, so it
+  // gets its own catch and an honest {ok:false, error} instead of {continue:true}.
+  if (method === 'POST' && url === '/delete') {
+    readJsonBody(req)
+      .then((body) => handleDelete(body, res))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        logError('error', 'daemon', 'delete request failed', { message });
+        sendJson(res, 400, { ok: false, error: `delete failed: ${message}` });
       });
     return;
   }
