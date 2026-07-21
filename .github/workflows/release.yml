@@ -51,7 +51,7 @@ jobs:
           pnpm type-check
 
       - name: Run tests
-        run: pnpm test
+        run: pnpm test:all
         env:
           NODE_OPTIONS: --experimental-vm-modules
 
