@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-21
+
+### Fixed
+- **`/capture` no longer returns `{continue: true}` on failure** — that response shape is for hook-triggered endpoints (`/query`, `/notify`, `/reconcile`) where "never block the prompt" is the right fallback. `/capture` is never hook-triggered, so it shared a response shape that made failures indistinguishable from success. `/capture` now gets its own dispatch branch, returning `{ok: false, error: ...}` on any failure (e.g. malformed JSON body) instead of falling through to the shared hook-degrade path.
+
 ## [0.15.0] - 2026-07-20
 
 ### Fixed

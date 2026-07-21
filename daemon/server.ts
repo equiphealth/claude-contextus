@@ -1112,7 +1112,13 @@ async function handleReconcile(
     .finally(() => reconcilingProjects.delete(projectLabel));
 }
 
-const server = http.createServer((req, res) => {
+/**
+ * The daemon's HTTP request handler, extracted so tests can build their own
+ * `http.createServer(requestHandler)` on an ephemeral port — real requests,
+ * real response shapes, without booting the actual daemon (model warmup,
+ * PID files, the fixed port). See tests/integration/capture-endpoint.test.ts.
+ */
+export function requestHandler(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = req.url ?? '/';
   const method = req.method ?? 'GET';
 
@@ -1209,15 +1215,26 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (
-    method === 'POST' &&
-    (url === '/query' || url === '/notify' || url === '/reconcile' || url === '/capture')
-  ) {
+  // /capture is never hook-triggered — nothing calls it expecting `{continue:true}`
+  // semantics, since there's no prompt it could be blocking. Give it its own catch
+  // so it always gets an honest error response, even for failures upstream of
+  // handleCapture's own queue/try-catch (e.g. a malformed JSON body).
+  if (method === 'POST' && url === '/capture') {
+    readJsonBody(req)
+      .then((body) => handleCapture(body, res))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        logError('error', 'daemon', 'capture request failed', { message });
+        sendJson(res, 400, { ok: false, error: `capture failed: ${message}` });
+      });
+    return;
+  }
+
+  if (method === 'POST' && (url === '/query' || url === '/notify' || url === '/reconcile')) {
     readJsonBody(req)
       .then((body) => {
         if (url === '/query') return handleQuery(body, res);
         if (url === '/notify') return handleNotify(body, res);
-        if (url === '/capture') return handleCapture(body, res);
         return handleReconcile(body, res);
       })
       .catch((err) => {
@@ -1231,7 +1248,9 @@ const server = http.createServer((req, res) => {
   }
 
   sendJson(res, 404, { error: 'not found' });
-});
+}
+
+const server = http.createServer(requestHandler);
 
 /** Write PID + port files so ensureDaemonRunning can find/health-check us. */
 function writeRuntimeFiles(): void {
@@ -1371,9 +1390,15 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-startDaemon().catch((err) => {
-  logError('error', 'daemon', 'Failed to start', {
-    message: err instanceof Error ? err.message : String(err)
+// Only boot the real daemon when this file is the executed entrypoint
+// (`node daemon/server.ts`) — not when it's imported as a module (e.g. tests
+// importing `requestHandler`), which would otherwise bind the real port and
+// warm the real model as an import side effect.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  startDaemon().catch((err) => {
+    logError('error', 'daemon', 'Failed to start', {
+      message: err instanceof Error ? err.message : String(err)
+    });
+    process.exit(1);
   });
-  process.exit(1);
-});
+}
