@@ -118,3 +118,5 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [pr-completion-checklist](reference/reference-pr-completion-checklist.md) — Standard PR completion workflow: changelog, version bump (all 3 manifests), then merge
 - [ollama-headless-vs-gui-start](gotchas/gotcha-ollama-headless-vs-gui-start.md) — ollama serve is headless; open -a Ollama launches the GUI app — don't confuse them when scripting/testing
 - [ollama-headless-vs-gui-start](gotchas/gotcha-ollama-headless-vs-gui-start.md) — ollama serve is headless and survives session close; open -a Ollama launches the GUI app — don't confuse them when scripting/testing
+- [bug-documentation-lifecycle](decisions/decision-bug-documentation-lifecycle.md) — How to manage gotcha/implementation documentation as bugs move from discovered → fixed → historical — now via /delete, not raw rm
+- [corpus-self-maintenance-via-delete](decisions/decision-corpus-self-maintenance-via-delete.md) — Proactively archive corpus content when it goes stale — a problem gets solved, a decision gets superseded, a phase completes — not just for gotchas/bugs
