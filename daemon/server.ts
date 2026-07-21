@@ -1112,7 +1112,13 @@ async function handleReconcile(
     .finally(() => reconcilingProjects.delete(projectLabel));
 }
 
-const server = http.createServer((req, res) => {
+/**
+ * The daemon's HTTP request handler, extracted so tests can build their own
+ * `http.createServer(requestHandler)` on an ephemeral port — real requests,
+ * real response shapes, without booting the actual daemon (model warmup,
+ * PID files, the fixed port). See tests/integration/capture-endpoint.test.ts.
+ */
+export function requestHandler(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = req.url ?? '/';
   const method = req.method ?? 'GET';
 
@@ -1242,7 +1248,9 @@ const server = http.createServer((req, res) => {
   }
 
   sendJson(res, 404, { error: 'not found' });
-});
+}
+
+const server = http.createServer(requestHandler);
 
 /** Write PID + port files so ensureDaemonRunning can find/health-check us. */
 function writeRuntimeFiles(): void {
@@ -1382,9 +1390,15 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-startDaemon().catch((err) => {
-  logError('error', 'daemon', 'Failed to start', {
-    message: err instanceof Error ? err.message : String(err)
+// Only boot the real daemon when this file is the executed entrypoint
+// (`node daemon/server.ts`) — not when it's imported as a module (e.g. tests
+// importing `requestHandler`), which would otherwise bind the real port and
+// warm the real model as an import side effect.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  startDaemon().catch((err) => {
+    logError('error', 'daemon', 'Failed to start', {
+      message: err instanceof Error ? err.message : String(err)
+    });
+    process.exit(1);
   });
-  process.exit(1);
-});
+}
