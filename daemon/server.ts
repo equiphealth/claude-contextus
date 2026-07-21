@@ -1209,15 +1209,26 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (
-    method === 'POST' &&
-    (url === '/query' || url === '/notify' || url === '/reconcile' || url === '/capture')
-  ) {
+  // /capture is never hook-triggered — nothing calls it expecting `{continue:true}`
+  // semantics, since there's no prompt it could be blocking. Give it its own catch
+  // so it always gets an honest error response, even for failures upstream of
+  // handleCapture's own queue/try-catch (e.g. a malformed JSON body).
+  if (method === 'POST' && url === '/capture') {
+    readJsonBody(req)
+      .then((body) => handleCapture(body, res))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        logError('error', 'daemon', 'capture request failed', { message });
+        sendJson(res, 400, { ok: false, error: `capture failed: ${message}` });
+      });
+    return;
+  }
+
+  if (method === 'POST' && (url === '/query' || url === '/notify' || url === '/reconcile')) {
     readJsonBody(req)
       .then((body) => {
         if (url === '/query') return handleQuery(body, res);
         if (url === '/notify') return handleNotify(body, res);
-        if (url === '/capture') return handleCapture(body, res);
         return handleReconcile(body, res);
       })
       .catch((err) => {
