@@ -176,6 +176,64 @@ test('/delete on a file with no CONTEXT.md index entry still archives cleanly', 
   assert.equal(json.removedFromIndex, false, 'nothing to remove — no index file existed');
 });
 
+test('/delete returns embeddingsRemoved: true against a real LanceDB row (no mocking)', async () => {
+  // No embedding model is loaded in this suite, so we can't get here via a real
+  // /capture + async embed. Instead, insert a row directly into the real,
+  // file-based LanceDB table (unified DB, resolved under the throwaway HOME set
+  // at the top of this file) — same table shape /delete's own getContentHashes
+  // and deleteByFilename calls query against. This exercises the actual LanceDB
+  // predicate logic instead of asserting against a mock's call arguments.
+  const relPath = 'gotchas/gotcha-real-lancedb.md';
+  seedContextFile(relPath);
+
+  const { projectHash } = await import('../../lib/config.js');
+  const { createTable, tableExists, openTable } = await import('../../lib/storage/lance-client.js');
+  const projectId = projectHash(projectDir);
+
+  // Full ContextRow shape — LanceDB infers its schema from the first insert, so
+  // a partial row (e.g. just filename/vector) would create a table too narrow
+  // for getContentHashes' own .select(['filename','content_hash','source','project']).
+  const row = {
+    id: `${projectId}:${relPath}:0`,
+    project: projectId,
+    vector: Array(8).fill(0), // dimension is irrelevant here — no search/query, only a delete predicate
+    document: 'dummy content for test',
+    filename: relPath,
+    chunk_index: 0,
+    heading: '',
+    type: 'gotcha',
+    source: 'projectContext',
+    tags: '',
+    hit_count: 0,
+    last_hit: '',
+    updated_at: new Date().toISOString(),
+    content_hash: 'dummy-hash-for-test'
+  };
+
+  if (await tableExists()) {
+    const table = await openTable();
+    await table.add([row]);
+  } else {
+    await createTable([row], {
+      providerInfo: {
+        provider: 'ollama',
+        model: 'nomic-embed-text',
+        ollamaModel: 'nomic-embed-text'
+      }
+    });
+  }
+
+  const { status, json } = await post('/delete', JSON.stringify({ relPath, cwd: projectDir }));
+
+  assert.equal(status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(
+    json.embeddingsRemoved,
+    true,
+    'a real row existed for this file+project and should have been found and deleted'
+  );
+});
+
 test('/delete on a nonexistent file returns 404, not {continue: true}', async () => {
   const { status, json } = await post(
     '/delete',
