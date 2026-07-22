@@ -109,6 +109,60 @@ test('/delete archives an existing file — moved, index entry removed', async (
   assert.ok(!indexContent.includes('gotcha-itest-file.md'), 'index line should be gone');
 });
 
+test('/delete only removes its own entry from CONTEXT.md, leaving siblings intact', async () => {
+  seedContextFile('gotchas/gotcha-1.md');
+  seedContextFile('gotchas/gotcha-2.md'); // target
+  seedContextFile('gotchas/gotcha-3.md');
+  // seedContextFile appends one CONTEXT.md line per call under a shared `name:
+  // itest-file` — override each entry's slug in the index so the three lines
+  // are distinguishable (otherwise the marker match can't tell 1/2/3 apart).
+  const indexFile = path.join(contextDir, 'CONTEXT.md');
+  fs.writeFileSync(
+    indexFile,
+    [
+      '- [itest-1](gotchas/gotcha-1.md) — seeded for test',
+      '- [itest-2](gotchas/gotcha-2.md) — seeded for test',
+      '- [itest-3](gotchas/gotcha-3.md) — seeded for test',
+      ''
+    ].join('\n')
+  );
+
+  const { status, json } = await post(
+    '/delete',
+    JSON.stringify({ relPath: 'gotchas/gotcha-2.md', cwd: projectDir })
+  );
+
+  assert.equal(status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(json.removedFromIndex, true);
+
+  const indexContent = fs.readFileSync(indexFile, 'utf-8');
+  assert.ok(indexContent.includes('gotcha-1.md'), 'sibling entry 1 should remain');
+  assert.ok(indexContent.includes('gotcha-3.md'), 'sibling entry 3 should remain');
+  assert.ok(!indexContent.includes('gotcha-2.md'), 'target entry should be removed');
+});
+
+test('/delete works for user-scoped context (~/.contextus/context, no cwd needed)', async () => {
+  // HOME is already routed to a throwaway dir at module load (see top of file),
+  // so this writes/reads under that sandbox, never the real ~/.contextus/context.
+  const userContextDir = path.join(process.env.HOME!, '.contextus', 'context');
+  const relPath = 'gotchas/gotcha-user-level.md';
+  const absPath = path.join(userContextDir, relPath);
+
+  fs.mkdirSync(path.dirname(absPath), { recursive: true });
+  fs.writeFileSync(absPath, 'user level doc');
+
+  const { status, json } = await post('/delete', JSON.stringify({ relPath, scope: 'user' }));
+
+  assert.equal(status, 200);
+  assert.equal(json.ok, true);
+  assert.ok(
+    fs.existsSync(path.join(userContextDir, '.archive', 'gotcha-user-level.md')),
+    'file should be archived under the user-scoped context dir, not the project one'
+  );
+  assert.ok(!fs.existsSync(absPath), 'original user-scoped file should be gone');
+});
+
 test('/delete on a file with no CONTEXT.md index entry still archives cleanly', async () => {
   seedContextFile('gotchas/gotcha-unindexed.md', { indexed: false });
 
