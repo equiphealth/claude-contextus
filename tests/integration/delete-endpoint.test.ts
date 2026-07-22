@@ -10,11 +10,13 @@
  * must never return `{continue: true}` on failure — every path gets an
  * honest `{ok: false, error}` instead.
  *
- * These tests boot the real `requestHandler` on an ephemeral port — no
- * embedding model is loaded, so `embeddingsRemoved` is always `false` here
- * (no LanceDB table exists for the throwaway project); that's the correct,
- * honest answer, not a test gap — a real project with a populated table
- * would see `embeddingsRemoved: true`.
+ * These tests boot the real `requestHandler` on an ephemeral port. No
+ * embedding model is loaded, so most cases never populate a LanceDB table —
+ * `embeddingsRemoved: false` for those is the correct, honest answer, not a
+ * test gap. One case (below) inserts a real row directly into the real,
+ * file-based LanceDB table to exercise `embeddingsRemoved: true` without
+ * needing a model — see its own comment for why that's preferable to mocking
+ * `getContentHashes`/`deleteByFilename`.
  *
  * Run via `pnpm test:integration` (not the fast `pnpm test` suite).
  */
