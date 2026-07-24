@@ -9,6 +9,18 @@
 # CONTEXTUS_DEBUG_STATUSLINE=1 in your shell profile to turn it on, unset (or
 # set to anything else) to go quiet again. No reinstall needed either way.
 #
+# LAYOUT (no universal default — every user's existing statusline script is
+# different, so there's no join format guaranteed to look right for everyone):
+#   CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=newline (default) — own line below the rest
+#   CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=inline            — appended " | ..." on the same line
+#   CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=right             — right-aligned to terminal width,
+#     best-effort: statuslines run in a subprocess with no real tty attached, so terminal
+#     width detection (tput cols / $COLUMNS) is unreliable there — falls back to newline
+#     layout if width can't be determined, rather than producing broken padding.
+# If none of these look right against YOUR statusline script, edit the block below
+# (marked "# contextus: verbose debug statusline") directly — this is a debugging aid,
+# not something worth over-engineering a universal formatter for.
+#
 # Reads ~/.contextus/runtime/${CLAUDE_CODE_SESSION_ID}.last-injection.json,
 # written by the daemon after every /query (see lib/debug-statusline.ts).
 # Requires jq — the snapshot has a nested `sources` object that isn't worth
@@ -56,16 +68,50 @@ if [ "${CONTEXTUS_DEBUG_STATUSLINE:-0}" = "1" ] && [ -n "${CLAUDE_CODE_SESSION_I
             end
         ' "$_ctx_dbg_file" 2>/dev/null || echo "")
         if [ -n "$_ctx_dbg_line" ]; then
-            printf ' | %s' "$_ctx_dbg_line"
+            case "${CONTEXTUS_DEBUG_STATUSLINE_LAYOUT:-newline}" in
+                inline)
+                    printf ' | %s' "$_ctx_dbg_line"
+                    ;;
+                right)
+                    _ctx_dbg_cols="${COLUMNS:-}"
+                    if [ -z "$_ctx_dbg_cols" ] && command -v tput >/dev/null 2>&1; then
+                        _ctx_dbg_cols=$(tput cols 2>/dev/null || echo "")
+                    fi
+                    if [ -n "$_ctx_dbg_cols" ] && [ "$_ctx_dbg_cols" -gt 0 ] 2>/dev/null; then
+                        _ctx_dbg_pad=$((_ctx_dbg_cols - ${#_ctx_dbg_line}))
+                        if [ "$_ctx_dbg_pad" -gt 0 ]; then
+                            printf '\n%*s' "$_ctx_dbg_pad" ""
+                        else
+                            printf '\n'
+                        fi
+                        printf '%s' "$_ctx_dbg_line"
+                    else
+                        # Width undetectable (no tty in this subprocess) — degrade to newline
+                        printf '\n%s' "$_ctx_dbg_line"
+                    fi
+                    unset _ctx_dbg_cols _ctx_dbg_pad
+                    ;;
+                *)
+                    printf '\n%s' "$_ctx_dbg_line"
+                    ;;
+            esac
         fi
     fi
 fi
 DEBUG
 
+print_help() {
+    echo "[contextus] Toggle with: export CONTEXTUS_DEBUG_STATUSLINE=1 (or 0 to silence)"
+    echo "[contextus] Layout: export CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=newline|inline|right (default: newline)"
+    echo "[contextus] No single default looks right against every statusline script — if this one"
+    echo "[contextus] doesn't fit yours, you may need to adjust formatting: edit the block marked"
+    echo "[contextus] '# contextus: verbose debug statusline' directly in $STATUSLINE"
+}
+
 # --- Case 1: Already patched ---
 if [ -f "$STATUSLINE" ] && grep -qF "$MARKER" "$STATUSLINE" 2>/dev/null; then
     echo "[contextus] Debug statusline already installed — skipping."
-    echo "[contextus] Toggle with: export CONTEXTUS_DEBUG_STATUSLINE=1 (or 0 to silence)"
+    print_help
     exit 0
 fi
 
@@ -85,7 +131,7 @@ MINIMAL
     printf '\n_ctx_dbg_out=$(printf "")\n' >> "$STATUSLINE"
     chmod +x "$STATUSLINE"
     echo "[contextus] Created $STATUSLINE with the debug block."
-    echo "[contextus] Toggle with: export CONTEXTUS_DEBUG_STATUSLINE=1 (or 0 to silence)"
+    print_help
     exit 0
 fi
 
@@ -96,4 +142,4 @@ fi
 # rest of the script doesn't matter, so appending is simplest and safest.
 printf '\n%s\n' "$DEBUG_BLOCK" >> "$STATUSLINE"
 echo "[contextus] Debug statusline installed — printing appended to existing statusline output."
-echo "[contextus] Toggle with: export CONTEXTUS_DEBUG_STATUSLINE=1 (or 0 to silence)"
+print_help
