@@ -48,7 +48,10 @@ export interface LastInjectionDebug {
   expansion: 'off' | 'fired' | 'skipped';
   hybrid: 'off' | 'adaptive-skip' | 'adaptive-fired' | 'always' | 'keyword-fallback';
   capacityTier: 'none' | 'reduced' | 'minimal' | 'disabled';
+  /** source-pack counts (projectContext/userContext/...) — kept for anyone parsing this JSON directly */
   sources: Record<string, number>;
+  /** relPath (or id fallback) of each injected chunk's file, in injection order — empty when nothing injected */
+  injectedFiles: string[];
   /** Rolling avg weightedScore over the last `recentUsefulSamples` ratings, as 0-100, null if no data yet */
   recentUsefulPct: number | null;
   recentUsefulSamples: number;

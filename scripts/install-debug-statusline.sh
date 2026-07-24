@@ -61,12 +61,23 @@ if [ "${CONTEXTUS_DEBUG_STATUSLINE:-0}" = "1" ] && [ -n "${CLAUDE_CODE_SESSION_I
     if [ -f "$_ctx_dbg_file" ]; then
         _ctx_dbg_line=$(jq -r '
             def pct(n): (n * 100 | round);
+            # Bounded file label: first injected file (basename, no dir/.md) plus a
+            # "+N" count for the rest — full list still lives in injectedFiles in the
+            # JSON for anyone who wants it; the RENDERED line just needs "which one
+            # led" not an exhaustive roll call (a status bar is not the place for that).
+            def shortfile: split("/") | last | rtrimstr(".md");
+            def filesLabel:
+                (.injectedFiles // []) as $f
+                | if ($f | length) == 0 then ""
+                  elif ($f | length) == 1 then " src:" + ($f[0] | shortfile)
+                  else " src:" + ($f[0] | shortfile) + "+" + (($f | length - 1) | tostring)
+                  end;
             if .injected then
                 "ctx✓ " + (pct(.bestScore)|tostring) + "%/" + (pct(.floor)|tostring) + "%"
                 + " " + (.count|tostring) + "/" + (.candidates|tostring)
                 + " " + (.tokensInjected|tostring) + "tk " + (.latencyMs|tostring) + "ms"
                 + " exp:" + .expansion + " hyb:" + .hybrid + " budget:" + .capacityTier
-                + " src:" + ([.sources | to_entries[] | "\(.key)\(.value)"] | join(","))
+                + filesLabel
                 + (if .recentUsefulPct != null then " useful:" + (.recentUsefulPct|tostring) + "%(" + (.recentUsefulSamples|tostring) + ")" else " useful:n/a" end)
             else
                 "ctx✗ " + (pct(.bestScore)|tostring) + "%<" + (pct(.floor)|tostring) + "%"

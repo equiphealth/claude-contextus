@@ -107,7 +107,8 @@ test('writeLastInjectionDebug: writes a snapshot file keyed by sessionId', () =>
     expansion: 'skipped',
     hybrid: 'off',
     capacityTier: 'none',
-    sources: { projectContext: 2, userContext: 1 }
+    sources: { projectContext: 2, userContext: 1 },
+    injectedFiles: ['gotchas/gotcha-foo.md', 'gotchas/gotcha-bar.md', 'decisions/decision-baz.md']
   });
 
   const snapshotPath = path.join(
@@ -121,6 +122,11 @@ test('writeLastInjectionDebug: writes a snapshot file keyed by sessionId', () =>
   assert.equal(snapshot.injected, true);
   assert.equal(snapshot.count, 3);
   assert.equal(snapshot.sources.projectContext, 2);
+  assert.deepEqual(snapshot.injectedFiles, [
+    'gotchas/gotcha-foo.md',
+    'gotchas/gotcha-bar.md',
+    'decisions/decision-baz.md'
+  ]);
   assert.equal(typeof snapshot.timestamp, 'number');
   // no ratings written for this project in this test -> null/0
   assert.equal(snapshot.recentUsefulPct, null);
@@ -147,7 +153,8 @@ test('writeLastInjectionDebug: folds in the rolling recentUsefulPct from usage-r
     expansion: 'off',
     hybrid: 'off',
     capacityTier: 'none',
-    sources: {}
+    sources: {},
+    injectedFiles: []
   });
 
   const snapshotPath = path.join(

@@ -340,7 +340,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         expansion: 'off',
         hybrid: 'off',
         capacityTier: 'disabled',
-        sources: {}
+        sources: {},
+        injectedFiles: []
       });
       return sendJson(res, 200, {
         continue: true,
@@ -445,7 +446,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         expansion: 'off',
         hybrid: 'off',
         capacityTier,
-        sources: {}
+        sources: {},
+        injectedFiles: []
       });
       return sendJson(res, 200, { continue: true });
     }
@@ -465,7 +467,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         expansion: 'off',
         hybrid: 'keyword-fallback',
         capacityTier,
-        sources: {}
+        sources: {},
+        injectedFiles: []
       });
       return sendJson(res, 200, { continue: true });
     }
@@ -568,7 +571,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       expansion: expansionStatus,
       hybrid: hybridStatus,
       capacityTier,
-      sources: {}
+      sources: {},
+      injectedFiles: []
     });
     if (cfg.logging.paranoid) {
       logParanoid({
@@ -662,7 +666,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     expansion: expansionStatus,
     hybrid: hybridStatus,
     capacityTier,
-    sources: sourceCounts
+    sources: sourceCounts,
+    injectedFiles: injectedNames
   });
 
   sendJson(res, 200, {
