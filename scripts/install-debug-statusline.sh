@@ -17,8 +17,9 @@
 # Idempotent: safe to run multiple times. Independent of, and composes with,
 # install-statusline-bridge.sh (token-overflow protection) — both patch the
 # same file, each behind their own marker, in whatever order you install them.
-# Called manually — NOT wired into contextus-setup/contextus-upgrade, since
-# this is a debugging aid, not a default-on feature.
+# Wired into contextus-setup and contextus-upgrade (installed alongside the
+# capacity bridge) — safe to auto-install everywhere since it's silent by
+# default; the env-var gate above is what makes it opt-in, not the install step.
 
 set -euo pipefail
 
