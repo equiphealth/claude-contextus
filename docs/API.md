@@ -171,6 +171,7 @@ All endpoints use JSON for request/response bodies. The daemon never blocks a pr
 - `prompt` (required) — User's prompt text to embed and search
 - `cwd` (optional) — Project root directory for resolving git-committed config overrides
 - `contextStats` (optional) — Context-window stats from the statusline bridge: `{input_tokens, output_tokens, used_percentage}`. When present and `capacityProtection.enabled`, triggers graduated injection throttling.
+- `sessionId` (optional) — `CLAUDE_CODE_SESSION_ID`, forwarded by `query-hook.js`. When present, the daemon writes a debug snapshot to `~/.contextus/runtime/<sessionId>.last-injection.json` after responding (fire-and-forget — never affects the response). Consumed by the opt-in verbose debug statusline (`scripts/install-debug-statusline.sh`, toggle via `CONTEXTUS_DEBUG_STATUSLINE=1`). See `lib/debug-statusline.ts`.
 
 **Response (success with injection):**
 ```json

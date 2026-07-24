@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-24
+
+### Added
+- **Verbose debug statusline** (`scripts/install-debug-statusline.sh`) — opt-in status-bar line showing what contextus did on the last `/query`: injected count vs candidates, best match % vs floor %, tokens injected, latency, expansion/hybrid/capacity-protection status, per-source breakdown, and a rolling "% useful" average from background usage evaluation. Toggle with `CONTEXTUS_DEBUG_STATUSLINE=1`/unset — no reinstall needed to turn on/off. Not wired into `/contextus-setup`; run the installer manually.
+- **`lib/debug-statusline.ts`** — the daemon writes a per-session `~/.contextus/runtime/<sessionId>.last-injection.json` snapshot after every `/query` (fire-and-forget, after the response is already sent). Combines the immediate query outcome with a rolling average from this project's `usage-ratings.jsonl`, since usage evaluation runs in a background loop and rates the previous turn's injection a few seconds after the fact — no synchronous per-injection "useful" signal exists, so a rolling average is both more available and less noisy than trying to match one promptHash.
+
 ## [0.16.0] - 2026-07-21
 
 ### Fixed
