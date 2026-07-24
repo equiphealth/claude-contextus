@@ -13,10 +13,17 @@
 # different, so there's no join format guaranteed to look right for everyone):
 #   CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=newline (default) — own line below the rest
 #   CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=inline            — appended " | ..." on the same line
-#   CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=right             — right-aligned to terminal width,
-#     best-effort: statuslines run in a subprocess with no real tty attached, so terminal
-#     width detection (tput cols / $COLUMNS) is unreliable there — falls back to newline
-#     layout if width can't be determined, rather than producing broken padding.
+#   CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=right             — EXPERIMENTAL right-alignment.
+#     Width detection itself is reliable: Claude Code v2.1.153+ sets $COLUMNS/$LINES
+#     for the statusline subprocess specifically because `tput cols` can't read a real
+#     terminal from inside it (no controlling tty) — confirmed live: $COLUMNS correctly
+#     reports the real width, tty absent, tput cols agrees. The math this script does
+#     with that width is correct. What ISN'T verified: whether Claude Code's status bar
+#     actually renders raw padding characters as literal column positions, or reflows/
+#     normalizes the string in its own UI widget — if the latter, the padding math runs
+#     fine but visually collapses to something indistinguishable from `newline`. Falls
+#     back to `newline` layout automatically if $COLUMNS/tput both come up empty (e.g.
+#     pre-2.1.153 Claude Code).
 # If none of these look right against YOUR statusline script, edit the block below
 # (marked "# contextus: verbose debug statusline") directly — this is a debugging aid,
 # not something worth over-engineering a universal formatter for.
@@ -103,8 +110,12 @@ DEBUG
 print_help() {
     echo "[contextus] Toggle with: export CONTEXTUS_DEBUG_STATUSLINE=1 (or 0 to silence)"
     echo "[contextus] Layout: export CONTEXTUS_DEBUG_STATUSLINE_LAYOUT=newline|inline|right (default: newline)"
-    echo "[contextus] No single default looks right against every statusline script — if this one"
-    echo "[contextus] doesn't fit yours, you may need to adjust formatting: edit the block marked"
+    echo "[contextus]   'right' is EXPERIMENTAL — width detection is confirmed reliable, but whether"
+    echo "[contextus]   Claude Code's status bar actually renders it as visually right-aligned (vs."
+    echo "[contextus]   reflowing to something that looks like 'newline') isn't guaranteed. Try it;"
+    echo "[contextus]   fall back to 'newline' if it doesn't look right."
+    echo "[contextus] No single default looks right against every statusline script — if none of these"
+    echo "[contextus] fit yours, you may need to adjust formatting: edit the block marked"
     echo "[contextus] '# contextus: verbose debug statusline' directly in $STATUSLINE"
 }
 
