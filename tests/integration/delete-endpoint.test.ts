@@ -111,6 +111,38 @@ test('/delete archives an existing file — moved, index entry removed', async (
   assert.ok(!indexContent.includes('gotcha-itest-file.md'), 'index line should be gone');
 });
 
+test('/delete de-dupes an archive-basename collision instead of overwriting the earlier archived file', async () => {
+  // Simulate a reused slug: an earlier /delete already left gotcha-foo.md in
+  // .archive/ (e.g. a bug fixed and archived), and now a DIFFERENT file that
+  // happens to share the same basename (e.g. the slug got reused for a new,
+  // unrelated bug) is archived too. Archive is flattened (no category
+  // subdir), so without de-duping the second rename would silently destroy
+  // the first archived file's content.
+  const archiveDir = path.join(contextDir, '.archive');
+  fs.mkdirSync(archiveDir, { recursive: true });
+  fs.writeFileSync(path.join(archiveDir, 'gotcha-foo.md'), 'ORIGINAL ARCHIVED CONTENT');
+
+  seedContextFile('gotchas/gotcha-foo.md');
+  const { status, json } = await post(
+    '/delete',
+    JSON.stringify({ relPath: 'gotchas/gotcha-foo.md', cwd: projectDir })
+  );
+
+  assert.equal(status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(json.archivedRelPath, '.archive/gotcha-foo-2.md', 'should de-dupe, not overwrite');
+
+  assert.equal(
+    fs.readFileSync(path.join(archiveDir, 'gotcha-foo.md'), 'utf-8'),
+    'ORIGINAL ARCHIVED CONTENT',
+    'the earlier archived file must survive untouched'
+  );
+  assert.ok(
+    fs.existsSync(path.join(archiveDir, 'gotcha-foo-2.md')),
+    'new archive lands at the -2 suffix'
+  );
+});
+
 test('/delete only removes its own entry from CONTEXT.md, leaving siblings intact', async () => {
   seedContextFile('gotchas/gotcha-1.md');
   seedContextFile('gotchas/gotcha-2.md'); // target

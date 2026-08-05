@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **`/context-archive` skill now backed by a real endpoint** — previously documented pseudo-code pointing at a nonexistent `lib/archive.ts`; now calls the daemon's `/delete` endpoint directly, same pattern as `/create-context` calling `/capture`.
 
+### Fixed
+- **`/delete` no longer overwrites an existing archived file on a basename collision** — archiving flattens category subdirectories, so a reused slug (fix → archive → later a differently-scoped file with the same filename gets archived too) used to silently clobber the earlier archived copy. Now de-dupes with a numeric suffix (`gotcha-foo.md` → `gotcha-foo-2.md`) instead of destroying history.
+- **`/delete`'s 500 response on embedding-cleanup failure now reports `archivedRelPath`/`removedFromIndex`** — the file move and index-line removal happen before the embeddings step, so a failure there was previously reported as `{ok: false}` with no indication those side effects had already occurred, and a naive retry would then hit a confusing 404 against the (now-moved) original path.
+
 ## [0.16.0] - 2026-07-21
 
 ### Fixed

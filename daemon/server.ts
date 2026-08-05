@@ -962,8 +962,21 @@ async function handleDelete(
   // forward-slashed — matches embedSingleFile/buildRows).
   const relPath = path.relative(normDir, absFile).replace(/\\/g, '/');
 
+  // Archive is flattened (no category subdir), so two files that share a
+  // basename — most commonly a slug reused after an earlier archive of the
+  // same name — would otherwise silently overwrite each other. De-dupe with
+  // a numeric suffix rather than clobbering history the user can't get back.
   const archiveDir = path.join(contextDir, '.archive');
-  const archiveDest = path.join(archiveDir, path.basename(absFile));
+  const archiveBase = path.basename(absFile);
+  let archiveDest = path.join(archiveDir, archiveBase);
+  if (fs.existsSync(archiveDest)) {
+    const ext = path.extname(archiveBase);
+    const stem = archiveBase.slice(0, archiveBase.length - ext.length);
+    let n = 2;
+    while (fs.existsSync(path.join(archiveDir, `${stem}-${n}${ext}`))) n++;
+    archiveDest = path.join(archiveDir, `${stem}-${n}${ext}`);
+  }
+  const archivedRelPath = `.archive/${path.basename(archiveDest)}`;
   try {
     fs.mkdirSync(archiveDir, { recursive: true });
     fs.renameSync(absFile, archiveDest);
@@ -1015,21 +1028,28 @@ async function handleDelete(
       file: relPath,
       message: err instanceof Error ? err.message : String(err)
     });
+    // The file move and index-line removal above already happened and are
+    // real, even though this reports ok:false — say so explicitly, both so
+    // the caller doesn't assume "nothing happened" and retry against a path
+    // that's now a guaranteed 404, and so it can still reconcile the archive
+    // location by hand if the embedding cleanup never recovers.
     sendJson(res, 500, {
       ok: false,
       error: `file archived but embedding cleanup failed: ${err instanceof Error ? err.message : 'unknown'}`,
-      archived: archiveDest
+      archived: archiveDest,
+      archivedRelPath,
+      removedFromIndex
     });
     return;
   }
 
-  logCapture(scope, relPath, `archived → .archive/${path.basename(absFile)}`);
+  logCapture(scope, relPath, `archived → ${archivedRelPath}`);
   logInfo('Context archived', { file: relPath, removedFromIndex, embeddingsRemoved });
 
   sendJson(res, 200, {
     ok: true,
     archived: archiveDest,
-    archivedRelPath: `.archive/${path.basename(absFile)}`,
+    archivedRelPath,
     removedFromIndex,
     embeddingsRemoved
   });
