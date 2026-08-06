@@ -16,16 +16,36 @@ description: Archive low-value patterns — move noisy/stale/obsolete patterns t
 
 ## How it works
 
-1. Move file(s) from `.claude/context/<category>/` to `.claude/context/.archive/`
-2. Delete corresponding LanceDB rows (pattern no longer retrieved)
-3. Stage changes via `git mv`
-4. Report what was archived
+Each file archives via one call to the daemon's `/delete` endpoint, which does the whole operation atomically:
 
-**Archived files are preserved** — they can be restored by moving back and re-embedding.
+1. Move the file from `.claude/context/<category>/` to `.claude/context/.archive/` (flattened)
+2. Remove its `CONTEXT.md` index entry
+3. Delete its LanceDB rows (pattern no longer retrieved)
+
+**Archived files are preserved** — they can be restored by moving back and re-embedding (see Restoration below).
 
 ## Instructions
 
-When this skill is invoked:
+When this skill is invoked, call the daemon for each file to archive:
+
+```bash
+curl -s -X POST http://127.0.0.1:37800/delete \
+  -H 'content-type: application/json' \
+  -d '{"relPath":"decisions/decision-old-api.md","cwd":"'"$(pwd)"'"}'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "archived": "/abs/path/.claude/context/.archive/decision-old-api.md",
+  "archivedRelPath": ".archive/decision-old-api.md",
+  "removedFromIndex": true,
+  "embeddingsRemoved": true
+}
+```
+
+`relPath` is relative to `.claude/context/` (or `~/.contextus/context/` for `scope: "user"` — add `"scope":"user"` and drop `cwd`). `/delete` never returns `{continue:true}` on failure — a bad request or missing file comes back as an honest `{ok:false, error}`, so check `.ok` rather than assuming success.
 
 ### Single File Mode
 
@@ -36,10 +56,7 @@ When this skill is invoked:
 1. Validate file exists in corpus
 2. Show stats (if available): score, retrieval count, last used
 3. Confirm: "Archive this pattern? It will no longer be retrieved."
-4. On yes:
-   - `git mv .claude/context/decisions/decision-old-api.md .claude/context/.archive/`
-   - Delete LanceDB rows matching this file path
-   - Stage the move
+4. On yes: call `/delete` with that `relPath`
 5. Report: "✓ Archived decisions/decision-old-api.md"
 
 ### Bulk Mode: `--stale`
@@ -52,10 +69,7 @@ When this skill is invoked:
 2. Filter to patterns not retrieved in `--window` days (default: 180)
 3. Show list: filename, category, last retrieved (or "never")
 4. Confirm: "Archive N stale patterns?"
-5. On yes:
-   - Move all to `.archive/`
-   - Delete LanceDB rows
-   - Stage changes
+5. On yes: call `/delete` once per file (sequentially — the daemon has no bulk endpoint)
 6. Report: "✓ Archived N patterns (not retrieved in 6mo)"
 
 ### Bulk Mode: `--unused`
@@ -77,23 +91,7 @@ When this skill is invoked:
 /context-archive --stale --dry-run
 ```
 
-Show what would be archived without actually moving files.
-
-## LanceDB Cleanup
-
-After moving files, delete rows from LanceDB:
-
-```typescript
-// Pseudo-code (actual implementation in lib/archive.ts)
-async function deleteArchivedRows(filenames: string[]): Promise<void> {
-  const table = await openTable(projectId);
-  for (const filename of filenames) {
-    await table.delete(`file = '${filename}'`);
-  }
-}
-```
-
-This ensures archived patterns don't appear in future retrievals.
+Show what would be archived without calling `/delete`.
 
 ## Archive Directory Structure
 
@@ -109,10 +107,10 @@ Files lose their category subdirectory when archived (flattened). This is intent
 
 ## Restoration
 
-To unarchive:
+No dedicated endpoint for this in v1 — restore manually:
 
-1. Move file back: `git mv .claude/context/.archive/pattern.md .claude/context/<category>/`
-2. Re-embed: daemon auto-detects new file and embeds on next reconcile
+1. Move file back: `mv .claude/context/.archive/pattern.md .claude/context/<category>/` (`git mv` if you want the move staged)
+2. Re-embed: daemon auto-detects the file back inside the watched context dir and embeds it on next edit/reconcile
 
 ## Arguments
 
@@ -128,13 +126,12 @@ To unarchive:
 
 ## Requirements
 
+- contextus daemon running (`/manage-daemon status` to check) — `/delete` is a daemon endpoint, not a local script
 - Write access to `.claude/context/.archive/`
-- LanceDB table for current project
-- Git repo (for staging moves)
 
 ## Cost
 
-Zero — local file operations only, no LLM calls.
+Zero LLM calls — `/delete` is a local file move + LanceDB delete, no embedding call on the removal path.
 
 ## Related Skills
 
