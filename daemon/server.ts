@@ -81,6 +81,7 @@ import {
 } from '../lib/logger.js';
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 import { startEvalLoop, stopEvalLoop } from './eval-loop.js';
+import { writeLastInjectionDebug, type LastInjectionDebug } from '../lib/debug-statusline.js';
 
 /** Preferred daemon port (fallback to OS-assigned if unavailable). */
 const PREFERRED_PORT = parseInt(process.env.CONTEXTUS_DAEMON_PORT || '37800', 10);
@@ -226,6 +227,8 @@ async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse)
 async function handleQuery(body: Record<string, unknown>, res: http.ServerResponse): Promise<void> {
   const started = Date.now();
   const prompt = typeof body.prompt === 'string' ? body.prompt : '';
+  const sessionId =
+    typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : undefined;
   const project = typeof body.project === 'string' && body.project ? body.project : undefined;
   // cwd = the project repo root, needed for the git-committed tier-3 config override.
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
@@ -307,6 +310,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
 
   let capacityTopK: number | undefined;
   let capacityFloorMultiplier = 1.0;
+  let capacityTier: LastInjectionDebug['capacityTier'] = 'none';
 
   if (
     contextStats?.used_percentage &&
@@ -325,6 +329,22 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         used_percentage: Math.round(pct),
         input_tokens: contextStats.input_tokens
       });
+      writeLastInjectionDebug(sessionId, projectId, {
+        project: projectLabel,
+        injected: false,
+        count: 0,
+        candidates: 0,
+        bestScore: 0,
+        floor: cfg.retrieval.injectionFloor,
+        topK: cfg.retrieval.topK,
+        tokensInjected: 0,
+        latencyMs: Date.now() - started,
+        expansion: 'off',
+        hybrid: 'off',
+        capacityTier: 'disabled',
+        sources: {},
+        injectedFiles: []
+      });
       return sendJson(res, 200, {
         continue: true,
         hookSpecificOutput: {
@@ -336,6 +356,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     if (pct > minimalAt) {
       capacityTopK = 1;
       capacityFloorMultiplier = 1.2;
+      capacityTier = 'minimal';
       logInfo('Token capacity high — minimal injection', {
         project: projectLabel,
         used_percentage: Math.round(pct),
@@ -343,6 +364,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       });
     } else if (pct > reduceAt) {
       capacityTopK = Math.min(cfg.retrieval.topK, 3);
+      capacityTier = 'reduced';
       logInfo('Token capacity moderate — reducing injection', {
         project: projectLabel,
         used_percentage: Math.round(pct),
@@ -357,6 +379,12 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // keyword-only (with auto-recovery trigger) so users get SOME context rather than complete silence.
   let raw: Awaited<ReturnType<typeof search>>;
   let usedKeywordFallback = false;
+  let hybridStatus: LastInjectionDebug['hybrid'] =
+    cfg.retrieval.hybrid === 'off'
+      ? 'off'
+      : cfg.retrieval.hybrid === 'always'
+        ? 'always'
+        : 'adaptive-skip';
   try {
     const effectiveTopK = capacityTopK ?? cfg.retrieval.topK;
     const CHUNK_FANOUT = 4;
@@ -382,6 +410,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         const keywordResults = hybridKeywordSearch(corpus, prompt, cfg.retrieval.topK);
         if (keywordResults.length > 0) {
           raw = fuseRRF(raw, keywordResults, fetchLimit);
+          hybridStatus = 'adaptive-fired';
         }
       }
     }
@@ -406,15 +435,48 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     // Try keyword fallback before giving up entirely
     const corpus = await loadCorpusForKeyword(projectId, projectScope);
     if (corpus.length === 0) {
+      writeLastInjectionDebug(sessionId, projectId, {
+        project: projectLabel,
+        injected: false,
+        count: 0,
+        candidates: 0,
+        bestScore: 0,
+        floor: cfg.retrieval.injectionFloor,
+        topK: cfg.retrieval.topK,
+        tokensInjected: 0,
+        latencyMs: Date.now() - started,
+        expansion: 'off',
+        hybrid: 'off',
+        capacityTier,
+        sources: {},
+        injectedFiles: []
+      });
       return sendJson(res, 200, { continue: true });
     }
     const keywordResults = keywordSearch(corpus, prompt, cfg.retrieval.topK);
     if (keywordResults.length === 0) {
       logInfo('Keyword fallback: no matches', { project: projectLabel });
+      writeLastInjectionDebug(sessionId, projectId, {
+        project: projectLabel,
+        injected: false,
+        count: 0,
+        candidates: 0,
+        bestScore: 0,
+        floor: cfg.retrieval.injectionFloor,
+        topK: cfg.retrieval.topK,
+        tokensInjected: 0,
+        latencyMs: Date.now() - started,
+        expansion: 'off',
+        hybrid: 'keyword-fallback',
+        capacityTier,
+        sources: {},
+        injectedFiles: []
+      });
       return sendJson(res, 200, { continue: true });
     }
     raw = keywordResults;
     usedKeywordFallback = true;
+    hybridStatus = 'keyword-fallback';
     logInfo('Keyword fallback fired', {
       project: projectLabel,
       results: keywordResults.length
@@ -427,6 +489,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // embed each in parallel, search each, and union with the original results.
   const initialBest = raw.length > 0 ? Math.max(...raw.map((r) => r.similarity)) : 0;
   stats.queries++;
+  let expansionStatus: LastInjectionDebug['expansion'] =
+    cfg.expansion.mode === 'off' ? 'off' : 'skipped';
   if (
     !usedKeywordFallback &&
     shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)
@@ -434,6 +498,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     const expanded = await expandQuery(prompt, cfg.expansion, cfg.providers);
     if (expanded.variants.length > 0) {
       stats.expansionFired++;
+      expansionStatus = 'fired';
       // Variants use a smaller fetch limit — the union provides breadth,
       // so each individual variant doesn't need the full CHUNK_FANOUT over-fetch.
       const variantLimit = cfg.retrieval.topK * 2;
@@ -494,6 +559,22 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       promptTokens: estimateTokens(prompt),
       latencyMs: Date.now() - started,
       floorDropped: outcome.floorDropped
+    });
+    writeLastInjectionDebug(sessionId, projectId, {
+      project: projectLabel,
+      injected: false,
+      count: 0,
+      candidates: raw.length,
+      bestScore: outcome.bestScore,
+      floor: cfg.retrieval.injectionFloor * capacityFloorMultiplier,
+      topK: capacityTopK ?? cfg.retrieval.topK,
+      tokensInjected: 0,
+      latencyMs: Date.now() - started,
+      expansion: expansionStatus,
+      hybrid: hybridStatus,
+      capacityTier,
+      sources: {},
+      injectedFiles: []
     });
     if (cfg.logging.paranoid) {
       logParanoid({
@@ -571,6 +652,25 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       latencyMs: Date.now() - started
     });
   }
+
+  const sourceCounts: Record<string, number> = {};
+  for (const r of included) sourceCounts[r.source] = (sourceCounts[r.source] ?? 0) + 1;
+  writeLastInjectionDebug(sessionId, projectId, {
+    project: projectLabel,
+    injected: true,
+    count: included.length,
+    candidates: raw.length,
+    bestScore: Math.max(...included.map((r) => r.similarity)),
+    floor: cfg.retrieval.injectionFloor * capacityFloorMultiplier,
+    topK: capacityTopK ?? cfg.retrieval.topK,
+    tokensInjected: tokens,
+    latencyMs: Date.now() - started,
+    expansion: expansionStatus,
+    hybrid: hybridStatus,
+    capacityTier,
+    sources: sourceCounts,
+    injectedFiles: injectedNames
+  });
 
   sendJson(res, 200, {
     continue: true,

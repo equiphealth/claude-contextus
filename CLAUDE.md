@@ -35,6 +35,7 @@ Provider connections (ollama, bedrock, anthropic) are defined once in `providers
 ## Working with This Codebase
 
 **Git workflow** (CRITICAL — no branch protection, manual discipline required):
+- **Run `git branch --show-current` before starting ANY new unit of work** — this working directory is shared across concurrent sessions (no worktree isolation), so another session can leave you checked out on ITS branch. Confirmed to happen more than once (2026-07-24): unrelated work landed on top of a still-open, unrelated PR branch because the branch wasn't checked first. If you're not on `main` (or the branch you expect), `git checkout main && git pull` before creating a new feature branch.
 - **NEVER commit directly to main** — all changes must go through a feature branch and PR
 - Branch naming: `feat/`, `fix/`, `docs/`, `chore/`
 - Create PR for every change (even typos, docs, context updates)
