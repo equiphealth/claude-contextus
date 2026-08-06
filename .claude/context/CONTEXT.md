@@ -111,3 +111,12 @@ This directory contains captured patterns, decisions, and implementation notes f
 - [source-exclude-config-not-merged](gotchas/gotcha-source-exclude-config-not-merged.md) — sources.*.exclude overrides in .claude/contextus.json are ignored — resolveSources uses raw plugin.json instead of merged config
 - [source-exclude-config-not-merged](implementation/implementation-source-exclude-config-not-merged.md) — FIXED 2026-07-20: sources.*.exclude patterns now properly merge from project config (was: resolveSources used raw plugin.json)
 - [bug-documentation-lifecycle](decisions/decision-bug-documentation-lifecycle.md) — How to manage gotcha/implementation documentation as bugs move from discovered → fixed → historical
+- [pr-workflow-no-direct-main-commits](decisions/decision-pr-workflow-no-direct-main-commits.md) — Never commit directly to main — always use feature branches and PRs, even for small fixes
+- [capture-silent-fail-during-heavy-ops](gotchas/gotcha-capture-silent-fail-during-heavy-ops.md) — Daemon /capture returns continue:true instead of error/queuing when busy with embedding — captures silently dropped
+- [pr-completion-checklist](reference/reference-pr-completion-checklist.md) — Standard PR completion workflow: changelog, version bump, then merge
+- [context-delete-archive-endpoint](phase/phase-context-delete-archive-endpoint.md) — Design for /delete endpoint: move to .archive, remove from index/embeddings
+- [pr-completion-checklist](reference/reference-pr-completion-checklist.md) — Standard PR completion workflow: changelog, version bump (all 3 manifests), then merge
+- [ollama-headless-vs-gui-start](gotchas/gotcha-ollama-headless-vs-gui-start.md) — ollama serve is headless; open -a Ollama launches the GUI app — don't confuse them when scripting/testing
+- [ollama-headless-vs-gui-start](gotchas/gotcha-ollama-headless-vs-gui-start.md) — ollama serve is headless and survives session close; open -a Ollama launches the GUI app — don't confuse them when scripting/testing
+- [bug-documentation-lifecycle](decisions/decision-bug-documentation-lifecycle.md) — How to manage gotcha/implementation documentation as bugs move from discovered → fixed → historical — now via /delete, not raw rm
+- [corpus-self-maintenance-via-delete](decisions/decision-corpus-self-maintenance-via-delete.md) — Proactively archive corpus content when it goes stale — a problem gets solved, a decision gets superseded, a phase completes — not just for gotchas/bugs
