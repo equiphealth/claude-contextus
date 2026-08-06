@@ -71,7 +71,13 @@ async function main() {
     const res = await fetch(`${getBaseURL()}/query`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt, project: projectId(cwd), cwd, contextStats: readContextStats() }),
+      body: JSON.stringify({
+        prompt,
+        project: projectId(cwd),
+        cwd,
+        contextStats: readContextStats(),
+        sessionId: process.env.CLAUDE_CODE_SESSION_ID
+      }),
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return emit({ continue: true });

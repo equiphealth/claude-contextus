@@ -197,11 +197,13 @@ If [1]: run `/migrate-memory` dry-run after setup completes.
 
 ### Execute (Quick Track)
 
-1. Install discovery scripts and statusline bridge:
+1. Install discovery scripts and statusline bridges:
    ```bash
    bash $CLAUDE_PLUGIN_ROOT/scripts/install-discovery-scripts.sh
    bash $CLAUDE_PLUGIN_ROOT/scripts/install-statusline-bridge.sh
+   bash $CLAUDE_PLUGIN_ROOT/scripts/install-debug-statusline.sh
    ```
+   The debug statusline installs silently either way — it's opt-in via `CONTEXTUS_DEBUG_STATUSLINE=1`, so installing it changes nothing for users who never set that var. If `jq` isn't available, this step logs a message and exits non-zero; don't treat that as fatal to the rest of setup.
 
 2. Run the setup script:
    ```bash
@@ -483,11 +485,13 @@ If no `existingProjects`, skip silently.
 
 ### Execute (Power User Track)
 
-1. Install discovery scripts and statusline bridge:
+1. Install discovery scripts and statusline bridges:
    ```bash
    bash $CLAUDE_PLUGIN_ROOT/scripts/install-discovery-scripts.sh
    bash $CLAUDE_PLUGIN_ROOT/scripts/install-statusline-bridge.sh
+   bash $CLAUDE_PLUGIN_ROOT/scripts/install-debug-statusline.sh
    ```
+   The debug statusline installs silently either way — it's opt-in via `CONTEXTUS_DEBUG_STATUSLINE=1`, so installing it changes nothing for users who never set that var. If `jq` isn't available, this step logs a message and exits non-zero; don't treat that as fatal to the rest of setup.
 
 2. Write `.claude/contextus.jsonc` with all chosen values:
    ```jsonc

@@ -162,11 +162,15 @@ After migrations, ensure discovery scripts and the statusline bridge are install
 ```bash
 bash ~/src/claude-contextus/scripts/install-discovery-scripts.sh
 bash ~/src/claude-contextus/scripts/install-statusline-bridge.sh
+bash ~/src/claude-contextus/scripts/install-debug-statusline.sh
 ```
 
 The first installs `daemon-config.sh` and `find-contextus-root.sh` to `~/.contextus/scripts/`.
 The second patches `~/.claude/statusline-command.sh` to write context-window stats that
-contextus reads for token overflow protection (GitHub #17). Both are idempotent.
+contextus reads for token overflow protection (GitHub #17). The third patches the same
+file with an opt-in verbose debug line (toggle via `CONTEXTUS_DEBUG_STATUSLINE=1` —
+installing it changes nothing for users who don't set that var). All three are idempotent;
+the third requires `jq` and exits non-zero (non-fatal to the rest of the upgrade) if missing.
 
 ### Step 4: Stamp Version
 
