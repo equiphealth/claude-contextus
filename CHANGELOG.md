@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-21
+
+### Added
+- **`POST /delete` daemon endpoint** — archives a context file instead of hard-deleting: moves it to `.claude/context/.archive/` (flat, matching `/context-archive`'s existing documented layout), removes its `CONTEXT.md` index entry, and drops its LanceDB rows. Never destructive — an archived file is one `mv` away from being restored; cleanup of `.archive/` itself is left to the user. Like `/capture`, `/delete` is never hook-triggered and never returns `{continue: true}` on failure — always an honest `{ok: false, error}`.
+- **`.archive/**` excluded from default source config** — `projectContext` and `userContext` sources (in `lib/config.ts` DEFAULTS and `plugin.jsonc`) now exclude `.archive/**` from their embed glob, so archived files never get swept back into the corpus by a full `pnpm embed` rebuild.
+
+### Changed
+- **`/context-archive` skill now backed by a real endpoint** — previously documented pseudo-code pointing at a nonexistent `lib/archive.ts`; now calls the daemon's `/delete` endpoint directly, same pattern as `/create-context` calling `/capture`.
+
+### Fixed
+- **`/delete` no longer overwrites an existing archived file on a basename collision** — archiving flattens category subdirectories, so a reused slug (fix → archive → later a differently-scoped file with the same filename gets archived too) used to silently clobber the earlier archived copy. Now de-dupes with a numeric suffix (`gotcha-foo.md` → `gotcha-foo-2.md`) instead of destroying history.
+- **`/delete`'s 500 response on embedding-cleanup failure now reports `archivedRelPath`/`removedFromIndex`** — the file move and index-line removal happen before the embeddings step, so a failure there was previously reported as `{ok: false}` with no indication those side effects had already occurred, and a naive retry would then hit a confusing 404 against the (now-moved) original path.
+
 ## [0.16.0] - 2026-07-21
 
 ### Fixed

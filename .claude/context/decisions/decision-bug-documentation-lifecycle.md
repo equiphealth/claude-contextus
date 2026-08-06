@@ -1,6 +1,6 @@
 ---
 name: bug-documentation-lifecycle
-description: How to manage gotcha/implementation documentation as bugs move from discovered → fixed → historical
+description: How to manage gotcha/implementation documentation as bugs move from discovered → fixed → historical — now via /delete, not raw rm
 metadata:
   type: decision
   tags: ["documentation", "corpus-management", "gotchas", "workflow"]
@@ -55,7 +55,12 @@ Put exclude patterns in `plugin.jsonc` (affects all projects).
 **Actions**:
 1. Implement the fix
 2. Commit the code changes
-3. **Remove** the gotcha file: `rm .claude/context/gotchas/gotcha-<slug>.md`
+3. **Archive** the gotcha file via the daemon's `/delete` endpoint (NOT raw `rm` — see rationale below):
+   ```bash
+   curl -s -X POST http://127.0.0.1:37800/delete \
+     -H 'content-type: application/json' \
+     -d '{"relPath":"gotchas/gotcha-<slug>.md","cwd":"'"$(pwd)"'"}'
+   ```
 4. **Create** implementation note: `implementation/implementation-<slug>.md`
 
 **Implementation note content**:
@@ -94,20 +99,22 @@ metadata:
 - Bug affected multiple users/sessions
 - Fix pattern is reusable for similar issues
 
-**When to delete entirely**:
+**When to archive entirely (skip the implementation note)**:
 - Trivial bug (typo, off-by-one)
 - Fix is obvious from git history
 - No value for future reference
 
-If unsure, **keep it** — disk is cheap, re-learning is expensive.
+If unsure, **write the implementation note** — disk is cheap, re-learning is expensive.
 
 ## Rationale
 
-### Why remove the gotcha?
+### Why archive (not hard-delete) the gotcha?
 
-1. **Prevents stale advice** — A gotcha saying "X is broken, use workaround Y" becomes WRONG advice after the fix
+1. **Prevents stale advice** — A gotcha saying "X is broken, use workaround Y" becomes WRONG advice after the fix, and stays retrievable/injectable until removed from the corpus
 2. **Avoids confusion** — Future sessions shouldn't see both "this is broken" and "this is fixed" for the same issue
 3. **Keeps corpus clean** — Corpus quality > corpus size
+4. **Reversible** — `/delete` moves the file to `.claude/context/.archive/` rather than destroying it; if the "fix" gets reverted or was wrong, the gotcha is one `mv` away from being restored. A raw `rm` has no such safety net.
+5. **One call does the whole job** — `/delete` handles the file move, the `CONTEXT.md` index line, and the LanceDB row removal atomically. Raw `rm` only removes the file — the stale index entry and stale embedding both linger until the next full `pnpm embed` rebuild notices the file is gone.
 
 ### Why create implementation note?
 
@@ -124,10 +131,10 @@ If unsure, **keep it** — disk is cheap, re-learning is expensive.
 
 ## Implementation Notes
 
-1. **Do this in the same commit** — Fix code + remove gotcha + add implementation note = atomic change
+1. **Do this in the same commit** — Fix code + archive gotcha + add implementation note = atomic change
 2. **Cross-reference** — Implementation note can link to the gotcha's git history if needed: `git log -- .claude/context/gotchas/gotcha-<slug>.md`
-3. **Embed immediately** — If daemon auto-embeds on file changes, the old gotcha drops out and new implementation note appears
-4. **Update CONTEXT.md** — Index file updates automatically via `/capture` endpoint
+3. **`/delete` requires the daemon running** — `/manage-daemon status` first if unsure
+4. **`CONTEXT.md` updates automatically** — `/delete` removes the old index line, `/capture` (for the implementation note) adds the new one
 
 ## Examples in Practice
 
@@ -137,7 +144,7 @@ fix: <one-line description>
 
 <details>
 
-Removed: gotchas/gotcha-<slug>.md (bug now fixed)
+Archived: gotchas/gotcha-<slug>.md → .archive/ (bug now fixed, via /delete)
 Added: implementation/implementation-<slug>.md (fix documentation)
 ```
 
@@ -146,14 +153,14 @@ Added: implementation/implementation-<slug>.md (fix documentation)
 1. User: "X is broken"
 2. Claude: Investigates, captures gotcha-x.md
 3. Claude: Implements fix
-4. Claude: Removes gotcha-x.md, captures implementation-x.md
+4. Claude: Archives gotcha-x.md via /delete, captures implementation-x.md
 5. Commit: code + context changes together
 ```
 
 ## Exceptions
 
 - **Upstream bugs** — If bug is in a dependency (not our code), keep as gotcha with "UPSTREAM" tag until fixed upstream
-- **Partial fixes** — If fix is incomplete, update gotcha to reflect current state, don't convert to implementation
+- **Partial fixes** — If fix is incomplete, update gotcha to reflect current state, don't archive/convert to implementation
 - **Config-as-workaround** — Some "bugs" are actually config issues; convert to `reference` instead of `implementation`
 
 ## See Also
@@ -161,3 +168,4 @@ Added: implementation/implementation-<slug>.md (fix documentation)
 - `docs/CAPTURE_PHILOSOPHY.md` — When to capture context
 - `gotchas/` directory — Active known issues
 - `implementation/` directory — Fixed bugs and feature history
+- `decisions/decision-corpus-self-maintenance-via-delete.md` — the general principle this is one instance of (bugs aren't the only thing that goes stale)

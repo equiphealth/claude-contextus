@@ -369,7 +369,10 @@ const DEFAULTS: ContextusConfig = {
       path: '.claude/context',
       enabled: true,
       indexFile: 'CONTEXT.md',
-      exclude: ['**/CONTEXT.md', '**/README.md']
+      // .archive/** holds files moved out of the corpus by /delete or
+      // /context-archive — excluded so a full `pnpm embed` rebuild never
+      // sweeps archived patterns back in.
+      exclude: ['**/CONTEXT.md', '**/README.md', '**/.archive/**']
     },
     projectDocs: {
       type: 'doc',
@@ -385,7 +388,7 @@ const DEFAULTS: ContextusConfig = {
       path: '~/.contextus/context',
       enabled: true,
       indexFile: 'CONTEXT.md',
-      exclude: ['**/CONTEXT.md', '**/README.md']
+      exclude: ['**/CONTEXT.md', '**/README.md', '**/.archive/**']
     },
     userDocs: {
       type: 'doc',

@@ -74,9 +74,19 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 
 **Bug documentation lifecycle** (see `decisions/decision-bug-documentation-lifecycle.md`):
 - **Bug discovered** → Capture as `gotcha/gotcha-<slug>.md` with symptoms, root cause, workaround
-- **Bug fixed** → In the SAME commit: (1) Remove the gotcha file, (2) Create `implementation/implementation-<slug>.md` with fix details
+- **Bug fixed** → In the SAME commit: (1) Archive the gotcha via `POST /delete` (NOT raw `rm` — see below), (2) Create `implementation/implementation-<slug>.md` with fix details
 - **Rationale**: Prevents stale advice. A gotcha saying "X is broken, use workaround Y" becomes WRONG after the fix. Implementation notes document the fix for future reference without misleading readers.
 - **Exception**: Upstream bugs stay as gotchas until fixed upstream
+
+**Corpus self-maintenance** (see `decisions/decision-corpus-self-maintenance-via-delete.md`) — bugs aren't the only thing that goes stale:
+- When a `decision` gets superseded, a `phase` ships, a `tradeoff` resolves, or a `question` gets answered — **archive the old file in the same commit**, via the daemon's `/delete` endpoint:
+  ```bash
+  curl -s -X POST http://127.0.0.1:37800/delete \
+    -H 'content-type: application/json' \
+    -d '{"relPath":"<category>/<category>-<slug>.md","cwd":"'"$(pwd)"'"}'
+  ```
+- `/delete` archives (moves to `.claude/context/.archive/`), never hard-deletes — it also removes the `CONTEXT.md` index line and the LanceDB rows in one call. Never returns `{continue:true}` on failure; check `.ok`.
+- Only an in-context session knows a doc was just superseded — `/context-archive --stale`/`--unused` work off retrieval stats and can't see that causal link. Don't wait for a future cleanup pass to catch what you already know right now.
 
 **When testing skills**:
 - **Always execute skills fully** — Run all commands, show actual results, don't skip steps or summarize "what would happen"
