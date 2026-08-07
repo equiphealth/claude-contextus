@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`/notify` and `/reconcile` now respect the 3-tier MERGED project config, and cover every enabled source, not just `projectContext`** (GH issue #22). Three related bugs fixed together:
+  - `determineSource()` (`/notify`'s routing) and `handleReconcile()` both used to call the raw, un-merged `findPluginConfig()` — a project's `.claude/contextus.jsonc` source overrides (custom excludes, disabled sources, custom paths) were silently ignored by the live daemon even though the manual `pnpm embed` CLI already honored them. Both now use `loadProjectConfig()`; `findPluginConfig()` (its only two remaining callers) has been deleted.
+  - `/reconcile`'s dry-run `check` mode only ever inspected `projectContext`. Since session-start's cold/stale check gates whether a real reconcile fires — and a real reconcile is what arms the live `fs.watch` per source (`watchContextDir`) for the rest of the daemon's life — a project whose only drift was under `docs/` never got that source watched at all. `check` mode now aggregates across every enabled source.
+  - `runReconcile`/`loadContexts` and the single-file `embedSingleFile` path (`/notify`, the `fs.watch` watcher) both excluded only `CONTEXT.md`/`README.md`, never `DOCS.md` — so reconciling or notifying on a `projectDocs` source could embed its own index file as real document content. Both paths now honor each source's actual configured `exclude` patterns.
+- **`scripts/watch-contexts.js` (the PostToolUse re-embed hook) no longer hardcodes `.claude/context/`** — it now only checks for a `.md` extension (case-insensitively) and lets the daemon's `/notify` decide relevance from the real per-project source config. Edits under `docs/` (or any future source) now trigger incremental re-embed the same way `.claude/context/` edits always did.
+
 ## [0.18.0] - 2026-08-06
 
 ### Added

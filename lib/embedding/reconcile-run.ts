@@ -41,14 +41,22 @@ export interface ReconcileResult {
  * Reconcile the corpus for one project against its on-disk context dir. Returns a
  * summary; throws only on a genuine embedder/storage failure (the caller logs it).
  * `projectId` is the sha256 hash stamped on rows (unified DB).
+ *
+ * `exclude` should be the SOURCE's own configured exclude globs (see
+ * lib/embedding/sources.ts's ResolvedSource) — a doc source's `DOCS.md` needs
+ * excluding the same way a context source's `CONTEXT.md` does. Omitting it
+ * falls back to CONTEXT.md/README.md only, which is wrong for any other
+ * source (see GH issue #22 — this is what let DOCS.md itself get embedded as
+ * document content when reconcile started running for all sources).
  */
 export async function runReconcile(
   contextDir: string,
   projectName?: string,
   projectId = '',
-  source = 'projectContext'
+  source = 'projectContext',
+  exclude?: string[]
 ): Promise<ReconcileResult> {
-  const allContexts = await loadContexts(contextDir);
+  const allContexts = await loadContexts(contextDir, exclude);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
   // so if reconcile kept them in the disk set planReconcile would mark them "new"
   // EVERY session — the "re-embedding 1 forever" phantom (observed 2026-06-15 with a
