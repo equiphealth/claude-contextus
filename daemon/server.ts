@@ -1165,6 +1165,23 @@ async function handleDelete(
  */
 const activeWatchers = new Map<string, fs.FSWatcher>();
 
+/**
+ * Close every active fs.watch handle and forget them — TEST-ONLY. The real
+ * daemon never calls this (a watcher is meant to live for the process's
+ * whole lifetime; SIGINT/SIGTERM tear it down implicitly via process.exit).
+ * Integration tests that hit a code path arming a watcher on an ephemeral
+ * tmp dir (e.g. /notify → watchContextDir) MUST call this in their `after()`
+ * — otherwise the open handle keeps node --test's event loop non-empty and
+ * the process can hang waiting to exit naturally (found via GH issue #22:
+ * this was the first test to ever successfully route through /notify to a
+ * real source, since every prior /notify test either failed JSON parsing or
+ * hit not_in_any_source before reaching watchContextDir).
+ */
+export function closeAllWatchers(): void {
+  for (const watcher of activeWatchers.values()) watcher.close();
+  activeWatchers.clear();
+}
+
 function watchContextDir(
   contextDir: string,
   project: string | undefined,

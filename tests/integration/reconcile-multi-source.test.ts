@@ -38,7 +38,7 @@ import type { AddressInfo } from 'node:net';
 const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-home-'));
 process.env.HOME = homeDir;
 
-const { requestHandler } = await import('../../daemon/server.js');
+const { requestHandler, closeAllWatchers } = await import('../../daemon/server.js');
 
 let projectDir: string;
 let server: http.Server;
@@ -52,6 +52,12 @@ before(async () => {
 });
 
 after(async () => {
+  // The "/notify routes a docs/ file..." test below is a real success path
+  // through determineSource → watchContextDir, which arms a live fs.watch on
+  // projectDir/docs (deleted right after by that test). Without closing it,
+  // the open handle keeps this process's event loop non-empty — node --test
+  // then hangs waiting for a natural exit instead of finishing (GH issue #22).
+  closeAllWatchers();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   fs.rmSync(homeDir, { recursive: true, force: true });
 });
@@ -127,39 +133,50 @@ test('/notify routes a docs/ file to the projectDocs source, not just .claude/co
   // embedSingleFile (what /notify calls downstream) upserts via mergeInsert,
   // which requires the table to already exist — by design, /notify is the
   // INCREMENTAL path; cold-start table creation is reconcile's job. Seed a
-  // throwaway table first so this test exercises routing, not that separate,
+  // throwaway row first so this test exercises routing, not that separate,
   // pre-existing "no table yet" constraint (unrelated to GH issue #22 —
   // reproduces identically for a .claude/context/ file on a fresh project).
-  const { createTable } = await import('../../lib/storage/lance-client.js');
+  //
+  // lance-client's LanceDB connection is a MODULE-LEVEL singleton shared by
+  // every test file in this `node --test` process (see `_conn` in
+  // lib/storage/lance-client.ts) — other integration files delete their own
+  // tmp HOME in `after()` without resetting it. Under Node's default
+  // cross-file concurrency, an unconditional createTable() here can race
+  // against that and hit a connection left pointing at an already-deleted
+  // directory. Check-then-add-or-create (same defensive pattern used in
+  // delete-endpoint.test.ts's real-LanceDB-row test) avoids assuming which
+  // state the shared connection is in.
+  const { createTable, tableExists, openTable } = await import('../../lib/storage/lance-client.js');
   const { projectHash } = await import('../../lib/config.js');
   const projectId = projectHash(projectDir);
-  await createTable(
-    [
-      {
-        id: `${projectId}:seed.md:0`,
-        project: projectId,
-        vector: Array(8).fill(0),
-        document: 'seed row so the table exists',
-        filename: 'seed.md',
-        chunk_index: 0,
-        heading: '',
-        type: 'reference',
-        source: 'projectContext',
-        tags: '',
-        hit_count: 0,
-        last_hit: '',
-        updated_at: new Date().toISOString(),
-        content_hash: 'seed-hash'
-      }
-    ],
-    {
+  const seedRow = {
+    id: `${projectId}:seed.md:0`,
+    project: projectId,
+    vector: Array(8).fill(0),
+    document: 'seed row so the table exists',
+    filename: 'seed.md',
+    chunk_index: 0,
+    heading: '',
+    type: 'reference',
+    source: 'projectContext',
+    tags: '',
+    hit_count: 0,
+    last_hit: '',
+    updated_at: new Date().toISOString(),
+    content_hash: 'seed-hash'
+  };
+  if (await tableExists()) {
+    const table = await openTable();
+    await table.add([seedRow]);
+  } else {
+    await createTable([seedRow], {
       providerInfo: {
         provider: 'ollama',
         model: 'nomic-embed-text',
         ollamaModel: 'nomic-embed-text'
       }
-    }
-  );
+    });
+  }
 
   const { status, json } = await post(
     '/notify',
