@@ -684,8 +684,17 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
  * change its path, or add excludes, and /notify's routing must honor that
  * the same way the manual `pnpm embed` CLI already does (see GH issue #22;
  * this used to call findPluginConfig(), which ignores project overrides).
+ *
+ * Exported for direct unit testing: it's a pure decision function (no I/O
+ * beyond reading config), and /notify's actual HTTP response depends on the
+ * embedding provider being reachable (embedSingleFile calls the real
+ * embedder) — /notify is hook-triggered, so it correctly degrades to
+ * `{continue: true}` on ANY internal failure, same as /query, which makes
+ * "did routing succeed" unobservable from the HTTP response alone in an
+ * environment with no embedding provider (e.g. CI). Testing this function
+ * directly avoids that entirely.
  */
-function determineSource(
+export function determineSource(
   absFile: string,
   cwd: string,
   project: string | undefined

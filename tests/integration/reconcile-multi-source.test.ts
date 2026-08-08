@@ -19,10 +19,19 @@
  *    paths (mirrored in `scripts/watch-contexts.js`'s old `isContextFile`),
  *    so an edit under `docs/` never triggered a re-embed at all.
  *
- * Boots the real `requestHandler` on an ephemeral port, no embedding model
- * loaded (reconcile's check mode never calls the embedder; /notify's
- * embedSingleFile failing to embed is caught internally and doesn't fail
- * the request — see embed-file.ts).
+ * The routing fix (#3) is tested by calling `determineSource()` directly
+ * (now exported) rather than through the full `/notify` HTTP path: /notify
+ * is hook-triggered, so it correctly degrades to `{continue: true}` on ANY
+ * internal failure — including the embedding provider being unreachable,
+ * which `embedSingleFile` hits unconditionally (it calls the real embedder,
+ * with no environment-specific skip). That makes "did routing succeed"
+ * unobservable from the HTTP response alone in a CI environment with no
+ * Ollama/Transformers available. `determineSource` is a pure decision
+ * function (config + path matching, no embedder/LanceDB I/O), so testing it
+ * directly sidesteps that entirely.
+ *
+ * The /reconcile tests below DO boot the real `requestHandler` and hit real
+ * LanceDB (check mode never calls the embedder, so no provider is needed).
  *
  * Run via `pnpm test:integration` (not the fast `pnpm test` suite).
  */
@@ -38,7 +47,7 @@ import type { AddressInfo } from 'node:net';
 const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-home-'));
 process.env.HOME = homeDir;
 
-const { requestHandler, closeAllWatchers } = await import('../../daemon/server.js');
+const { requestHandler } = await import('../../daemon/server.js');
 
 let projectDir: string;
 let server: http.Server;
@@ -52,12 +61,6 @@ before(async () => {
 });
 
 after(async () => {
-  // The "/notify routes a docs/ file..." test below is a real success path
-  // through determineSource → watchContextDir, which arms a live fs.watch on
-  // projectDir/docs (deleted right after by that test). Without closing it,
-  // the open handle keeps this process's event loop non-empty — node --test
-  // then hangs waiting for a natural exit instead of finishing (GH issue #22).
-  closeAllWatchers();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   fs.rmSync(homeDir, { recursive: true, force: true });
 });
@@ -124,88 +127,35 @@ test('/reconcile {check:true} reports state:fresh when nothing changed across an
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
-test('/notify routes a docs/ file to the projectDocs source, not just .claude/context/', async () => {
+test('determineSource routes a docs/ file to the projectDocs source, not just .claude/context/', async () => {
+  const { determineSource } = await import('../../daemon/server.js');
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
   const docsDir = path.join(projectDir, 'docs');
   fs.mkdirSync(docsDir, { recursive: true });
-  fs.writeFileSync(path.join(docsDir, 'GUIDE.md'), '# A real doc\nsome content');
+  const absFile = path.join(docsDir, 'GUIDE.md');
+  fs.writeFileSync(absFile, '# A real doc\nsome content');
 
-  // embedSingleFile (what /notify calls downstream) upserts via mergeInsert,
-  // which requires the table to already exist — by design, /notify is the
-  // INCREMENTAL path; cold-start table creation is reconcile's job. Seed a
-  // throwaway row first so this test exercises routing, not that separate,
-  // pre-existing "no table yet" constraint (unrelated to GH issue #22 —
-  // reproduces identically for a .claude/context/ file on a fresh project).
-  //
-  // lance-client's LanceDB connection is a MODULE-LEVEL singleton shared by
-  // every test file in this `node --test` process (see `_conn` in
-  // lib/storage/lance-client.ts) — other integration files delete their own
-  // tmp HOME in `after()` without resetting it. Under Node's default
-  // cross-file concurrency, an unconditional createTable() here can race
-  // against that and hit a connection left pointing at an already-deleted
-  // directory. Check-then-add-or-create (same defensive pattern used in
-  // delete-endpoint.test.ts's real-LanceDB-row test) avoids assuming which
-  // state the shared connection is in.
-  const { createTable, tableExists, openTable } = await import('../../lib/storage/lance-client.js');
-  const { projectHash } = await import('../../lib/config.js');
-  const projectId = projectHash(projectDir);
-  const seedRow = {
-    id: `${projectId}:seed.md:0`,
-    project: projectId,
-    vector: Array(8).fill(0),
-    document: 'seed row so the table exists',
-    filename: 'seed.md',
-    chunk_index: 0,
-    heading: '',
-    type: 'reference',
-    source: 'projectContext',
-    tags: '',
-    hit_count: 0,
-    last_hit: '',
-    updated_at: new Date().toISOString(),
-    content_hash: 'seed-hash'
-  };
-  if (await tableExists()) {
-    const table = await openTable();
-    await table.add([seedRow]);
-  } else {
-    await createTable([seedRow], {
-      providerInfo: {
-        provider: 'ollama',
-        model: 'nomic-embed-text',
-        ollamaModel: 'nomic-embed-text'
-      }
-    });
-  }
-
-  const { status, json } = await post(
-    '/notify',
-    JSON.stringify({ file: path.join(docsDir, 'GUIDE.md'), cwd: projectDir })
-  );
-
-  assert.equal(status, 200);
-  assert.equal(json.ok, true);
   // Before the fix, determineSource only matched .claude/context/-shaped
-  // paths and this would report reason: 'not_in_any_source', embedded: false.
-  assert.notEqual(json.reason, 'not_in_any_source', 'docs/ must resolve to a real source');
+  // paths and this would return null (routed nowhere).
+  const result = determineSource(absFile, projectDir, undefined);
+
+  assert.ok(result, 'docs/ must resolve to a real source, not null');
+  assert.equal(result!.sourceName, 'projectDocs');
+  assert.equal(result!.sourceDir, docsDir);
 
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
-test('/notify still returns not_in_any_source for a file outside every configured source', async () => {
+test('determineSource still returns null for a file outside every configured source', async () => {
+  const { determineSource } = await import('../../daemon/server.js');
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
   fs.mkdirSync(path.join(projectDir, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(projectDir, 'src', 'notes.md'), '# unrelated notes');
+  const absFile = path.join(projectDir, 'src', 'notes.md');
+  fs.writeFileSync(absFile, '# unrelated notes');
 
-  const { status, json } = await post(
-    '/notify',
-    JSON.stringify({ file: path.join(projectDir, 'src', 'notes.md'), cwd: projectDir })
-  );
+  const result = determineSource(absFile, projectDir, undefined);
 
-  assert.equal(status, 200);
-  assert.equal(json.ok, true);
-  assert.equal(json.embedded, false);
-  assert.equal(json.reason, 'not_in_any_source');
+  assert.equal(result, null);
 
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
