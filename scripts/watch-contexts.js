@@ -1,13 +1,26 @@
 #!/usr/bin/env node
 /**
- * PostToolUse watcher — incremental re-embed on context-file edits.
+ * PostToolUse watcher — incremental re-embed on markdown-file edits.
  *
- * NOT an fs.watch poller (those are unreliable cross-platform — missed events on
- * some FUSE/network mounts, double-fire on others). Instead it's event-driven off
- * Claude Code's own PostToolUse hook: whenever a file-mutating tool (Write/Edit/
- * MultiEdit/NotebookEdit) runs, this hook fires, we check whether the touched file
- * lives under `.claude/context/`, and if so POST it to the daemon's /notify for a
- * single-file re-embed (which itself skips unchanged content — see embed-file).
+ * NOT an fs.watch poller ITSELF (those are unreliable cross-platform — missed
+ * events on some FUSE/network mounts, double-fire on others). Instead it's
+ * event-driven off Claude Code's own PostToolUse hook: whenever a
+ * file-mutating tool (Write/Edit/MultiEdit/NotebookEdit) runs, this hook
+ * fires and POSTs the touched .md file to the daemon's /notify for a
+ * single-file re-embed (which itself skips unchanged content — see
+ * embed-file). This is the fast, sub-second path for edits made THROUGH
+ * Claude Code's own tools; the daemon separately runs a real fs.watch
+ * (watchContextDir, daemon/server.ts) once reconcile has run for a source,
+ * which is what catches edits from OUTSIDE Claude Code entirely.
+ *
+ * Deliberately does NOT hardcode which directory counts as "context" —
+ * previously this only recognized `.claude/context/`, so edits under `docs/`
+ * (a real, configured source) never even triggered a /notify call (GH issue
+ * #22). The daemon's /notify handler already knows the full, per-project
+ * MERGED source config (paths, scope, enabled, exclude) and returns a cheap
+ * no-op (`not_in_any_source`) for anything outside it — that's the right
+ * place to make the routing decision, not a client script duplicating config
+ * knowledge it doesn't have without a build step.
  *
  * Thin ESM JS (no build step). Always emits `{ continue: true }`: a re-embed
  * failure must never block the tool result. Daemon-down → fire a background
@@ -48,11 +61,17 @@ function editedFilePath(payload) {
   return input.file_path ?? input.notebook_path ?? input.path ?? null;
 }
 
-/** Only .md files under a `.claude/context` segment are worth notifying about. */
-function isContextFile(filePath, cwd) {
-  if (!filePath || !filePath.endsWith('.md')) return false;
-  const abs = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
-  return abs.includes(`${path.sep}.claude${path.sep}context${path.sep}`);
+/**
+ * Only .md files are worth notifying about at all — everything else (source
+ * code, configs, non-markdown docs) can never be a contextus source. Which
+ * SPECIFIC directory it lives under is the daemon's call (determineSource in
+ * daemon/server.ts), not this script's — it's the one place that actually
+ * knows the merged per-project source config.
+ */
+function isMarkdownFile(filePath) {
+  // Case-insensitive: NOTES.MD / readme.Md are real files on case-preserving
+  // filesystems (macOS/Windows) and must not silently skip notification.
+  return typeof filePath === 'string' && filePath.toLowerCase().endsWith('.md');
 }
 
 async function main() {
@@ -66,7 +85,7 @@ async function main() {
 
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
   const file = editedFilePath(payload);
-  if (!isContextFile(file, cwd)) return emit({ continue: true });
+  if (!isMarkdownFile(file)) return emit({ continue: true });
 
   try {
     await fetch(`${getBaseURL()}/notify`, {

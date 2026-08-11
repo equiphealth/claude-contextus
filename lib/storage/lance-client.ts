@@ -162,9 +162,26 @@ export async function tableExists(projectName?: string): Promise<boolean> {
 /**
  * Upsert rows by `id` (insert new, overwrite existing). Uses mergeInsert so an
  * incremental re-embed of one file doesn't rebuild the table.
+ *
+ * Self-heals a cold start: `openTable` throws if the table has never been
+ * created for this project's DB — which used to make this the single point
+ * where a project's FIRST-EVER incremental embed via /notify (before any
+ * reconcile has run to bootstrap the table) crashed uncaught, degrading the
+ * whole request to `{continue: true}` with no indication anything went wrong
+ * (GH issue #22 — found via a projectDocs /notify integration test that
+ * hits exactly this on a brand-new project). Bootstrapping here, not just in
+ * runReconcile, means /notify works correctly the very first time it's ever
+ * called for a project, not only after reconcile has already run once.
  */
 export async function upsertRows(rows: ContextRow[], projectName?: string): Promise<void> {
   if (rows.length === 0) return;
+  if (!(await tableExists(projectName))) {
+    // createTable bootstraps the table WITH these rows. If another caller
+    // raced us and created it first, createTable() just opens it without
+    // inserting (see its `replace` contract) — fall through to the
+    // mergeInsert below regardless, so the rows land either way.
+    await createTable(rows, { projectName });
+  }
   const table = await openTable(projectName);
   await table
     .mergeInsert('id')

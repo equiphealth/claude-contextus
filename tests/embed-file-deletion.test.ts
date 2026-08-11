@@ -115,6 +115,22 @@ test('embedSingleFile: returns index_or_readme for README.md', async () => {
   }
 });
 
+test('embedSingleFile: returns index_or_readme for DOCS.md (GH issue #22)', async () => {
+  // Regression: before DOCS.md was added to this check, editing a projectDocs
+  // source's own index file directly would get it embedded as real document
+  // content via this exact single-file path (/notify, the fs.watch watcher).
+  const contextDir = makeTempContextDir();
+  try {
+    const docsMd = path.join(contextDir, 'DOCS.md');
+    fs.writeFileSync(docsMd, '# Docs Index\n');
+    const result = await embedSingleFile(docsMd, contextDir);
+    assert.equal(result.embedded, false);
+    assert.equal(result.reason, 'index_or_readme');
+  } finally {
+    fs.rmSync(contextDir, { recursive: true, force: true });
+  }
+});
+
 test('embedSingleFile: returns index_or_readme for nested CONTEXT.md', async () => {
   const contextDir = makeTempContextDir();
   const sub = path.join(contextDir, 'patterns');

@@ -30,13 +30,7 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import {
-  loadConfig,
-  loadProjectConfig,
-  expandHome,
-  projectHash,
-  findPluginConfig
-} from '../lib/config.js';
+import { loadConfig, loadProjectConfig, expandHome, projectHash } from '../lib/config.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -684,8 +678,23 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
 /**
  * Determine which source a file belongs to based on its path and config.
  * Returns { sourceName, sourceDir, projectId, project } or null if no match.
+ *
+ * Reads the 3-tier MERGED config (loadProjectConfig), not the raw plugin
+ * manifest — a project's `.claude/contextus.jsonc` can disable a source,
+ * change its path, or add excludes, and /notify's routing must honor that
+ * the same way the manual `pnpm embed` CLI already does (see GH issue #22;
+ * this used to call findPluginConfig(), which ignores project overrides).
+ *
+ * Exported for direct unit testing: it's a pure decision function (no I/O
+ * beyond reading config), and /notify's actual HTTP response depends on the
+ * embedding provider being reachable (embedSingleFile calls the real
+ * embedder) — /notify is hook-triggered, so it correctly degrades to
+ * `{continue: true}` on ANY internal failure, same as /query, which makes
+ * "did routing succeed" unobservable from the HTTP response alone in an
+ * environment with no embedding provider (e.g. CI). Testing this function
+ * directly avoids that entirely.
  */
-function determineSource(
+export function determineSource(
   absFile: string,
   cwd: string,
   project: string | undefined
@@ -695,7 +704,8 @@ function determineSource(
   projectId: string;
   project: string | undefined;
 } | null {
-  const cfg = findPluginConfig();
+  const projectIdForConfig = project ? resolveProjectId(project) : projectHash(cwd);
+  const cfg = loadProjectConfig(projectIdForConfig, cwd);
   const sources = cfg.sources as Record<
     string,
     {
@@ -1164,6 +1174,23 @@ async function handleDelete(
  */
 const activeWatchers = new Map<string, fs.FSWatcher>();
 
+/**
+ * Close every active fs.watch handle and forget them — TEST-ONLY. The real
+ * daemon never calls this (a watcher is meant to live for the process's
+ * whole lifetime; SIGINT/SIGTERM tear it down implicitly via process.exit).
+ * Integration tests that hit a code path arming a watcher on an ephemeral
+ * tmp dir (e.g. /notify → watchContextDir) MUST call this in their `after()`
+ * — otherwise the open handle keeps node --test's event loop non-empty and
+ * the process can hang waiting to exit naturally (found via GH issue #22:
+ * this was the first test to ever successfully route through /notify to a
+ * real source, since every prior /notify test either failed JSON parsing or
+ * hit not_in_any_source before reaching watchContextDir).
+ */
+export function closeAllWatchers(): void {
+  for (const watcher of activeWatchers.values()) watcher.close();
+  activeWatchers.clear();
+}
+
 function watchContextDir(
   contextDir: string,
   project: string | undefined,
@@ -1257,33 +1284,78 @@ async function handleReconcile(
   const projectId = project ? resolveProjectId(project) : projectHash(cwd);
   registerProject(projectId, cwd);
   const check = body.check === true;
-  const contextDir = path.join(cwd, '.claude', 'context');
 
-  // Dry-run: report the corpus state without touching anything.
+  // Dry-run: report the corpus state without touching anything. Iterates every
+  // enabled source (not just projectContext) — this is what session-start's
+  // checkCorpus() uses to decide whether to fire a real reconcile at all, and a
+  // real reconcile is also what arms the live fs.watch per source
+  // (watchContextDir) for the rest of the daemon's life. Under-checking here used
+  // to mean a project whose ONLY drift was in docs/ never got its watcher armed
+  // that session, even though the non-check path below already supported it
+  // (GH issue #22).
   if (check) {
-    // NOTE: This only checks projectContext. To check all sources, iterate like the
-    // non-check path below. For now, check mode is primarily for SessionStart diagnostics.
-    const allContexts = await loadContexts(contextDir);
+    const cfg = loadProjectConfig(projectId, cwd);
+    const sources = cfg.sources as Record<
+      string,
+      {
+        scope: 'project' | 'user';
+        path: string;
+        enabled?: boolean;
+        exclude?: string[];
+      }
+    >;
     const exists = await tableExists(project);
-    // Quarantine prefix/type-mismatch files — MUST match runReconcile, or they'd
-    // show as perpetual "new" here (the "re-embedding 1 forever" phantom). Report
-    // the count so session-start can surface "N file(s) can't embed — fix them".
-    const quarantined = findPrefixTypeMismatches(allContexts).map((m) => m.relPath);
-    const badPaths = new Set(quarantined);
-    const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
-    // Scope to projectContext + this project's hash — MUST match runReconcile.
-    const hashes = await getContentHashes(project, 'projectContext', projectId || undefined);
-    const diskFiles: DiskFile[] = contexts.map((c) => ({
-      id: c.id,
-      absPath: c.absPath,
-      content: c.content
-    }));
-    const plan = planReconcile(diskFiles, hashes, exists);
+
+    const statePriority: Record<ReturnType<typeof planReconcile>['state'], number> = {
+      missing: 3,
+      stale: 2,
+      fresh: 1,
+      empty: 0
+    };
+    let aggState: ReturnType<typeof planReconcile>['state'] = 'empty';
+    let newCount = 0;
+    let changedCount = 0;
+    let removeCount = 0;
+    const quarantined: string[] = [];
+
+    for (const [sourceName, s] of Object.entries(sources)) {
+      if (s.enabled === false) continue;
+      const sourcePath = s.scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
+      const sourceProjectId = s.scope === 'project' ? projectId : '';
+
+      const allContexts = await loadContexts(sourcePath, s.exclude);
+      // Quarantine prefix/type-mismatch files — MUST match runReconcile, or they'd
+      // show as perpetual "new" here (the "re-embedding 1 forever" phantom). Report
+      // the count so session-start can surface "N file(s) can't embed — fix them".
+      // categoryPrefix() only matches known context prefixes (gotcha-, decision-,
+      // ...), so doc sources (no such prefix convention) never false-positive here.
+      const mismatches = findPrefixTypeMismatches(allContexts).map((m) => m.relPath);
+      const badPaths = new Set(mismatches);
+      const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
+      // Scope hash lookup to THIS source + projectId — MUST match runReconcile,
+      // or another source's rows look like orphans (or this source's look unembedded).
+      const hashes = await getContentHashes(project, sourceName, sourceProjectId || undefined);
+      const diskFiles: DiskFile[] = contexts.map((c) => ({
+        id: c.id,
+        absPath: c.absPath,
+        content: c.content
+      }));
+      const plan = planReconcile(diskFiles, hashes, exists);
+
+      newCount += plan.toEmbedNew.length;
+      changedCount += plan.toEmbedChanged.length;
+      removeCount += plan.toRemove.length;
+      // Qualify with sourceName: two sources could otherwise report the same
+      // relPath (e.g. a stray `gotcha-x.md` under both .claude/context/ and docs/).
+      quarantined.push(...mismatches.map((p) => `${sourceName}/${p}`));
+      if (statePriority[plan.state] > statePriority[aggState]) aggState = plan.state;
+    }
+
     return sendJson(res, 200, {
-      state: plan.state,
-      newCount: plan.toEmbedNew.length,
-      changedCount: plan.toEmbedChanged.length,
-      removeCount: plan.toRemove.length,
+      state: aggState,
+      newCount,
+      changedCount,
+      removeCount,
       quarantined // relPaths of files that can't embed (bad prefix/type) — surface these
     });
   }
@@ -1300,14 +1372,18 @@ async function handleReconcile(
   // Respond immediately; the embed runs detached from the request lifecycle.
   sendJson(res, 200, { state: 'started' });
 
-  // Reconcile all enabled sources from config
-  const cfg = findPluginConfig();
+  // Reconcile all enabled sources from the 3-tier MERGED config — not the raw
+  // plugin manifest, so a project's .claude/contextus.jsonc overrides (custom
+  // exclude, disabled source, custom path) are honored the same way the manual
+  // `pnpm embed` CLI already honors them (GH issue #22).
+  const cfg = loadProjectConfig(projectId, cwd);
   const sources = cfg.sources as Record<
     string,
     {
       scope: 'project' | 'user';
       path: string;
       enabled?: boolean;
+      exclude?: string[];
     }
   >;
 
@@ -1319,10 +1395,12 @@ async function handleReconcile(
       const pid = s.scope === 'project' ? projectId : '';
       const proj = s.scope === 'project' ? project : undefined;
 
-      return { sourceName, sourcePath, pid, proj, scope: s.scope };
+      return { sourceName, sourcePath, pid, proj, scope: s.scope, exclude: s.exclude };
     });
 
-  Promise.all(reconcileTasks.map((t) => runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName)))
+  Promise.all(
+    reconcileTasks.map((t) => runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName, t.exclude))
+  )
     .then(async (results) => {
       const totalEmbedded = results.reduce((sum, r) => sum + r.embedded, 0);
       const totalRemoved = results.reduce((sum, r) => sum + r.removed, 0);
