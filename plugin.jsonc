@@ -179,6 +179,7 @@
     "skills/migrate-memory",
     "skills/link-project",
     "skills/manage-daemon",
+    "skills/mine-transcripts",
 
     // Context operations (corpus)
     "skills/context-search",
@@ -197,20 +198,10 @@
     "skills/contextus-upgrade",
     "skills/contextus-watch",
 
-    // Aliases (ctx-* shortcuts)
-    "skills/ctx-create",
-    "skills/ctx-search",
-    "skills/ctx-status",
-    "skills/ctx-stats",
-    "skills/ctx-doctor",
-    "skills/ctx-review",
-    "skills/ctx-calibrate",
-    "skills/ctx-archive",
-    "skills/ctx-merge",
-    "skills/ctx-tag",
-    "skills/ctx-audit",
-    "skills/ctx-setup",
-    "skills/ctx-migrate",
-    "skills/ctx-watch"
+    // Unified shortcut dispatcher — replaced the 8 individual ctx-* alias
+    // skills (0.14.0). Those directories no longer exist; this entry used to
+    // be missing here even after the replacement, meaning the registry
+    // referenced 14 dead paths and omitted the one that actually exists.
+    "skills/ctx"
   ]
 }

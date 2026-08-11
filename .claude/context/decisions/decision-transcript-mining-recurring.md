@@ -1,9 +1,9 @@
 ---
 name: transcript-mining-recurring
-description: Transcript mining runs on a schedule (not just setup), tracking scan watermark to catch missed context
+description: Transcript mining runs on a schedule (not just setup), tracking scan watermark to catch missed context — trigger implemented via SessionStart hook (GH issue #39)
 metadata:
   type: decision
-  tags: [transcript-mining, scheduling, detection-completeness]
+  tags: ["transcript-mining", "scheduling", "detection-completeness", "fixed"]
 ---
 
 # Transcript Mining as Recurring Safety Net
@@ -28,14 +28,21 @@ The detection completeness problem (see `docs/long-running-turn-capture.md`) mea
 
 Setup runs the *first* scan (bootstraps from ~1 week of history). After that, the recurring scan picks up where setup left off. Same extraction pipeline, different trigger and scope.
 
+**Not yet implemented**: `/contextus-setup`/`scripts/contextus-setup.ts` does not call `mine-transcripts` at all — this section describes intent, not current behavior. The SessionStart trigger (below) covers ongoing recurrence; the setup-time bootstrap scan is still a real gap, tracked as remaining scope on GH issue #39.
+
 ## Cost Model
 
 - Each scan: ~$0.01-0.05 (Haiku on recent transcripts, incremental)
 - Frequency: daily or per-session-start is fine — transcripts are small once filtered to the delta
 - Compare to: $0 if no patterns were missed, but the insurance value is high
 
-## Open Questions
+## Resolved (GH issue #39, implemented in `scripts/lib/daemon-control.js` + `scripts/session-start-hook.js`)
 
-- Best trigger: SessionStart hook vs cron vs daemon idle-timer?
-- How aggressive should extraction be? (Liberal = more git noise, conservative = misses things)
-- Should it notify the user when it finds something? Or silently write + let git status speak?
+The engine (this decision, PR #13) existed for weeks with no trigger ever wired up — the watermark could go stale indefinitely with zero signal. Fixed:
+
+- **Trigger: SessionStart hook**, gated on a 24h cadence (`checkTranscriptMining`) rather than firing on every session start. Chosen over cron (no scheduler infra to add/maintain) and a daemon idle-timer (the daemon's own idle-shutdown story isn't settled — see `daemon-lifecycle-question` — tying a second feature to an undecided lifecycle would compound the uncertainty). Fire-and-forget: spawns `scripts/mine-transcripts.ts` as a real detached OS process (`fireTranscriptMining`), since mining has no daemon endpoint — it calls the LLM directly, unlike `/reconcile`'s server-side background task.
+- **Aggressiveness: unchanged from the original extraction pipeline** (Haiku confidence filtering + 0.82 dedup threshold) — not re-tuned as part of this fix. Separately, the session CAP was removed: a prior version hardcoded `maxSessions: 3` regardless of backlog size, so a stale watermark meant most pending sessions were silently dropped on every catch-up run. No cap by default now (`scripts/mine-transcripts.ts`), with a heads-up (not a block) printed above 20 pending sessions given the real LLM cost/time per session.
+- **Notification: silently write, matching the existing staging-mode trust model** — the SessionStart hook does emit one `systemMessage` line when it fires ("mining N recent session(s)...") for transparency, but extracted patterns themselves land as files via `/capture` same as always; no per-pattern notification. Consistent with `docs/CAPTURE_PHILOSOPHY.md`'s "user commits what's useful" model.
+
+Also added: a manual `/mine-transcripts` skill (`/ctx mine`) for on-demand runs — checking backlog status or forcing a scan outside the 24h cadence.
+

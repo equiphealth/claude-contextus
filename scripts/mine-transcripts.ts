@@ -33,7 +33,7 @@ import {
   getWatermark,
   updateProjectState
 } from '../lib/transcript/state.js';
-import { loadConfig } from '../lib/config.js';
+import { loadProjectConfig, projectHash } from '../lib/config.js';
 import { getDaemonURL } from '../lib/daemon-url.js';
 
 interface CliArgs {
@@ -42,24 +42,33 @@ interface CliArgs {
   since?: string;
   dryRun: boolean;
   list: boolean;
-  maxSessions: number;
+  /** undefined = no cap (default) — process every session since the watermark. */
+  maxSessions?: number;
   help: boolean;
 }
 
-function parseArgs(): CliArgs {
-  const args = process.argv.slice(2);
-  const result: CliArgs = { all: false, dryRun: false, list: false, maxSessions: 3, help: false };
+/**
+ * No cap by default. A prior version hardcoded `maxSessions: 3` regardless of
+ * how much backlog had piled up — a project whose recurring trigger never
+ * fired for weeks (see GH issue #39) would then take multiple manual runs to
+ * catch up, each silently dropping most of the pending sessions with no
+ * warning. Uncapped is the right default for a "catch up on everything since
+ * last scan" tool; `--max-sessions` remains available for anyone who wants to
+ * deliberately bound a single run (e.g. a quick spot-check).
+ */
+export function parseArgs(argv: string[] = process.argv.slice(2)): CliArgs {
+  const result: CliArgs = { all: false, dryRun: false, list: false, help: false };
 
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
       case '--project':
-        result.project = args[++i];
+        result.project = argv[++i];
         break;
       case '--all':
         result.all = true;
         break;
       case '--since':
-        result.since = args[++i];
+        result.since = argv[++i];
         break;
       case '--dry-run':
         result.dryRun = true;
@@ -67,9 +76,20 @@ function parseArgs(): CliArgs {
       case '--list':
         result.list = true;
         break;
-      case '--max-sessions':
-        result.maxSessions = parseInt(args[++i], 10) || 10;
+      case '--max-sessions': {
+        const n = parseInt(argv[++i], 10);
+        // An explicit but unparseable value is almost certainly a typo'd flag,
+        // not "the user wants unlimited" — surface it rather than silently
+        // falling back to uncapped, which would mask the mistake.
+        if (isNaN(n) || n <= 0) {
+          console.error(
+            `[warn] --max-sessions value must be a positive integer, got "${argv[i]}" — ignoring, no cap applied.`
+          );
+        } else {
+          result.maxSessions = n;
+        }
         break;
+      }
       case '--help':
       case '-h':
         result.help = true;
@@ -95,8 +115,17 @@ function parseSince(since: string | undefined, watermark: Date | null): Date | u
   return watermark ?? new Date(Date.now() - 1 * 86400000);
 }
 
-function buildExtractionConfig(): ExtractionConfig {
-  const config = loadConfig();
+/**
+ * Reads the 3-tier MERGED config (loadProjectConfig), not the raw plugin
+ * defaults — a project's `.claude/contextus.jsonc` can override the Ollama
+ * endpoint or Bedrock region, and mining must honor that the same way the
+ * daemon itself does (same bug class as GH issue #22's findPluginConfig fix).
+ * Called PER PROJECT (not once globally) so `--all` mode picks up each
+ * project's own overrides instead of reusing whichever project happened to
+ * be current when the process started.
+ */
+function buildExtractionConfig(projectPath: string): ExtractionConfig {
+  const config = loadProjectConfig(projectHash(projectPath), projectPath);
   const providers = config.providers ?? {};
 
   return {
@@ -190,11 +219,18 @@ async function writePattern(
   }
 }
 
-async function mineProject(
+/**
+ * Exported so /contextus-setup can run the one-time bootstrap scan directly
+ * (in-process) rather than shelling out to a separate CLI invocation — same
+ * pattern it already uses for `runReconcile`. `args` only needs the fields
+ * `mineProject` actually reads (since/dryRun/maxSessions); callers outside
+ * this file's own `main()` can pass a partial CliArgs-shaped object.
+ */
+export async function mineProject(
   projectPath: string,
-  args: CliArgs,
-  extractionConfig: ExtractionConfig
+  args: CliArgs
 ): Promise<{ extracted: number; sessions: number }> {
+  const extractionConfig = buildExtractionConfig(projectPath);
   const slug = projectSlug(projectPath);
   const watermark = getWatermark(slug);
   const since = parseSince(args.since, watermark);
@@ -209,10 +245,19 @@ async function mineProject(
     return { extracted: 0, sessions: 0 };
   }
 
-  const capped = sessionFiles.slice(0, args.maxSessions);
+  const capped = args.maxSessions ? sessionFiles.slice(0, args.maxSessions) : sessionFiles;
   console.log(
-    `   Sessions: ${capped.length}${sessionFiles.length > args.maxSessions ? ` (capped from ${sessionFiles.length})` : ''}`
+    `   Sessions: ${capped.length}${capped.length < sessionFiles.length ? ` (capped from ${sessionFiles.length})` : ''}`
   );
+  // Heads-up, not a block: extraction is an LLM call per window (Haiku/Bedrock),
+  // so a large uncapped backlog (first run, or a trigger that hasn't fired in a
+  // while) means real time and real cost. Informational only — uncapped stays
+  // uncapped; use --max-sessions to deliberately bound a run.
+  if (capped.length > 20) {
+    console.log(
+      `   ⚠️  ${capped.length} sessions to scan — this may take a while and calls the LLM per window. Ctrl+C to cancel, or re-run with --max-sessions N to bound it.`
+    );
+  }
 
   let totalExtracted = 0;
 
@@ -274,7 +319,7 @@ Usage:
   pnpm mine-transcripts --all              scan all known projects
   pnpm mine-transcripts --dry-run          show extractions without writing
   pnpm mine-transcripts --list             list available projects
-  pnpm mine-transcripts --max-sessions N   cap sessions per scan (default: 10)
+  pnpm mine-transcripts --max-sessions N   cap sessions per scan (default: unlimited)
 
 Extracted patterns are written via POST /capture (daemon must be running).
 Files appear in .claude/context/ with tag "transcript-mined".
@@ -295,14 +340,12 @@ Files appear in .claude/context/ with tag "transcript-mined".
     return;
   }
 
-  const extractionConfig = buildExtractionConfig();
-
   if (args.all) {
     const projects = listProjects();
     let totalExtracted = 0;
     let totalSessions = 0;
     for (const p of projects) {
-      const result = await mineProject(p.path, args, extractionConfig);
+      const result = await mineProject(p.path, args);
       totalExtracted += result.extracted;
       totalSessions += result.sessions;
     }
@@ -311,12 +354,18 @@ Files appear in .claude/context/ with tag "transcript-mined".
     );
   } else {
     const projectPath = args.project ?? process.cwd();
-    const result = await mineProject(projectPath, args, extractionConfig);
+    const result = await mineProject(projectPath, args);
     console.log(`\n✨ Done: ${result.extracted} patterns from ${result.sessions} sessions`);
   }
 }
 
-main().catch((err) => {
-  console.error('Fatal:', err);
-  process.exit(1);
-});
+// Only run when executed directly (`tsx scripts/mine-transcripts.ts` / `node
+// dist/scripts/mine-transcripts.js`) — not when imported by tests, which would
+// otherwise trigger a real CLI run (including process.exit) as an import
+// side effect.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error('Fatal:', err);
+    process.exit(1);
+  });
+}

@@ -246,6 +246,21 @@ export interface UsageEvaluationConfig {
   staleness: StalenessConfig;
 }
 
+export interface TranscriptMiningConfig {
+  /**
+   * Whether the SessionStart hook fires a background transcript-mining scan
+   * on a recurring cadence. Default: false — this calls an LLM (Haiku/
+   * Bedrock) per session window, real cost/time a project shouldn't incur
+   * without explicit opt-in. /contextus-setup asks and writes this; projects
+   * that never ran the (post-GH-issue-#39) setup flow stay off by default.
+   */
+  enabled: boolean;
+  /** Minimum hours between recurring scans, even if `enabled`. Default: 24 —
+   * SessionStart can fire many times a day; this prevents re-mining on every
+   * single one. */
+  intervalHours: number;
+}
+
 export interface CapacityProtectionConfig {
   /** Whether token overflow protection is enabled. Default: true. */
   enabled: boolean;
@@ -281,6 +296,7 @@ export interface ContextusConfig {
   logging: LoggingConfig;
   usageEvaluation: UsageEvaluationConfig;
   capacityProtection: CapacityProtectionConfig;
+  transcriptMining: TranscriptMiningConfig;
   sources: SourcesConfig;
 }
 
@@ -361,6 +377,10 @@ const DEFAULTS: ContextusConfig = {
     reduceAt: 70,
     minimalAt: 80,
     disableAt: 85
+  },
+  transcriptMining: {
+    enabled: false,
+    intervalHours: 24
   },
   sources: {
     projectContext: {
@@ -516,6 +536,7 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
     if (staleOverride) Object.assign(merged.usageEvaluation.staleness, staleOverride);
   }
   if (c.capacityProtection) Object.assign(merged.capacityProtection, c.capacityProtection);
+  if (c.transcriptMining) Object.assign(merged.transcriptMining, c.transcriptMining);
   if (c.sources) {
     for (const [key, sourceOverride] of Object.entries(c.sources)) {
       if (!merged.sources[key]) {

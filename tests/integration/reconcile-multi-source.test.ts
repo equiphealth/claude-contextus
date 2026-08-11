@@ -102,6 +102,9 @@ test('/reconcile {check:true} counts a NEW projectDocs file, not just projectCon
   assert.equal(json.state, 'missing');
   // 1 context file + 1 real doc file = 2. If DOCS.md leaked in, this would be 3.
   assert.equal(json.newCount, 2, 'DOCS.md must not count as a new document');
+  // Piggybacked config (GH issue #39) — the properly MERGED transcriptMining
+  // setting, defaulting to disabled since this project has no override.
+  assert.deepEqual(json.transcriptMining, { enabled: false, intervalHours: 24 });
 
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
@@ -123,6 +126,25 @@ test('/reconcile {check:true} reports state:fresh when nothing changed across an
   assert.equal(status, 200);
   assert.equal(json.state, 'empty');
   assert.equal(json.newCount, 0);
+
+  fs.rmSync(projectDir, { recursive: true, force: true });
+});
+
+test('/reconcile {check:true} reflects a project-level transcriptMining override', async () => {
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  fs.mkdirSync(path.join(projectDir, '.claude', 'context'), { recursive: true });
+  fs.writeFileSync(
+    path.join(projectDir, '.claude', 'contextus.json'),
+    JSON.stringify({ config: { transcriptMining: { enabled: true, intervalHours: 6 } } })
+  );
+
+  const { status, json } = await post(
+    '/reconcile',
+    JSON.stringify({ cwd: projectDir, check: true })
+  );
+
+  assert.equal(status, 200);
+  assert.deepEqual(json.transcriptMining, { enabled: true, intervalHours: 6 });
 
   fs.rmSync(projectDir, { recursive: true, force: true });
 });

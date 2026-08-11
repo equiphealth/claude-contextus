@@ -41,6 +41,8 @@ import {
   getVerbosity,
   checkCorpus,
   fireReconcile,
+  checkTranscriptMining,
+  fireTranscriptMining,
   hasContextusStanza,
   hasPopulatedContextDir,
   checkUpgradeNeeded,
@@ -184,6 +186,22 @@ async function main() {
     } else if (plan && plan.state === 'stale') {
       // Orphan-only drift: reconcile quietly, no user-facing noise.
       await fireReconcile(project, cwd);
+    }
+
+    // Transcript mining as recurring safety net (GH issue #39 — the engine
+    // existed since PR #13 but nothing ever triggered it automatically; a
+    // project's watermark could go stale for weeks with no signal). Off by
+    // default — /contextus-setup asks and writes transcriptMining.enabled;
+    // a project that never ran that flow stays off (real LLM cost/time, no
+    // silent opt-in). When enabled, gated on a cadence (default 24h), not
+    // every session start. Fire-and-forget: a real detached process, not
+    // something this hook waits on (extraction calls an LLM per window).
+    const mining = checkTranscriptMining(cwd, plan?.transcriptMining);
+    if (mining.due) {
+      fireTranscriptMining(cwd);
+      lines.push(
+        `contextus: mining ${mining.pending} recent session(s) for context that slipped through — running in the background.`
+      );
     }
 
     // Surface quarantined files (bad prefix/type — can't embed). Honest + actionable:
