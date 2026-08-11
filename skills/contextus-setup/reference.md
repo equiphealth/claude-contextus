@@ -465,8 +465,10 @@ Paranoid logging — log full prompts + injections? (for debugging retrieval)
 Pattern capture — how contextus proposes new patterns to save.
 
   'propose' = suggests via footer, you confirm with /create-context (recommended)
+  'staging' = writes patterns directly via /capture — git status is the review
+              gate (you commit what's useful, discard what isn't)
   'silent'  = never proposes (you create manually)
-  [propose (recommended)] [silent]
+  [propose (recommended)] [staging] [silent]
 ```
 
 ### P8: Legacy Migration (only if `legacyMemory` is not null)
