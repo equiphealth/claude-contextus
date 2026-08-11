@@ -61,8 +61,15 @@ export async function embedSingleFile(
     }
     return { embedded: false, reason: 'not_found' };
   }
+  // Known generated-index filenames across every source type. This is a
+  // basename-only safety net for the single-file path (/notify, the fs.watch
+  // watcher) — the bulk reconcile/embed paths use each source's own configured
+  // `exclude` globs (see lib/embedding/sources.ts, context-loader.ts's
+  // loadContexts). Before DOCS.md was added here, editing a projectDocs
+  // source's own index file directly would get it embedded as real document
+  // content via this exact path (GH issue #22).
   const base = path.basename(normFile);
-  if (base === 'CONTEXT.md' || base === 'README.md') {
+  if (base === 'CONTEXT.md' || base === 'DOCS.md' || base === 'README.md') {
     return { embedded: false, reason: 'index_or_readme' };
   }
 

@@ -106,22 +106,38 @@ export function loadContext(absPath: string, contextDir: string): LoadedContext 
   };
 }
 
+/** Fallback exclude list for callers that don't have a source-specific config
+ * (e.g. `.claude/context/`'s own CONTEXT.md). Callers reconciling a source with
+ * a DIFFERENT index filename (docs/DOCS.md, or any future source) MUST pass
+ * their own `exclude` — this default only ever knew about CONTEXT.md/README.md,
+ * which is exactly what let `DOCS.md` leak into a projectDocs reconcile as a
+ * real "document" (see gotcha discovered while investigating GH issue #22). */
+const DEFAULT_LOAD_EXCLUDE = ['**/CONTEXT.md', '**/README.md'];
+
 /**
- * Load every context file under a directory (excluding the CONTEXT.md index and
- * README.md). Returns [] if the directory does not exist.
+ * Load every context file under a directory (excluding the caller's `exclude`
+ * globs — defaults to CONTEXT.md/README.md for backward compat). Returns []
+ * if the directory does not exist.
+ *
+ * @param exclude - glob patterns to skip, normally the resolved source's own
+ *   `exclude` config (see lib/embedding/sources.ts's ResolvedSource) so a
+ *   doc source's DOCS.md gets excluded the same way a context source's
+ *   CONTEXT.md does — one list per source, not one hardcoded list for all.
  */
-export async function loadContexts(contextDir: string): Promise<LoadedContext[]> {
+export async function loadContexts(
+  contextDir: string,
+  exclude: string[] = DEFAULT_LOAD_EXCLUDE
+): Promise<LoadedContext[]> {
   if (!fs.existsSync(contextDir)) return [];
   // Glob relative to `contextDir` (cwd), NOT an absolute pattern: with an absolute
-  // pattern, glob matches `ignore` against absolute result paths and `**/CONTEXT.md`
-  // FAILS to exclude `<dir>/CONTEXT.md` at the root — leaving the generated index
-  // in the set, which reconcile then counts as a perpetual phantom "new" file
-  // ("re-embedding 1" every session, embedding nothing). Anchored basenames +
-  // cwd-relative glob exclude it reliably at any depth.
-  const rel = await glob('**/*.md', {
-    cwd: contextDir,
-    ignore: ['CONTEXT.md', '**/CONTEXT.md', 'README.md', '**/README.md']
-  });
+  // pattern, glob matches `ignore` against absolute result paths and a globstar
+  // pattern like `**/CONTEXT.md` FAILS to exclude `<dir>/CONTEXT.md` at the root
+  // — leaving the generated index in the set, which reconcile then counts as a
+  // perpetual phantom "new" file ("re-embedding 1" every session, embedding
+  // nothing). Anchored basenames + cwd-relative glob exclude it reliably at any
+  // depth — same fix as lib/embedding/sources.ts's loadSource.
+  const ignore = exclude.flatMap((g) => (g.startsWith('**/') ? [g, g.slice(3)] : [g]));
+  const rel = await glob('**/*.md', { cwd: contextDir, ignore });
   return rel.sort().map((f) => loadContext(path.join(contextDir, f), contextDir));
 }
 

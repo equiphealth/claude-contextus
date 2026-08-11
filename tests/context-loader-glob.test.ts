@@ -53,3 +53,20 @@ test('loadContexts: missing dir → empty array', async () => {
   const loaded = await loadContexts('/nonexistent/path/.claude/context');
   assert.deepEqual(loaded, []);
 });
+
+test('loadContexts: custom exclude excludes DOCS.md, not the default CONTEXT.md/README.md', async () => {
+  // Regression for GH issue #22: runReconcile used to always call loadContexts()
+  // with no exclude arg, so a projectDocs source's DOCS.md leaked in as content.
+  // A caller reconciling a doc source must be able to pass ITS OWN exclude list.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-loader-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'DOCS.md'), '# Docs Index\n- GUIDE.md');
+    fs.writeFileSync(path.join(dir, 'GUIDE.md'), '# A real doc\nsome content');
+    const loaded = await loadContexts(dir, ['**/DOCS.md', '**/README.md']);
+    const ids = loaded.map((c) => c.id).sort();
+    assert.deepEqual(ids, ['GUIDE.md']);
+    assert.ok(!ids.some((id) => id.endsWith('DOCS.md')), 'DOCS.md must be excluded');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

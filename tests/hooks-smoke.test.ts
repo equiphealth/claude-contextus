@@ -71,9 +71,24 @@ test('awareness-hook.js: loads, exits 0, emits valid JSON', () => {
   assert.equal(r.parsed!.continue, true);
 });
 
-test('watch-contexts.js: a non-context edit → clean continue', () => {
+test('watch-contexts.js: a non-markdown edit → clean continue', () => {
   const r = runHook('watch-contexts.js', {
     tool_input: { file_path: '/tmp/somewhere/else.ts' },
+    cwd: process.cwd()
+  });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+  assert.equal(r.parsed!.continue, true);
+});
+
+test('watch-contexts.js: a docs/ .md edit (daemon down) → clean continue, no crash', () => {
+  // Regression for GH issue #22: this hook used to hardcode a
+  // `.claude/context` path check and would skip docs/ files before ever
+  // attempting /notify. Now it only checks the .md extension and lets the
+  // daemon decide relevance — with the daemon down, /notify's fetch fails and
+  // the hook falls back to a background respawn attempt, but must still exit
+  // cleanly either way.
+  const r = runHook('watch-contexts.js', {
+    tool_input: { file_path: '/tmp/somewhere/docs/GUIDE.md' },
     cwd: process.cwd()
   });
   assert.equal(r.status, 0, `stderr: ${r.stderr}`);
