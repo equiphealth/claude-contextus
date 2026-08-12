@@ -291,20 +291,49 @@ function resolveLaunch(jsPath, tsPath, extraArgs = []) {
     : { cmd: 'npx', args: ['tsx', tsPath, ...extraArgs] };
 }
 
-/** Spawn a detached process (daemon, eval-worker, or a one-shot CLI script like
- * mine-transcripts) that outlives the hook. */
-function spawnDetached(jsPath, tsPath, extraArgs = []) {
+/**
+ * Spawn a detached process (daemon, eval-worker, or a one-shot CLI script like
+ * mine-transcripts) that outlives the hook.
+ *
+ * `logFile`, when given, redirects the child's stdout/stderr to that file
+ * (append mode) instead of discarding them. The daemon/eval-worker's own
+ * spawns don't pass this — they already have structured logging via
+ * lib/logger.js, so a second raw-output file would be redundant. mine-
+ * transcripts.ts has no such logging and was previously fully silent on
+ * every failure mode (independent review of #40, item #8) — combined with
+ * #1/#7, a daemon-down run or a broken install path failed with zero trace
+ * anywhere. The fd is duplicated into the child at spawn time (standard
+ * Node behavior), so closing our copy right after spawning doesn't affect
+ * the child's writes — it keeps writing after this (short-lived) hook exits.
+ */
+export function spawnDetached(jsPath, tsPath, extraArgs = [], { logFile } = {}) {
   const { cmd, args } = resolveLaunch(jsPath, tsPath, extraArgs);
   // Packaged launches load native deps from ${CLAUDE_PLUGIN_DATA}/node_modules via
   // NODE_PATH (the repo has none). In dev this resolves to the repo's own
   // node_modules — a harmless explicit no-op (Node already searches it).
   const env = { ...process.env, NODE_PATH: depsNodeModules() };
+
+  let stdio = 'ignore';
+  let fd = null;
+  if (logFile) {
+    try {
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fd = fs.openSync(logFile, 'a');
+      stdio = ['ignore', fd, fd];
+    } catch {
+      // Best-effort — never let logging setup block the actual spawn.
+      stdio = 'ignore';
+      fd = null;
+    }
+  }
+
   const child = spawn(cmd, args, {
     cwd: REPO_ROOT,
     detached: true,
-    stdio: 'ignore',
+    stdio,
     env,
   });
+  if (fd !== null) fs.closeSync(fd); // child already has its own duplicated fd
   child.unref();
 }
 
@@ -570,8 +599,12 @@ export function checkTranscriptMining(cwd, transcriptMiningConfig) {
 /** Spawn scripts/mine-transcripts.ts detached, scoped to this project only —
  * never --all from a per-project hook (a workspace with many projects would
  * otherwise re-scan every one of them on every project's session start). */
+const TRANSCRIPT_MINING_LOG = path.join(os.homedir(), '.contextus', 'logs', 'transcript-mining.log');
+
 export function fireTranscriptMining(cwd) {
-  spawnDetached(MINE_TRANSCRIPTS_JS, MINE_TRANSCRIPTS_TS, ['--project', cwd]);
+  spawnDetached(MINE_TRANSCRIPTS_JS, MINE_TRANSCRIPTS_TS, ['--project', cwd], {
+    logFile: TRANSCRIPT_MINING_LOG
+  });
 }
 
 /** Sleep helper for polling loops. */
