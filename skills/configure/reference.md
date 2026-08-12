@@ -45,7 +45,7 @@ merge (`plugin.json defaults` < `~/.contextus/data/<project>/config.json` < `.cl
     "ollamaModel": "nomic-embed-text"
   },
   "contextCapture": {
-    "mode": "propose"
+    "mode": "staging"
   }
 }
 ```
@@ -106,7 +106,7 @@ Example — exclude `docs/prompts/` and `docs/archive/` from embedding:
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `mode` | `"propose"` \| `"staging"` \| `"silent"` | `"propose"` | Capture mode (permanent tradeoff) — `"staging"` writes patterns directly via `/capture`, using `git status` as the review gate |
+| `mode` | `"propose"` \| `"staging"` \| `"silent"` | `"staging"` | Capture mode (permanent tradeoff) — `"staging"` writes patterns directly via `/capture`, using `git status` as the review gate; `"propose"` suggests via footer instead, you confirm with `/create-context` |
 | `captureFooter` | `"always"` \| `"off"` | `"always"` | Whether a successful capture emits a "Context: captured: ..." confirmation line |
 
 ### `calibration` — Quality measurement

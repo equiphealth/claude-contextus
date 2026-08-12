@@ -13,6 +13,7 @@
  */
 
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   discoverSessions,
   parseSession,
@@ -363,7 +364,17 @@ Files appear in .claude/context/ with tag "transcript-mined".
 // dist/scripts/mine-transcripts.js`) — not when imported by tests, which would
 // otherwise trigger a real CLI run (including process.exit) as an import
 // side effect.
-if (import.meta.url === `file://${process.argv[1]}`) {
+//
+// Uses pathToFileURL rather than a naive `file://${process.argv[1]}` string
+// comparison — import.meta.url is percent-encoded (spaces become %20),
+// process.argv[1] is a raw filesystem path, so the naive comparison silently
+// fails (never matches) for any install path containing a space or other
+// character requiring encoding — e.g. a macOS home dir like `/Users/First
+// Last/`. That would make main() never run, and since fireTranscriptMining
+// spawns this with stdio:'ignore', the failure is completely silent (found
+// in independent review of PR #40). daemon/server.ts has the same unsafe
+// naive comparison pre-existing this PR — not fixed here, out of scope.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     console.error('Fatal:', err);
     process.exit(1);
