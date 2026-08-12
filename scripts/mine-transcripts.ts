@@ -33,7 +33,9 @@ import {
   readState,
   writeState,
   getWatermark,
-  updateProjectState
+  updateProjectState,
+  acquireMiningLock,
+  releaseMiningLock
 } from '../lib/transcript/state.js';
 import { loadProjectConfig, projectHash } from '../lib/config.js';
 import { getDaemonURL } from '../lib/daemon-url.js';
@@ -250,8 +252,33 @@ export async function mineProject(
   projectPath: string,
   args: CliArgs
 ): Promise<{ extracted: number; sessions: number }> {
-  const extractionConfig = buildExtractionConfig(projectPath);
   const slug = projectSlug(projectPath);
+
+  // Concurrent-run guard (independent review of PR #40, item #4, GH issue
+  // #39): the SessionStart trigger fires-and-forgets, so two sessions opened
+  // against the same project within the mining window could otherwise both
+  // spawn a full scan of the same backlog — doubled LLM cost, duplicate
+  // /capture writes (neither run has written anything yet for the other's
+  // dedup check to catch). A second run just sees the lock and exits having
+  // done no real work. See lib/transcript/state.ts for the lock design.
+  if (!acquireMiningLock(slug)) {
+    console.log(`   Skipped: another mining run for ${projectPath} is already in progress.`);
+    return { extracted: 0, sessions: 0 };
+  }
+
+  try {
+    return await mineProjectLocked(projectPath, args, slug);
+  } finally {
+    releaseMiningLock(slug);
+  }
+}
+
+async function mineProjectLocked(
+  projectPath: string,
+  args: CliArgs,
+  slug: string
+): Promise<{ extracted: number; sessions: number }> {
+  const extractionConfig = buildExtractionConfig(projectPath);
   const watermark = getWatermark(slug);
   const since = parseSince(args.since, watermark);
 
