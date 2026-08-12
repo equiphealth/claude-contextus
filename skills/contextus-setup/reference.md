@@ -200,7 +200,9 @@ If [1]: run `/migrate-memory` dry-run after setup completes.
 ```
 Mine past sessions for context that never got captured live?
 This scans your last ~7 days of Claude Code history once, extracting
-decisions/gotchas that slipped through (real LLM cost, usually a few cents).
+decisions/gotchas that slipped through (real LLM cost — one call per
+session window, so a busy week of history costs more than a quiet one;
+not yet benchmarked against real usage).
 
   [1] Yes, scan once now
   [2] No, skip for now
@@ -517,8 +519,10 @@ If no `existingProjects`, skip silently.
 Transcript mining — retrospective safety net for context missed live.
 Scans past Claude Code sessions with an LLM (Haiku via Ollama/Bedrock),
 extracting decisions/gotchas that never got captured during the session
-itself. Real cost per scan (usually a few cents), dedup'd against your
-existing corpus so it mostly no-ops once caught up.
+itself. Real cost per scan — one LLM call per session window, so cost
+scales with how much history there is to catch up on (not yet
+benchmarked against real usage) — dedup'd against your existing corpus
+so it mostly no-ops once caught up.
 
 One-time bootstrap scan (~last 7 days of history) now?
   [Yes, scan once] [No, skip]

@@ -1,9 +1,9 @@
 ---
 name: transcript-mining-recurring
-description: Transcript mining runs on a schedule (not just setup), tracking scan watermark to catch missed context — trigger implemented via SessionStart hook (GH issue #39); known issues found in independent review of PR #40 not yet all fixed
+description: Transcript mining runs on a schedule (not just setup), tracking scan watermark to catch missed context — trigger implemented via SessionStart hook (GH issue #39); all known issues from the independent review of PR #40 now fixed
 metadata:
   type: decision
-  tags: ["transcript-mining", "scheduling", "detection-completeness", "fixed", "known-issues"]
+  tags: ["transcript-mining", "scheduling", "detection-completeness", "fixed"]
 ---
 
 # Transcript Mining as Recurring Safety Net
@@ -32,31 +32,24 @@ Setup runs the *first* scan (bootstraps from ~1 week of history). After that, th
 
 ## Cost Model
 
-- Each scan: ~$0.01-0.05 (Haiku on recent transcripts, incremental)
-- Frequency: daily or per-session-start is fine — transcripts are small once filtered to the delta
-- Compare to: $0 if no patterns were missed, but the insurance value is high
+- Each scan calls the extraction LLM (Haiku) once per session window — cost scales with how much history there is to catch up on, not a fixed per-scan number. A quiet week is cheap; a backlog of dozens of unscanned sessions (e.g. mining was off for a while, or a fresh bootstrap on a busy project) costs proportionally more.
+- Not yet benchmarked against real usage — avoid quoting a specific dollar figure in user-facing copy (setup wizard, skill docs) until it is. `skills/contextus-setup/reference.md` was corrected to describe the *scaling* rather than an unverified "usually a few cents" estimate (independent review of PR #40, item #12).
+- Frequency: daily or per-session-start is fine once caught up — transcripts are small once filtered to the delta.
+- Compare to: $0 if no patterns were missed, but the insurance value is high.
 
-**Caveat (independent review of PR #40, unverified dollar figure):** the setup bootstrap path runs `since: '7d'` with no session cap, synchronously inside the wizard — for a daily Claude Code user that could be dozens of sessions/hundreds of extraction windows, which may not match this "few cents" estimate. Not yet re-measured against real usage.
-
-## Resolved (GH issue #39, implemented in `scripts/lib/daemon-control.js` + `scripts/session-start-hook.js`)
+## Resolved (GH issue #39 + independent review of PR #40 — all known issues now fixed)
 
 The engine (this decision, PR #13) existed for weeks with no trigger ever wired up — the watermark could go stale indefinitely with zero signal. Fixed:
 
 - **Trigger: SessionStart hook**, gated on a 24h cadence (`checkTranscriptMining`) rather than firing on every session start. Chosen over cron (no scheduler infra to add/maintain) and a daemon idle-timer (the daemon's own idle-shutdown story isn't settled — see `daemon-lifecycle-question` — tying a second feature to an undecided lifecycle would compound the uncertainty). Fire-and-forget: spawns `scripts/mine-transcripts.ts` as a real detached OS process (`fireTranscriptMining`), since mining has no daemon endpoint — it calls the LLM directly, unlike `/reconcile`'s server-side background task.
 - **Aggressiveness: unchanged from the original extraction pipeline** (Haiku confidence filtering + 0.82 dedup threshold) — not re-tuned as part of this fix. Separately, the session CAP was removed: a prior version hardcoded `maxSessions: 3` regardless of backlog size, so a stale watermark meant most pending sessions were silently dropped on every catch-up run. No cap by default now (`scripts/mine-transcripts.ts`), with a heads-up (not a block) printed above 20 pending sessions given the real LLM cost/time per session.
 - **Notification: silently write, matching the existing staging-mode trust model** — the SessionStart hook does emit one `systemMessage` line when it fires ("mining N recent session(s)...") for transparency, but extracted patterns themselves land as files via `/capture` same as always; no per-pattern notification. Consistent with `docs/CAPTURE_PHILOSOPHY.md`'s "user commits what's useful" model.
+- **Watermark no longer advances past a run that hit an infra failure** — `writePattern` now distinguishes "daemon unreachable" (`infraFailure: true`, must not advance) from a dedup skip or content-level rejection (safe to advance past, retrying wouldn't help). `mineProject` stops scanning further files on the first infra failure per run, keeping watermark progress contiguous instead of leaving gaps.
+- **`--max-sessions` capping now advances the watermark to the last actually-processed file's own mtime**, not to `Date.now()` — the uncapped remainder of a backlog is deferred to the next run, not silently dropped forever.
+- **The SessionStart trigger's mining check moved outside the embedding model's `warmOk` gate** — `checkCorpus` (which carries the piggybacked `transcriptMining` config) is now fetched unconditionally, since mining depends on the extraction LLM (Bedrock/Ollama), an unrelated provider to the embedder.
+- **The reported "mining N recent session(s)" count now matches the actual scan window** — a never-scanned project's pending count is capped to the same 24h lookback `mineProject`'s own `parseSince` falls back to, instead of counting every session file regardless of age.
+- **Concurrent-run lock added** — `acquireMiningLock`/`releaseMiningLock` (`lib/transcript/state.ts`), a PID-file lock enforced solely by `mineProject`. Two Claude Code sessions opened against the same project within the mining window used to both spawn a full scan of the same backlog; now the second spawn detects the lock and exits immediately, doing no real work. Enforced only on the spawned-process side — the SessionStart hook needs no matching lock-check logic, since a no-op second spawn is sufficient to prevent the double-cost problem.
 
 Also added: a manual `/mine-transcripts` skill (`/ctx mine`) for on-demand runs — checking backlog status or forcing a scan outside the 24h cadence.
 
-## Known Issues (found in independent review of PR #40, not yet all fixed as of this writing)
-
-See PR #40's review comment for the full list with severity. Highlights, since they undercut claims made above:
-
-- **The watermark advances even when every extraction/capture call in a run failed** (`mine-transcripts.ts`) — if the daemon is down when the SessionStart trigger fires, the affected sessions are marked scanned anyway and permanently skipped on future runs. This is the exact silent-staleness failure mode this decision exists to prevent, reintroduced one layer down.
-- **`--max-sessions` capping has the same permanent-skip problem** — capping at N sessions over a larger backlog advances the watermark to "now," not to the last processed file's timestamp, so the uncapped remainder is lost forever, not just deferred.
-- **The SessionStart trigger is gated behind the embedding model's warmth (`warmOk`), not the extraction LLM's** — mining can fail to ever fire if the embedder is cold even when the extraction provider (e.g. Bedrock) is healthy.
-- **The reported "mining N recent session(s)" count doesn't match what actually gets scanned** on a never-scanned project (counts ALL sessions, but the scan itself defaults to a 24h window).
-- **No lock against two concurrent Claude Code sessions in the same project both firing a scan** — the watermark isn't updated until the spawned process finishes, so both can start full uncapped scans of the same backlog.
-
-Do not treat the "Resolved" section above as fully settled until these are addressed — the trigger MECHANISM is real and wired up, but its failure-mode handling has real gaps.
-
+All items raised in the independent review of PR #40 are now addressed. See PR #40's review comment for the original list with severity, kept for historical reference.
