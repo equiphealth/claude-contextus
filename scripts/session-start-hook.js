@@ -163,12 +163,25 @@ async function main() {
     );
   }
 
+  // checkCorpus() ({check:true}) is a pure config/DB read on the daemon side
+  // (see handleReconcile's check branch) — it does NOT require the embedding
+  // model to be warm, unlike the real embed path (server-side gated on
+  // modelLoaded separately). Fetching it unconditionally, not only inside
+  // `if (warmOk)`, means transcript mining's config gate (piggybacked on this
+  // same response) still works when the embedder is cold/broken but the
+  // daemon process itself is otherwise reachable — mining needs a completely
+  // different provider (the extraction LLM, Haiku via Bedrock/Ollama) and has
+  // no business being blocked by the embedding model's health (independent
+  // review of #40, item #6). checkCorpus has its own internal try/catch and
+  // 1500ms timeout, so calling it here even when the daemon never came up at
+  // all is safe — it just returns null quickly.
+  const project = projectId(cwd);
+  const plan = await checkCorpus(project, cwd);
+
   // Auto-reconcile: only meaningful once the model is warm (the daemon can't
-  // embed cold). Cheap dry-run check first; fire the background reconcile only
-  // if the corpus is actually missing or behind.
+  // embed cold). Fire the background reconcile only if the corpus is
+  // actually missing or behind.
   if (warmOk) {
-    const project = projectId(cwd);
-    const plan = await checkCorpus(project, cwd);
     const pending = plan ? (plan.newCount ?? 0) + (plan.changedCount ?? 0) : 0;
     if (plan && plan.state === 'missing') {
       await fireReconcile(project, cwd);
@@ -187,23 +200,26 @@ async function main() {
       // Orphan-only drift: reconcile quietly, no user-facing noise.
       await fireReconcile(project, cwd);
     }
+  }
 
-    // Transcript mining as recurring safety net (GH issue #39 — the engine
-    // existed since PR #13 but nothing ever triggered it automatically; a
-    // project's watermark could go stale for weeks with no signal). Off by
-    // default — /contextus-setup asks and writes transcriptMining.enabled;
-    // a project that never ran that flow stays off (real LLM cost/time, no
-    // silent opt-in). When enabled, gated on a cadence (default 24h), not
-    // every session start. Fire-and-forget: a real detached process, not
-    // something this hook waits on (extraction calls an LLM per window).
-    const mining = checkTranscriptMining(cwd, plan?.transcriptMining);
-    if (mining.due) {
-      fireTranscriptMining(cwd);
-      lines.push(
-        `contextus: mining ${mining.pending} recent session(s) for context that slipped through — running in the background.`
-      );
-    }
+  // Transcript mining as recurring safety net (GH issue #39 — the engine
+  // existed since PR #13 but nothing ever triggered it automatically; a
+  // project's watermark could go stale for weeks with no signal). Off by
+  // default — /contextus-setup asks and writes transcriptMining.enabled;
+  // a project that never ran that flow stays off (real LLM cost/time, no
+  // silent opt-in). When enabled, gated on a cadence (default 24h), not
+  // every session start. Fire-and-forget: a real detached process, not
+  // something this hook waits on (extraction calls an LLM per window).
+  // Deliberately OUTSIDE `if (warmOk)` — see the comment on `plan` above.
+  const mining = checkTranscriptMining(cwd, plan?.transcriptMining);
+  if (mining.due) {
+    fireTranscriptMining(cwd);
+    lines.push(
+      `contextus: mining ${mining.pending} recent session(s) for context that slipped through — running in the background.`
+    );
+  }
 
+  if (warmOk) {
     // Surface quarantined files (bad prefix/type — can't embed). Honest + actionable:
     // these used to either abort the whole embed or loop as a phantom "new" forever.
     const quarantined = plan && Array.isArray(plan.quarantined) ? plan.quarantined : [];
