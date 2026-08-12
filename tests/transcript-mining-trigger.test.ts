@@ -73,6 +73,39 @@ test('enabled + never scanned + no session files → not due (nothing to mine)',
   assert.equal(result.pending, 0);
 });
 
+test('enabled + never scanned + only OLD (>24h) sessions → not due (independent review #5)', () => {
+  // Regression: this used to count ALL session files when there was no
+  // watermark, regardless of age — a long-quiet project with sessions from
+  // months ago (but nothing recent) reported due:true with a misleadingly
+  // large pending count. mineProject's own parseSince() falls back to a
+  // hardcoded 24h lookback on a never-scanned project (not intervalHours),
+  // so anything older than that would never actually get scanned anyway —
+  // pending must reflect that same window, or the trigger fires pointlessly
+  // forever (spawn → mineProject finds nothing in its narrower window →
+  // watermark never advances since capped.length is 0 → still "never
+  // scanned" next session → repeat).
+  const cwd = projectDir();
+  seedSessionFiles(cwd, [
+    new Date(Date.now() - 30 * 60 * 60 * 1000), // 30h ago — outside the 24h window
+    new Date(Date.now() - 100 * 60 * 60 * 1000) // way older
+  ]);
+  const result = checkTranscriptMining(cwd, ENABLED);
+  assert.equal(result.due, false);
+  assert.equal(result.pending, 0);
+});
+
+test('enabled + never scanned + a mix of old and recent sessions → pending counts only recent ones', () => {
+  const cwd = projectDir();
+  seedSessionFiles(cwd, [
+    new Date(Date.now() - 48 * 60 * 60 * 1000), // outside the 24h window — not counted
+    new Date(Date.now() - 60 * 60 * 1000), // 1h ago — within the window
+    new Date() // now — within the window
+  ]);
+  const result = checkTranscriptMining(cwd, ENABLED);
+  assert.equal(result.due, true);
+  assert.equal(result.pending, 2);
+});
+
 test('enabled + never scanned + session files present → due, with a pending count', () => {
   const cwd = projectDir();
   seedSessionFiles(cwd, [new Date(), new Date()]);

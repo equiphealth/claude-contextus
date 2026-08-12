@@ -505,12 +505,12 @@ function readTranscriptWatermark(cwd) {
   }
 }
 
-/** Count session files modified after `since` (or all, if `since` is null). */
+/** Count session files modified after `since`. Always called with a concrete
+ * Date (never null) — see checkTranscriptMining for why. */
 function countPendingSessions(cwd, since) {
   const dir = path.join(PROJECTS_DIR, transcriptSlugFor(cwd));
   try {
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
-    if (!since) return files.length;
     return files.filter((f) => fs.statSync(path.join(dir, f)).mtime > since).length;
   } catch {
     return 0; // no session-log dir for this project — nothing to mine
@@ -551,7 +551,19 @@ export function checkTranscriptMining(cwd, transcriptMiningConfig) {
   if (watermark && Date.now() - watermark.getTime() < intervalMs) {
     return { due: false, pending: 0 };
   }
-  const pending = countPendingSessions(cwd, watermark);
+  // The "pending" count must match what mine-transcripts.ts's mineProject()
+  // will ACTUALLY scan, or the reported number lies and the trigger can loop
+  // pointlessly (independent review of #40, #5): mineProject's own
+  // parseSince() falls back to a hardcoded 24h lookback when there's no
+  // watermark and no --since override (which the automatic SessionStart
+  // trigger never passes) — NOT to `intervalHours` (a separate setting: the
+  // cadence between recurring checks, not the lookback window for a
+  // never-scanned project's first scan). Mirror that exact 24h constant here
+  // rather than counting every session file ever, which used to make a
+  // long-quiet project with old-but-not-recent sessions report `due: true`
+  // and spawn a scan whose narrower 24h window then found nothing — forever.
+  const effectiveSince = watermark ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const pending = countPendingSessions(cwd, effectiveSince);
   return { due: pending > 0, pending };
 }
 
