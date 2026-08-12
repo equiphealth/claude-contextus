@@ -21,13 +21,17 @@ import { writePattern } from '../scripts/mine-transcripts.js';
 import { clearDaemonURLCache } from '../lib/daemon-url.js';
 import type { ExtractedPattern } from '../lib/transcript/extractor.js';
 
-function fakePattern(slug = 'test-pattern'): ExtractedPattern {
+function fakePattern(
+  slug = 'test-pattern',
+  scope: 'project' | 'user' = 'project'
+): ExtractedPattern {
   return {
     slug,
     category: 'gotcha',
     description: 'a fake pattern for testing',
     body: 'body content',
     confidence: 0.9,
+    scope,
     sourceTurns: [0]
   };
 }
@@ -105,6 +109,44 @@ test('writePattern: daemon reachable, /capture succeeds → written:true, infraF
   try {
     const result = await writePattern(fakePattern(), '/fake/project', false);
     assert.deepEqual(result, { written: true, infraFailure: false });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("writePattern: forwards the pattern's own scope to /capture, not a hardcoded value", async () => {
+  // Regression (independent review of PR #40 dry-run finding): writePattern
+  // used to send scope:'project' unconditionally, so a pattern the extraction
+  // LLM correctly classified as scope:'user' (a cross-project tool/skill
+  // insight) still landed in this project's corpus. Captures the actual
+  // request body /capture receives to prove the field is forwarded, not just
+  // that the call succeeds.
+  const capturedBodies: Array<Record<string, unknown>> = [];
+  const server = http.createServer((req, res) => {
+    if (req.url === '/query') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ continue: true }));
+      return;
+    }
+    let raw = '';
+    req.on('data', (chunk) => (raw += chunk));
+    req.on('end', () => {
+      capturedBodies.push(JSON.parse(raw));
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, file: 'ignored.md' }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  process.env.CONTEXTUS_DAEMON_URL = `http://127.0.0.1:${port}`;
+  clearDaemonURLCache();
+
+  try {
+    await writePattern(fakePattern('user-scoped-pattern', 'user'), '/fake/project', false);
+    await writePattern(fakePattern('project-scoped-pattern', 'project'), '/fake/project', false);
+    assert.equal(capturedBodies.length, 2);
+    assert.equal(capturedBodies[0].scope, 'user');
+    assert.equal(capturedBodies[1].scope, 'project');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

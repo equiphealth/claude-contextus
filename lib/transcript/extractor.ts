@@ -13,6 +13,16 @@ export interface ExtractedPattern {
   body: string;
   confidence: number;
   sourceTurns: number[];
+  /** 'project' = specific to the codebase this transcript came from (architecture,
+   * files, domain rules). 'user' = a tool/skill/workflow insight that applies
+   * regardless of which project the session happened in. Defaults to 'project'
+   * when the LLM omits or mangles the field — a mis-scoped-as-project pattern is
+   * easy to notice and move later, while a real project insight silently landing
+   * in the user's cross-project corpus is more likely to just get lost. See
+   * gotchas/gotcha-transcript-mining-hardcodes-project-scope.md for the bug this
+   * fixes: mining previously wrote every pattern as scope:project regardless of
+   * content, mirroring the routing the live /capture flow already does. */
+  scope: 'project' | 'user';
 }
 
 export interface ExtractionResult {
@@ -54,6 +64,7 @@ Output valid JSON:
       "description": "one-line summary for embedding retrieval",
       "body": "Full explanation with context, reasoning, and examples. Include WHY.",
       "confidence": 0.0-1.0,
+      "scope": "project|user",
       "source_turns": [0, 1]
     }
   ]
@@ -68,6 +79,14 @@ Rules:
 - body should be 3-15 lines of actionable content
 - Do NOT extract: git commands run, file paths listed, tool call sequences, debugging steps for a specific bug
 - DO extract: architectural choices, surprising platform behaviors, reusable conventions, domain rules
+- scope: "project" if the pattern is specific to THIS codebase — its architecture,
+  file layout, package/library choices, domain rules, or team conventions.
+  scope: "user" if the pattern is about a tool, skill, editor/CLI workflow, or
+  personal preference that would apply the same way in a different project — e.g.
+  "this Claude Code skill behaves like X," a shell/git habit, an IDE setting.
+  When genuinely unsure, prefer "project" (safer default — a project-scoped
+  insight wrongly kept project-local just needs moving later; a user-scoped
+  insight wrongly buried in one project's corpus is easy to lose track of).
 
 If no patterns are worth extracting, output: {"patterns": []}`;
 
@@ -195,6 +214,11 @@ function parseExtractionResponse(
       description: p.description as string,
       body: p.body as string,
       confidence: p.confidence as number,
+      // Fail closed to 'project' on anything other than the literal 'user' —
+      // an omitted field, a typo, or a model that ignores the instruction
+      // should never silently scatter a pattern into the user's cross-project
+      // corpus. See the ExtractedPattern.scope doc comment for the rationale.
+      scope: p.scope === 'user' ? 'user' : 'project',
       sourceTurns: Array.isArray(p.source_turns) ? (p.source_turns as number[]) : []
     }));
 }

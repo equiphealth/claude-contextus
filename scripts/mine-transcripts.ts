@@ -213,7 +213,12 @@ export async function writePattern(
         body: pattern.body,
         tags: ['transcript-mined'],
         cwd: projectPath,
-        scope: 'project'
+        // Was hardcoded to 'project' regardless of content — a pattern about
+        // a cross-project tool/skill/workflow got permanently mis-scoped into
+        // this project's corpus with no later curation step to catch it (see
+        // gotchas/gotcha-transcript-mining-hardcodes-project-scope.md). The
+        // extraction LLM now classifies this per pattern (extractor.ts).
+        scope: pattern.scope
       }),
       signal: AbortSignal.timeout(10_000)
     });
