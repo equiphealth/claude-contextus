@@ -12,6 +12,7 @@
  *   pnpm mine-transcripts --help
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -168,16 +169,27 @@ async function isDuplicate(pattern: ExtractedPattern, projectPath: string): Prom
   }
 }
 
-async function writePattern(
+/** Result of a single write attempt. `infraFailure` distinguishes "we couldn't
+ * even reach the daemon" from a dedup skip or a content-level rejection —
+ * only the former should block watermark advancement for the file it came
+ * from (see mineProject's `fileHadInfraFailure` tracking). Retrying the same
+ * extracted pattern against a reachable daemon that rejected it for content
+ * reasons wouldn't help, so those don't block the watermark. */
+export interface WriteResult {
+  written: boolean;
+  infraFailure: boolean;
+}
+
+export async function writePattern(
   pattern: ExtractedPattern,
   projectPath: string,
   dryRun: boolean
-): Promise<boolean> {
+): Promise<WriteResult> {
   // Dedup check — skip if similar pattern already exists
   const duplicate = await isDuplicate(pattern, projectPath);
   if (duplicate) {
     console.log(`  [dedup] Skipped: ${pattern.slug} (similar pattern exists)`);
-    return false;
+    return { written: false, infraFailure: false };
   }
 
   if (dryRun) {
@@ -185,7 +197,7 @@ async function writePattern(
       `  [dry-run] Would write: ${pattern.category}/${pattern.category}-${pattern.slug}.md`
     );
     console.log(`            "${pattern.description}" (confidence: ${pattern.confidence})`);
-    return true;
+    return { written: true, infraFailure: false };
   }
 
   try {
@@ -207,16 +219,23 @@ async function writePattern(
     if (!res.ok) {
       const err = await res.text().catch(() => '');
       console.error(`  [error] /capture failed for ${pattern.slug}: ${res.status} ${err}`);
-      return false;
+      // Daemon IS reachable, it just rejected this request (bad body, etc.)
+      // — a content/validation problem, not infra down. Don't block the
+      // watermark for this.
+      return { written: false, infraFailure: false };
     }
     const result = (await res.json()) as { ok: boolean; file?: string };
     if (result.ok) {
       console.log(`  ✓ Captured: ${pattern.category}/${pattern.category}-${pattern.slug}.md`);
     }
-    return result.ok;
+    return { written: result.ok, infraFailure: false };
   } catch (err) {
     console.error(`  [error] /capture unreachable for ${pattern.slug}: ${err}`);
-    return false;
+    // Couldn't even reach the daemon. This is exactly the case that must NOT
+    // advance the watermark past this file (independent review of #40,
+    // issue #39) — otherwise a session mined while the daemon is down is
+    // silently marked "scanned" and skipped forever.
+    return { written: false, infraFailure: true };
   }
 }
 
@@ -261,6 +280,18 @@ export async function mineProject(
   }
 
   let totalExtracted = 0;
+  // Tracks the latest file we're CONFIDENT was fully handled — the watermark
+  // only ever advances to this file's mtime, never past a file that hit an
+  // infra failure. Fixes two related bugs (independent review of #40):
+  // (1) the watermark used to advance to `Date.now()` unconditionally
+  // whenever `capped.length > 0`, even if the daemon was down for the whole
+  // run — those sessions were marked "scanned" and permanently skipped;
+  // (2) `--max-sessions` capping jumped the watermark to "now" instead of
+  // the last processed file's own timestamp, permanently dropping whatever
+  // was left of the backlog beyond the cap. Stopping at the first infra
+  // failure (rather than skipping over it and continuing) keeps progress
+  // contiguous — no gaps a later `--since` override would need to know about.
+  let lastGoodFile: string | null = null;
 
   for (const file of capped) {
     const basename = path.basename(file);
@@ -270,40 +301,61 @@ export async function mineProject(
     const interesting = filterInterestingTurns(turns);
     console.log(`   Turns: ${turns.length} total, ${interesting.length} interesting`);
 
-    if (interesting.length === 0) continue;
+    if (interesting.length === 0) {
+      lastGoodFile = file; // nothing to extract — fully handled, not a failure
+      continue;
+    }
 
     const windows = windowTurns(interesting);
     console.log(`   Windows: ${windows.length} (extracting...)`);
 
+    let fileHadInfraFailure = false;
     for (let i = 0; i < windows.length; i++) {
       try {
         const result = await extractFromWindow(windows[i], i, extractionConfig);
         if (result.patterns.length > 0) {
           console.log(`   Window ${i}: ${result.patterns.length} pattern(s) found`);
           for (const pattern of result.patterns) {
-            const written = await writePattern(pattern, projectPath, args.dryRun);
-            if (written) totalExtracted++;
+            const outcome = await writePattern(pattern, projectPath, args.dryRun);
+            if (outcome.written) totalExtracted++;
+            if (outcome.infraFailure) fileHadInfraFailure = true;
           }
         }
       } catch (err) {
+        // Extraction LLM (Haiku/Bedrock) itself unreachable/erroring — same
+        // "don't trust this file" treatment as a /capture infra failure.
         console.error(`   Window ${i}: extraction failed — ${err}`);
+        fileHadInfraFailure = true;
       }
     }
+
+    if (fileHadInfraFailure) {
+      console.error(
+        `   ⚠️  ${basename} hit an infra failure — watermark will NOT advance past it; it'll be retried next run.`
+      );
+      break; // stop scanning further files too — keeps watermark progress contiguous
+    }
+    lastGoodFile = file;
   }
 
-  // Update watermark
-  if (!args.dryRun && capped.length > 0) {
+  // Update watermark — advance to the last file we're confident fully
+  // succeeded, using ITS OWN mtime (not Date.now()). A file's mtime is always
+  // <= the moment it was scanned, so the next run's `mtime > since` filter in
+  // discoverSessions correctly excludes it without an off-by-one gap.
+  const sessionsProcessed = lastGoodFile ? capped.indexOf(lastGoodFile) + 1 : 0;
+  if (!args.dryRun && lastGoodFile) {
+    const lastGoodMtime = fs.statSync(lastGoodFile).mtime.toISOString();
     const state = readState();
     const updated = updateProjectState(state, slug, {
-      lastScanned: new Date().toISOString(),
-      lastSessionFile: path.basename(capped[capped.length - 1]),
+      lastScanned: lastGoodMtime,
+      lastSessionFile: path.basename(lastGoodFile),
       patternsExtracted: (state.projects[slug]?.patternsExtracted ?? 0) + totalExtracted,
-      sessionsProcessed: (state.projects[slug]?.sessionsProcessed ?? 0) + capped.length
+      sessionsProcessed: (state.projects[slug]?.sessionsProcessed ?? 0) + sessionsProcessed
     });
     writeState(updated);
   }
 
-  return { extracted: totalExtracted, sessions: capped.length };
+  return { extracted: totalExtracted, sessions: sessionsProcessed };
 }
 
 async function main() {

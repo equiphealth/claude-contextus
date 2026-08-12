@@ -125,6 +125,36 @@ test('custom intervalHours is honored, not just the 24h default', () => {
   assert.equal(checkTranscriptMining(cwd, { enabled: true, intervalHours: 6 }).due, false);
 });
 
+test('malformed intervalHours (non-numeric) falls back to the safe 24h default, not "always due"', () => {
+  // Regression (independent review of #40): `?? 24` only catches
+  // null/undefined, not a typo'd string like "daily" in a hand-edited
+  // .claude/contextus.jsonc. `"daily" * 3600000` is NaN, and `elapsed < NaN`
+  // is always false — that used to silently disable the throttle entirely,
+  // making mining due on every single SessionStart instead of respecting
+  // any interval.
+  const cwd = projectDir();
+  seedSessionFiles(cwd, [new Date()]);
+  writeWatermark(cwd, new Date(Date.now() - 60_000).toISOString()); // 1 minute ago
+  const result = checkTranscriptMining(cwd, { enabled: true, intervalHours: 'daily' });
+  assert.equal(result.due, false, 'a scan 1 minute ago must still be within the 24h fallback');
+});
+
+test('intervalHours: 0 is honored as a deliberate "always due" choice, not treated as invalid', () => {
+  const cwd = projectDir();
+  seedSessionFiles(cwd, [new Date()]);
+  writeWatermark(cwd, new Date(Date.now() - 1000).toISOString()); // 1 second ago
+  const result = checkTranscriptMining(cwd, { enabled: true, intervalHours: 0 });
+  assert.equal(result.due, true);
+});
+
+test('malformed intervalHours (negative) falls back to the safe 24h default', () => {
+  const cwd = projectDir();
+  seedSessionFiles(cwd, [new Date()]);
+  writeWatermark(cwd, new Date(Date.now() - 60_000).toISOString());
+  const result = checkTranscriptMining(cwd, { enabled: true, intervalHours: -5 });
+  assert.equal(result.due, false);
+});
+
 test('corrupt/unparseable watermark file → treated as never scanned, not a crash', () => {
   const cwd = projectDir();
   seedSessionFiles(cwd, [new Date()]);

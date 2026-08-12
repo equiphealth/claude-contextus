@@ -534,7 +534,19 @@ function countPendingSessions(cwd, since) {
  */
 export function checkTranscriptMining(cwd, transcriptMiningConfig) {
   if (!transcriptMiningConfig?.enabled) return { due: false, pending: 0 };
-  const intervalMs = (transcriptMiningConfig.intervalHours ?? 24) * 60 * 60 * 1000;
+  // Validate, don't just `?? 24` — `??` only catches null/undefined, not a
+  // non-numeric value (e.g. a typo'd "daily" in a hand-edited
+  // .claude/contextus.jsonc). `hours * 3600000` on a non-numeric string is
+  // NaN, and `elapsed < NaN` is always false, silently disabling the
+  // throttle entirely — mining would then fire on every SessionStart instead
+  // of respecting any interval. Falls back to the safe default (24h) for
+  // anything that isn't a finite, non-negative number. 0 is honored as a
+  // deliberate "always due" choice.
+  const rawHours = transcriptMiningConfig.intervalHours;
+  const hours = typeof rawHours === 'number' && Number.isFinite(rawHours) && rawHours >= 0
+    ? rawHours
+    : 24;
+  const intervalMs = hours * 60 * 60 * 1000;
   const watermark = readTranscriptWatermark(cwd);
   if (watermark && Date.now() - watermark.getTime() < intervalMs) {
     return { due: false, pending: 0 };
