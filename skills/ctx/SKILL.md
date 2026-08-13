@@ -1,6 +1,6 @@
 ---
 name: ctx
-description: Quick dispatcher — /ctx status|stats|create|calibrate|doctor|watch|daemon|setup|link|search|review|rebuild
+description: Quick dispatcher — /ctx status|stats|create|calibrate|doctor|watch|daemon|setup|link|search|review|rebuild|mine
 ---
 
 # ctx — Context Skill Shortcuts
@@ -24,6 +24,7 @@ Quick shortcuts for contextus commands. Think `npm run` but for contextus.
 /ctx review      → /context-review      (curate corpus)
 /ctx tag         → /context-tag         (manage tags)
 /ctx rebuild     → /rebuild-embeddings  (rebuild corpus)
+/ctx mine        → /mine-transcripts    (extract missed context from past sessions)
 ```
 
 **Setup & Control:**
@@ -59,6 +60,7 @@ When the user invokes `/ctx <subcommand>`:
    - review → /context-review
    - tag → /context-tag
    - rebuild → /rebuild-embeddings
+   - mine → /mine-transcripts
    - setup → /contextus-setup
    - daemon → /manage-daemon
    - configure → /configure

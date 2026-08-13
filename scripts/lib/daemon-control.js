@@ -72,6 +72,8 @@ const DAEMON_JS = path.join(REPO_ROOT, 'dist', 'daemon', 'server.js');
 const DAEMON_TS = path.join(REPO_ROOT, 'daemon', 'server.ts');
 const EVAL_WORKER_JS = path.join(REPO_ROOT, 'dist', 'daemon', 'eval-worker.js');
 const EVAL_WORKER_TS = path.join(REPO_ROOT, 'daemon', 'eval-worker.ts');
+const MINE_TRANSCRIPTS_JS = path.join(REPO_ROOT, 'dist', 'scripts', 'mine-transcripts.js');
+const MINE_TRANSCRIPTS_TS = path.join(REPO_ROOT, 'scripts', 'mine-transcripts.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 import { stripJsonComments } from './parse-jsonc.js';
 const PLUGIN_JSONC = path.join(REPO_ROOT, 'plugin.jsonc');
@@ -274,30 +276,64 @@ function isDevMode() {
  * Resolve how to launch a daemon process. In dev mode, always uses tsx on the
  * TypeScript source (changes take effect without `tsc`). In production, uses
  * the compiled dist/ JS. Falls back to tsx if dist/ is missing regardless.
- * Returns { cmd, args } for spawn().
+ * Returns { cmd, args } for spawn(). `extraArgs` are appended after the entry
+ * file — used for CLI scripts (e.g. mine-transcripts.ts's `--project <cwd>`),
+ * unused (empty) for the daemon/eval-worker's own launches.
  */
-function resolveLaunch(jsPath, tsPath) {
+function resolveLaunch(jsPath, tsPath, extraArgs = []) {
   if (!isDevMode() && fs.existsSync(jsPath)) {
-    return { cmd: process.execPath, args: [jsPath] }; // node dist/.../X.js
+    return { cmd: process.execPath, args: [jsPath, ...extraArgs] }; // node dist/.../X.js
   }
   // Dev mode or no build: run .ts via tsx (repo-local, else npx).
   const useBin = fs.existsSync(TSX_BIN);
-  return useBin ? { cmd: TSX_BIN, args: [tsPath] } : { cmd: 'npx', args: ['tsx', tsPath] };
+  return useBin
+    ? { cmd: TSX_BIN, args: [tsPath, ...extraArgs] }
+    : { cmd: 'npx', args: ['tsx', tsPath, ...extraArgs] };
 }
 
-/** Spawn a detached daemon process that outlives the hook. */
-function spawnDetached(jsPath, tsPath) {
-  const { cmd, args } = resolveLaunch(jsPath, tsPath);
+/**
+ * Spawn a detached process (daemon, eval-worker, or a one-shot CLI script like
+ * mine-transcripts) that outlives the hook.
+ *
+ * `logFile`, when given, redirects the child's stdout/stderr to that file
+ * (append mode) instead of discarding them. The daemon/eval-worker's own
+ * spawns don't pass this — they already have structured logging via
+ * lib/logger.js, so a second raw-output file would be redundant. mine-
+ * transcripts.ts has no such logging and was previously fully silent on
+ * every failure mode (independent review of #40, item #8) — combined with
+ * #1/#7, a daemon-down run or a broken install path failed with zero trace
+ * anywhere. The fd is duplicated into the child at spawn time (standard
+ * Node behavior), so closing our copy right after spawning doesn't affect
+ * the child's writes — it keeps writing after this (short-lived) hook exits.
+ */
+export function spawnDetached(jsPath, tsPath, extraArgs = [], { logFile } = {}) {
+  const { cmd, args } = resolveLaunch(jsPath, tsPath, extraArgs);
   // Packaged launches load native deps from ${CLAUDE_PLUGIN_DATA}/node_modules via
   // NODE_PATH (the repo has none). In dev this resolves to the repo's own
   // node_modules — a harmless explicit no-op (Node already searches it).
   const env = { ...process.env, NODE_PATH: depsNodeModules() };
+
+  let stdio = 'ignore';
+  let fd = null;
+  if (logFile) {
+    try {
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fd = fs.openSync(logFile, 'a');
+      stdio = ['ignore', fd, fd];
+    } catch {
+      // Best-effort — never let logging setup block the actual spawn.
+      stdio = 'ignore';
+      fd = null;
+    }
+  }
+
   const child = spawn(cmd, args, {
     cwd: REPO_ROOT,
     detached: true,
-    stdio: 'ignore',
+    stdio,
     env,
   });
+  if (fd !== null) fs.closeSync(fd); // child already has its own duplicated fd
   child.unref();
 }
 
@@ -464,6 +500,111 @@ export async function fireReconcile(project, cwd, timeoutMs = 2000) {
   } catch {
     return null;
   }
+}
+
+/* ── Transcript mining trigger (GH issue #39) ────────────────────────────────
+ * Unlike /reconcile, mine-transcripts.ts has no daemon endpoint — it's a
+ * standalone process that calls the LLM (Haiku/Bedrock) directly and writes
+ * via /capture. "Fire it in the background" here means spawning a real
+ * detached OS process (spawnDetached), not an HTTP call the daemon completes
+ * asynchronously on its own.
+ *
+ * Kept as plain JS (mirrors lib/transcript/parser.ts's projectSlug()/
+ * discoverSessions() logic rather than importing it — same reasoning as
+ * getBaseURL() above: hooks run with no build step and can't import .ts).
+ * Both implementations must stay in sync if the slug scheme ever changes.
+ */
+const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
+const TRANSCRIPT_STATE_PATH = path.join(os.homedir(), '.contextus', 'transcript-state.json');
+
+function transcriptSlugFor(cwd) {
+  return path.resolve(cwd).replace(/[/.]/g, '-');
+}
+
+function readTranscriptWatermark(cwd) {
+  try {
+    const raw = fs.readFileSync(TRANSCRIPT_STATE_PATH, 'utf-8');
+    const state = JSON.parse(raw);
+    const proj = state.projects?.[transcriptSlugFor(cwd)];
+    if (!proj?.lastScanned) return null;
+    const d = new Date(proj.lastScanned);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null; // no state file yet = never scanned
+  }
+}
+
+/** Count session files modified after `since`. Always called with a concrete
+ * Date (never null) — see checkTranscriptMining for why. */
+function countPendingSessions(cwd, since) {
+  const dir = path.join(PROJECTS_DIR, transcriptSlugFor(cwd));
+  try {
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+    return files.filter((f) => fs.statSync(path.join(dir, f)).mtime > since).length;
+  } catch {
+    return 0; // no session-log dir for this project — nothing to mine
+  }
+}
+
+/**
+ * Decide whether a background transcript-mining scan is due this session, and
+ * how many sessions are pending (for the systemMessage). Cheap — only reads
+ * the watermark file and lists a directory, no LLM/daemon calls itself.
+ *
+ * `transcriptMiningConfig` is `{enabled, intervalHours}` from the project's
+ * properly MERGED config (loadProjectConfig) — piggybacked onto /reconcile's
+ * check-mode response (daemon/server.ts) rather than read raw here, so a
+ * project's `.claude/contextus.jsonc` opt-in/opt-out is actually honored
+ * (same bug class as /notify's determineSource() pre-#22 fix — a plain-JS
+ * hook with no build step can't import lib/config.ts's loadProjectConfig
+ * directly, and hand-parsing the raw plugin manifest here would repeat that
+ * exact mistake). Defaults to disabled if the caller can't supply it (daemon
+ * unreachable) — never mine without a config value confirming opt-in.
+ */
+export function checkTranscriptMining(cwd, transcriptMiningConfig) {
+  if (!transcriptMiningConfig?.enabled) return { due: false, pending: 0 };
+  // Validate, don't just `?? 24` — `??` only catches null/undefined, not a
+  // non-numeric value (e.g. a typo'd "daily" in a hand-edited
+  // .claude/contextus.jsonc). `hours * 3600000` on a non-numeric string is
+  // NaN, and `elapsed < NaN` is always false, silently disabling the
+  // throttle entirely — mining would then fire on every SessionStart instead
+  // of respecting any interval. Falls back to the safe default (24h) for
+  // anything that isn't a finite, non-negative number. 0 is honored as a
+  // deliberate "always due" choice.
+  const rawHours = transcriptMiningConfig.intervalHours;
+  const hours = typeof rawHours === 'number' && Number.isFinite(rawHours) && rawHours >= 0
+    ? rawHours
+    : 24;
+  const intervalMs = hours * 60 * 60 * 1000;
+  const watermark = readTranscriptWatermark(cwd);
+  if (watermark && Date.now() - watermark.getTime() < intervalMs) {
+    return { due: false, pending: 0 };
+  }
+  // The "pending" count must match what mine-transcripts.ts's mineProject()
+  // will ACTUALLY scan, or the reported number lies and the trigger can loop
+  // pointlessly (independent review of #40, #5): mineProject's own
+  // parseSince() falls back to a hardcoded 24h lookback when there's no
+  // watermark and no --since override (which the automatic SessionStart
+  // trigger never passes) — NOT to `intervalHours` (a separate setting: the
+  // cadence between recurring checks, not the lookback window for a
+  // never-scanned project's first scan). Mirror that exact 24h constant here
+  // rather than counting every session file ever, which used to make a
+  // long-quiet project with old-but-not-recent sessions report `due: true`
+  // and spawn a scan whose narrower 24h window then found nothing — forever.
+  const effectiveSince = watermark ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const pending = countPendingSessions(cwd, effectiveSince);
+  return { due: pending > 0, pending };
+}
+
+/** Spawn scripts/mine-transcripts.ts detached, scoped to this project only —
+ * never --all from a per-project hook (a workspace with many projects would
+ * otherwise re-scan every one of them on every project's session start). */
+const TRANSCRIPT_MINING_LOG = path.join(os.homedir(), '.contextus', 'logs', 'transcript-mining.log');
+
+export function fireTranscriptMining(cwd) {
+  spawnDetached(MINE_TRANSCRIPTS_JS, MINE_TRANSCRIPTS_TS, ['--project', cwd], {
+    logFile: TRANSCRIPT_MINING_LOG
+  });
 }
 
 /** Sleep helper for polling loops. */

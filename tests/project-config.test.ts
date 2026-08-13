@@ -97,3 +97,35 @@ test('loadProjectConfig: flat override (no `config` wrapper) also accepted', () 
 test('loadProjectConfig: empty project → falls back to global', () => {
   assert.equal(loadProjectConfig(undefined), loadConfig());
 });
+
+test('transcriptMining: defaults to disabled (opt-in only, GH issue #39)', () => {
+  cleanup();
+  try {
+    const cfg = loadProjectConfig(PROJ);
+    assert.equal(cfg.transcriptMining.enabled, false);
+    assert.equal(cfg.transcriptMining.intervalHours, 24);
+  } finally {
+    cleanup();
+  }
+});
+
+test('transcriptMining: project-level override enables it and sets a custom interval', () => {
+  cleanup();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-cwd-'));
+  try {
+    fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, '.claude', 'contextus.json'),
+      JSON.stringify({ config: { transcriptMining: { enabled: true, intervalHours: 6 } } })
+    );
+    resetConfigCache();
+    const cfg = loadProjectConfig(PROJ, cwd);
+    assert.equal(cfg.transcriptMining.enabled, true);
+    assert.equal(cfg.transcriptMining.intervalHours, 6);
+    // A DIFFERENT project (no override) stays at the default — isolation.
+    assert.equal(loadProjectConfig('some-other-proj').transcriptMining.enabled, false);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+    cleanup();
+  }
+});

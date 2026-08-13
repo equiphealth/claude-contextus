@@ -195,6 +195,28 @@ Convert them to .claude/context/? (Better retrieval, typed, tagged.)
 
 If [1]: run `/migrate-memory` dry-run after setup completes.
 
+### Q3: Transcript Mining
+
+```
+Mine past sessions for context that never got captured live?
+This scans your last ~7 days of Claude Code history once, extracting
+decisions/gotchas that slipped through (real LLM cost — one call per
+session window, so a busy week of history costs more than a quiet one;
+not yet benchmarked against real usage).
+
+  [1] Yes, scan once now
+  [2] No, skip for now
+
+Also keep this running automatically? (checks once a session, ~daily at most,
+only calls the LLM when there's actually something new to scan)
+
+  [1] Yes — enable automatic recurring scans
+  [2] No — I'll run /mine-transcripts manually when I want to
+```
+
+If [1] on the first question: pass `--mine-transcripts` to the setup script (step 2 below).
+If [1] on the second question: add `transcriptMining.enabled: true` to `.claude/contextus.jsonc` (step 3 below). Default (both "No") writes nothing — `transcriptMining` stays at its config default (`enabled: false`).
+
 ### Execute (Quick Track)
 
 1. Install discovery scripts and statusline bridges:
@@ -209,7 +231,7 @@ If [1]: run `/migrate-memory` dry-run after setup completes.
    ```bash
    cd <target-project-cwd>
    tsx \
-     $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts [--no-embed if needed]
+     $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts [--no-embed if needed] [--mine-transcripts if Q3a was Yes]
    ```
 
 3. Write minimal `.claude/contextus.jsonc` (only if file doesn't already exist):
@@ -220,6 +242,7 @@ If [1]: run `/migrate-memory` dry-run after setup completes.
    }
    ```
    If user chose transformers in Q1, add `"embedding": { "provider": "transformers" }`.
+   If Q3b was Yes (enable recurring), add `"transcriptMining": { "enabled": true }` — even if the file already exists (this one field is written regardless, since it reflects an explicit choice just made, unlike the rest of this step's "only if new file" scope).
 
 4. If migration was requested, run dry-run of `/migrate-memory`.
 
@@ -235,6 +258,8 @@ Setup complete! Here's what you got:
   Injection floor     0.45 (permissive — tune after a week)
   Hybrid search       always (keyword + semantic fusion)
   Query expansion     adaptive (fires when initial search is weak)
+  Transcript mining   {N} pattern(s) from {N} session(s){if Q3a=Yes} / not run{if Q3a=No}
+  Recurring mining    enabled (checks ~daily at session start){if Q3b=Yes} / disabled{if Q3b=No}
 
 Sources active:
   Project context   .claude/context/          (your patterns)
@@ -245,6 +270,7 @@ What to do next:
   /create-context       capture your first pattern
   /context-search       test what a prompt would retrieve
   /context-status       health dashboard
+  /mine-transcripts      catch up on missed context from past sessions
   /contextus-setup --tune   calibrate thresholds (after ~1 week)
 
 Context will be injected automatically on your next prompt. Ask naturally!
@@ -440,9 +466,13 @@ Paranoid logging — log full prompts + injections? (for debugging retrieval)
 ```
 Pattern capture — how contextus proposes new patterns to save.
 
-  'propose' = suggests via footer, you confirm with /create-context (recommended)
+  'staging' = writes patterns directly via /capture — git status is the review
+              gate (you commit what's useful, discard what isn't) — the shipped
+              default (plugin.jsonc)
+  'propose' = suggests via footer instead, you confirm with /create-context —
+              lower noise if you'd rather review before anything gets written
   'silent'  = never proposes (you create manually)
-  [propose (recommended)] [silent]
+  [staging (default)] [propose] [silent]
 ```
 
 ### P8: Legacy Migration (only if `legacyMemory` is not null)
@@ -483,6 +513,32 @@ or `/link-project`.
 
 If no `existingProjects`, skip silently.
 
+### P10: Transcript Mining
+
+```
+Transcript mining — retrospective safety net for context missed live.
+Scans past Claude Code sessions with an LLM (Haiku via Ollama/Bedrock),
+extracting decisions/gotchas that never got captured during the session
+itself. Real cost per scan — one LLM call per session window, so cost
+scales with how much history there is to catch up on (not yet
+benchmarked against real usage) — dedup'd against your existing corpus
+so it mostly no-ops once caught up.
+
+One-time bootstrap scan (~last 7 days of history) now?
+  [Yes, scan once] [No, skip]
+
+Keep it running automatically going forward?
+  'enabled: true'  = checks once per session start, ~daily at most,
+                      only calls the LLM when something's actually new
+  'enabled: false' = never automatic — run /mine-transcripts manually
+  [enabled (recommended if you use Claude Code daily)] [disabled (default)]
+
+If enabled, how often (in hours) should it re-check? [24 (default)] [custom]
+```
+
+If "Yes, scan once": pass `--mine-transcripts` to the setup script (step 3 below).
+If "enabled": add `"transcriptMining": { "enabled": true, "intervalHours": <chosen or 24> }` to `.claude/contextus.jsonc` (step 2 below). If "disabled" (the default), omit the section entirely — `transcriptMining` stays at its config default (`enabled: false`).
+
 ### Execute (Power User Track)
 
 1. Install discovery scripts and statusline bridges:
@@ -518,16 +574,20 @@ If no `existingProjects`, skip silently.
      },
      "contextCapture": {
        "mode": "<chosen>"
+     },
+     "transcriptMining": {
+       "enabled": <chosen>,
+       "intervalHours": <chosen or 24>
      }
    }
    ```
-   Only include sections where the user chose a non-default value. Omit defaults.
+   Only include sections where the user chose a non-default value. Omit defaults — that includes `transcriptMining` entirely if the user chose "disabled" (its own config default).
 
 3. Run the setup script:
    ```bash
    cd <target-project-cwd>
    tsx \
-     $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts [--no-embed if provider down]
+     $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts [--no-embed if provider down] [--mine-transcripts if P10a was Yes]
    ```
 
 4. If migration was requested, run `/migrate-memory` dry-run.
@@ -546,6 +606,8 @@ Setup complete! Here's your configuration:
   Capture mode        {choice}
   Notifications       {choice}
   Paranoid logging    {choice}
+  Transcript mining   {N} pattern(s) from {N} session(s){if P10a=Yes} / not run{if P10a=No}
+  Recurring mining    enabled, every {intervalHours}h{if P10b=enabled} / disabled{if P10b=disabled}
 
 Sources:
   .claude/context/    {N} patterns embedded
@@ -560,6 +622,7 @@ Skills to know:
   /context-status        health + activity dashboard
   /context-calibrate     tune thresholds (after ~1 week of real use)
   /contextus-watch       live tail of daemon activity
+  /mine-transcripts       catch up on missed context from past sessions
 
 Config changes take effect immediately — edit .claude/contextus.jsonc or use /configure.
 Full calibration: /contextus-setup --tune (needs ~1 week of prompt history).

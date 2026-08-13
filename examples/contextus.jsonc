@@ -114,5 +114,14 @@
       "noiseThreshold": 0.3, // Avg score below this = "noisy" pattern
       "minEvals": 10 // Min evaluations before flagging as noisy
     }
+  },
+
+  "transcriptMining": {
+    // Retrospective safety net: mines past Claude Code session logs for patterns
+    // live capture missed (GH issue #39). Off by default — real LLM cost/time per
+    // session window, shouldn't run without explicit opt-in. /contextus-setup asks
+    // and writes this per-project. Manual on-demand runs: /mine-transcripts.
+    "enabled": false,
+    "intervalHours": 24 // Min hours between SessionStart-triggered scans when enabled
   }
 }
