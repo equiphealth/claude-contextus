@@ -33,6 +33,7 @@ interface ParsedPattern {
   description: string;
   body: string;
   confidence: number;
+  scope: 'project' | 'user';
   sourceTurns: number[];
 }
 
@@ -64,6 +65,7 @@ function parseExtractionResponse(response: string, confidenceThreshold: number):
       description: p.description as string,
       body: p.body as string,
       confidence: p.confidence as number,
+      scope: p.scope === 'user' ? 'user' : ('project' as const),
       sourceTurns: Array.isArray(p.source_turns) ? (p.source_turns as number[]) : []
     }));
 }
@@ -225,6 +227,84 @@ test('parseExtractionResponse: empty patterns array returns empty', () => {
   const response = JSON.stringify({ patterns: [] });
   const patterns = parseExtractionResponse(response, 0.6);
   assert.equal(patterns.length, 0);
+});
+
+// --- scope classification ---
+
+test('parseExtractionResponse: scope "user" is preserved as-is', () => {
+  const response = JSON.stringify({
+    patterns: [
+      {
+        category: 'reference',
+        slug: 'skill-abrasive-by-design',
+        description: 'A Claude Code skill is intentionally abrasive',
+        body: 'Distinguish harsh output from personal criticism.',
+        confidence: 0.7,
+        scope: 'user',
+        source_turns: [0]
+      }
+    ]
+  });
+
+  const patterns = parseExtractionResponse(response, 0.6);
+  assert.equal(patterns.length, 1);
+  assert.equal(patterns[0].scope, 'user');
+});
+
+test('parseExtractionResponse: scope "project" is preserved as-is', () => {
+  const response = JSON.stringify({
+    patterns: [
+      {
+        category: 'decision',
+        slug: 'use-pnpm',
+        description: 'Project uses pnpm',
+        body: 'Use pnpm for consistency.',
+        confidence: 0.85,
+        scope: 'project',
+        source_turns: [0]
+      }
+    ]
+  });
+
+  const patterns = parseExtractionResponse(response, 0.6);
+  assert.equal(patterns[0].scope, 'project');
+});
+
+test('parseExtractionResponse: missing scope defaults to "project" (fail closed)', () => {
+  const response = JSON.stringify({
+    patterns: [
+      {
+        category: 'gotcha',
+        slug: 'no-scope-field',
+        description: 'Older-style response with no scope field at all',
+        body: 'Body',
+        confidence: 0.9,
+        source_turns: []
+      }
+    ]
+  });
+
+  const patterns = parseExtractionResponse(response, 0.6);
+  assert.equal(patterns[0].scope, 'project');
+});
+
+test('parseExtractionResponse: garbage/typo scope value defaults to "project", not passed through', () => {
+  const response = JSON.stringify({
+    patterns: [
+      {
+        category: 'gotcha',
+        slug: 'typo-scope',
+        description: 'Model hallucinated an invalid scope value',
+        body: 'Body',
+        confidence: 0.9,
+        scope: 'personal', // not one of "project"/"user" — must not leak through
+        source_turns: []
+      }
+    ]
+  });
+
+  const patterns = parseExtractionResponse(response, 0.6);
+  assert.equal(patterns[0].scope, 'project');
 });
 
 test('parseExtractionResponse: rejects patterns with missing fields', () => {

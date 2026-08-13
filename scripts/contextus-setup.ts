@@ -19,6 +19,10 @@
  *   pnpm contextus-setup                 # set up the current project (cwd)
  *   pnpm contextus-setup --dir <path>    # set up a specific project root
  *   pnpm contextus-setup --no-embed      # scaffold + stanza only, skip embedding
+ *   pnpm contextus-setup --mine-transcripts   # also run a one-time transcript-mining
+ *                                              # bootstrap scan (~1 week of history) —
+ *                                              # the skill only passes this when the
+ *                                              # user says yes (GH issue #39)
  */
 
 import fs from 'node:fs';
@@ -30,23 +34,27 @@ import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js'
 import { printFloorReport } from '../lib/calibration/floor-report.js';
 import { buildChanges, renderDiff, hasRealChanges } from '../lib/calibration/config-write.js';
 import { loadConfig, projectLocalConfigPath } from '../lib/config.js';
+import { mineProject } from './mine-transcripts.js';
 
 interface Args {
   dir: string;
   embed: boolean;
   tune: boolean;
+  mineTranscripts: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
   let dir = process.cwd();
   let embed = true;
   let tune = false;
+  let mineTranscripts = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--dir' && argv[i + 1]) dir = path.resolve(argv[++i]);
     else if (argv[i] === '--no-embed') embed = false;
     else if (argv[i] === '--tune') tune = true;
+    else if (argv[i] === '--mine-transcripts') mineTranscripts = true;
   }
-  return { dir, embed, tune };
+  return { dir, embed, tune, mineTranscripts };
 }
 
 /** A small, honest starter index so a fresh project has somewhere to grow. */
@@ -143,6 +151,32 @@ async function main(): Promise<void> {
     }
   } else {
     console.log('  embed              skipped (--no-embed)');
+  }
+
+  // 3b. One-time transcript-mining bootstrap scan (only when the skill passed
+  // --mine-transcripts, i.e. the user said yes when asked). Same extraction
+  // pipeline the recurring SessionStart trigger uses (GH issue #39) — this is
+  // just the FIRST scan, matching decision-transcript-mining-recurring.md's
+  // "Relationship to Setup" (setup bootstraps ~1 week, recurring picks up
+  // from there). Never runs unasked — real LLM cost/time per session window.
+  if (args.mineTranscripts) {
+    try {
+      const r = await mineProject(args.dir, {
+        all: false,
+        dryRun: false,
+        list: false,
+        help: false,
+        since: '7d'
+      });
+      console.log(
+        `  transcript mining  ${r.extracted} pattern(s) extracted from ${r.sessions} session(s) (last 7 days)`
+      );
+    } catch (err) {
+      console.log(
+        `  transcript mining  FAILED (${err instanceof Error ? err.message : String(err)})`
+      );
+      console.log('                     is the daemon up? try: pnpm mine-transcripts --dry-run');
+    }
   }
 
   // 4. Config tuning via floor calibration (--tune or if prompted)

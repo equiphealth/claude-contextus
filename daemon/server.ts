@@ -1356,7 +1356,14 @@ async function handleReconcile(
       newCount,
       changedCount,
       removeCount,
-      quarantined // relPaths of files that can't embed (bad prefix/type) — surface these
+      quarantined, // relPaths of files that can't embed (bad prefix/type) — surface these
+      // Piggybacked here rather than a separate endpoint: `cfg` above is
+      // already the correctly MERGED (3-tier) config, and session-start-hook.js
+      // already calls this exact check every session — no extra round trip
+      // needed for the SessionStart-triggered transcript-mining gate (GH issue
+      // #39) to read a project's real opt-in setting instead of a raw,
+      // un-merged one (same bug class /notify's determineSource() had).
+      transcriptMining: cfg.transcriptMining
     });
   }
 

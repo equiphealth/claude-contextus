@@ -5,7 +5,7 @@
   // Two files on purpose: this is the tunable runtime config, that is the install descriptor.
   // Keep `version` in sync with the manifest.
   "name": "contextus",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
   "repository": "github:equiphealth/claude-contextus",
@@ -165,6 +165,16 @@
         // Min evaluations required before a pattern can be flagged as noisy. Default: 10.
         "minEvals": 10
       }
+    },
+    "transcriptMining": {
+      // Retrospective safety net (GH issue #39) — mines past Claude Code session
+      // logs for patterns live capture missed. Off by default: real LLM cost/time
+      // per session window, shouldn't run without explicit opt-in. /contextus-setup
+      // asks and writes this per-project.
+      "enabled": false,
+      // Minimum hours between SessionStart-triggered scans, even when enabled —
+      // SessionStart can fire many times a day; this isn't one of them.
+      "intervalHours": 24
     }
   },
   "hooks": "hooks/hooks.json",
@@ -179,6 +189,7 @@
     "skills/migrate-memory",
     "skills/link-project",
     "skills/manage-daemon",
+    "skills/mine-transcripts",
 
     // Context operations (corpus)
     "skills/context-search",
@@ -197,20 +208,13 @@
     "skills/contextus-upgrade",
     "skills/contextus-watch",
 
-    // Aliases (ctx-* shortcuts)
-    "skills/ctx-create",
-    "skills/ctx-search",
-    "skills/ctx-status",
-    "skills/ctx-stats",
-    "skills/ctx-doctor",
-    "skills/ctx-review",
-    "skills/ctx-calibrate",
-    "skills/ctx-archive",
-    "skills/ctx-merge",
-    "skills/ctx-tag",
-    "skills/ctx-audit",
-    "skills/ctx-setup",
-    "skills/ctx-migrate",
-    "skills/ctx-watch"
+    // Unified shortcut dispatcher — replaced the individual ctx-* alias
+    // skills (0.14.0's own changelog says 8 were replaced; this array had
+    // grown to 14 dead ctx-* entries by the time this was fixed, presumably
+    // from aliases added after 0.14.0). Those directories no longer exist;
+    // this entry used to be missing here even after the replacement, so the
+    // registry referenced 14 dead paths and omitted the one that actually
+    // exists.
+    "skills/ctx"
   ]
 }
