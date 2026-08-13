@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-08-13
+
 ### Fixed
 - **`/notify` and `/reconcile` now respect the 3-tier MERGED project config, and cover every enabled source, not just `projectContext`** (GH issue #22). Three related bugs fixed together:
   - `determineSource()` (`/notify`'s routing) and `handleReconcile()` both used to call the raw, un-merged `findPluginConfig()` — a project's `.claude/contextus.jsonc` source overrides (custom excludes, disabled sources, custom paths) were silently ignored by the live daemon even though the manual `pnpm embed` CLI already honored them. Both now use `loadProjectConfig()`; `findPluginConfig()` (its only two remaining callers) has been deleted.
