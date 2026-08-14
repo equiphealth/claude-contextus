@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-08-14
+
+### Fixed
+- **`configureTransformersEnv()` no longer lets a stale cached response shadow a correctly-configured `localModelPath`** — transformers.js checks its filesystem/browser cache before the `localModelPath` lookup, so if an earlier attempt on a network that blocks huggingface.co (corporate proxy, captive portal, Cloudflare Gateway) cached a bad HTML block-page response, every subsequent load silently served that stale response instead of ever consulting a correctly-bundled local model — even with `allowRemoteModels: false`. `embedder.ts`'s error handler then misclassified the resulting `SyntaxError` as a network failure, surfacing the generic "model isn't bundled locally... unreachable" `modelUnavailableError` even when the bundle genuinely existed at the configured path. This is exactly the failure mode that message's own advice ("pre-fetch a bundle on an unblocked network, then point `localModelPath` at it") walked someone into. `configureTransformersEnv()` now disables `useFSCache`/`useBrowserCache` whenever a `localModelPath` is configured, making it authoritative as documented. Found while adding `tests/manual/transformers-local-model.test.ts` — a manual, non-CI test verifying the `transformers` embedding provider against contextus's own `embedder.ts`/`model-resolver.ts` code (previously untested end-to-end; only `ollama` had any automated coverage).
+
 ## [0.19.0] - 2026-08-13
 
 ### Fixed
