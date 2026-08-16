@@ -45,6 +45,21 @@ export function configureTransformersEnv(): void {
   if (t.localModelPath) {
     env.localModelPath = t.localModelPath;
     env.allowLocalModels = true;
+    // transformers.js's getModelFile checks its filesystem/browser cache
+    // BEFORE the localModelPath lookup — if an earlier attempt on a network
+    // that blocks huggingface.co (corporate proxy, captive portal, Cloudflare
+    // Gateway) cached a bad HTML block-page response, every subsequent load
+    // silently serves that stale response instead of ever consulting the
+    // bundle, even with allowRemoteModels:false. That's exactly the scenario
+    // modelUnavailableError()'s own advice walks into: "pre-fetch a bundle on
+    // an unblocked network, then point localModelPath at it" — which would
+    // still fail with the same opaque HTML-parse error if a bad response was
+    // already cached from the earlier blocked attempt. Disabling the caches
+    // when a local bundle is configured makes localModelPath authoritative,
+    // as documented. No cost here: a bundled/offline setup has no remote
+    // downloads to cache in the first place.
+    env.useFSCache = false;
+    env.useBrowserCache = false;
   }
   if (t.cacheDir) env.cacheDir = t.cacheDir;
   if (t.remoteHost) env.remoteHost = t.remoteHost;
