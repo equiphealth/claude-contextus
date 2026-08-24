@@ -38,9 +38,13 @@ When a PR includes features/fixes that warrant a release:
 1. **Create a feature branch** (`feat/`, `fix/`, `chore/`)
 2. **Bump `package.json` version** — SemVer, stay 0.x until public 1.0
 3. **Add CHANGELOG.md section** — must be `## [X.Y.Z]` format (see gotcha-changelog-heading-format)
-4. Version bump + changelog go in the same PR as the code changes
+4. **Update `README.md` / `docs/FEATURES.md`** if the change adds/removes a skill, endpoint, config option, or user-visible behavior — see `implementation-doc-freshness-in-pr-checklist.md`
+5. **Other related docs** — check whether the change also needs: `docs/API.md` (new/changed endpoint), `docs/dev/V2_ROADMAP.md` (backlog item shipped or added), `docs/quick-start.md` (setup/onboarding flow changed), `docs/MIGRATION_GUIDE.md` (breaking/upgrade-relevant change). Not every PR touches these — only update what the change actually affects.
+6. Version bump + changelog + doc updates go in the same PR as the code changes
 
 If you forget the bump, the merge updates `latest` (pre-release) but creates no versioned release. You'll need a follow-up commit to main with just the bump.
+
+If you forget the doc updates, nothing fails CI — README/FEATURES.md just silently drift, the way they did for months before a 2026-08-17 audit found: 4 skills missing from both lists (`context-archive`, `context-merge`, `context-stats`, `mine-transcripts`), 2 endpoints undocumented (`/capture`, `/delete`), a wrong `metadata.type` enum in FEATURES.md, and a version footer 10 releases stale.
 
 ## Release body content
 

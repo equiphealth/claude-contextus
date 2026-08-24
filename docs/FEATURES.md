@@ -32,6 +32,12 @@
 - **Not passive** — Fires based on concrete retrieval data, not generic "notice something" footers
 - **Score transparency** — Shows best score, floor, gap %, and nearest topic names in the notice
 
+#### Capture Modes (`contextCapture.mode`)
+- **`staging`** (default) — Claude writes context files directly via the daemon's `POST /capture` (creates file, updates `CONTEXT.md` index, embeds — one call); files land as untracked/modified in `git status`, reviewed at your normal commit/PR time. Git IS the quality gate.
+- **`propose`** — Claude ends its response with `Context: propose: <topic>`; accepting it invokes `/create-context`, which runs a similarity check before creating or routing to `/update-context`
+- **`silent`** — capture prompting suppressed entirely; manual `/create-context` only
+- **Novelty-gated** — the `UserPromptSubmit` awareness hook calls `GET /novelty` so Claude is told what's already covered and skips redundant proposals
+
 #### Keyword Fallback (Degradation)
 - **Provider-down safety** — When embedding fails (Ollama unreachable), falls back to BM25 text search
 - **Clear provenance** — Results tagged with "[contextus notice] keyword fallback" so users know
@@ -52,6 +58,7 @@
 - **Live activity stream** — `/contextus-watch` tails daemon.log with colored, formatted output
 - **Paranoid mode** — Dev-mode verbose logging (controlled by config toggle)
 - **Self-documentation** — `/introspect` endpoint exposes config + corpus stats
+- **Verbose debug statusline** (opt-in) — Shows what the last `/query` did directly in your status bar: injected count vs candidates, best match % vs floor, tokens injected, latency, expansion/hybrid/capacity-protection state, per-source breakdown, rolling "% useful" average. Toggle with `CONTEXTUS_DEBUG_STATUSLINE=1`; install via `scripts/install-debug-statusline.sh` (not wired into `/contextus-setup` — run manually)
 
 #### Health & Recovery
 - **Token overflow protection** — Reads context-window stats from statusline bridge, applies graduated throttling (reduce → minimal → disable) as conversation grows. Prevents API 400 errors in long sessions. Configurable thresholds.
@@ -61,7 +68,7 @@
 
 ### 🛠️ Management & Workflow
 
-#### Skills (26 total)
+#### Skills (24 total)
 
 **Setup & Configuration:**
 - `/contextus-setup` — Guided setup wizard (Quick: 30s defaults, Power User: full config). Detects Ollama, legacy memory, cross-project sources, offers linking. `--tune` for threshold calibration.
@@ -75,17 +82,21 @@
 - `/add-patterns` — Batch-add multiple patterns from a list
 - `/tag-context` — Add/manage tags on context files (v2-ready infrastructure)
 - `/update-context` — Edit existing context files
+- `/mine-transcripts` — Retrospectively mine past session transcripts for patterns never captured live (recurring + setup-triggered)
 
 **Status & Health:**
 - `/context-status` — Dashboard: corpus stats, recent activity, calibration quality
 - `/context-status --cost` — Token overhead % + value signal (usage rate from calibration)
+- `/context-stats` — Usage analytics: what's working, what's noisy, what's stale
 - `/context-doctor` — Troubleshooting guide (checks daemon, provider, corpus health)
 - `/contextus-watch` — Live tail of daemon activity (colored, formatted)
 
 **Maintenance:**
 - `/rebuild-embeddings` — Force re-embed (incremental by default, `--full` for complete rebuild)
-- `/audit-context` — Check for duplicates, missing frontmatter, stale patterns
-- `/audit-stale` — Find zero-hit patterns (never retrieved)
+- `/context-audit` — Structural issues, staleness (6+ months), zero-hit patterns
+- `/context-archive` — Archive stale/unused patterns (moves to `.claude/context/.archive/`, removes from LanceDB, preserves file content)
+- `/context-merge` — LLM-assisted merge of duplicate/overlapping patterns
+- `/context-review` — Curate corpus: archive noisy patterns, merge duplicates, flag for rewrite
 - `/context-search` — Manual search over the corpus (debugging, exploration)
 
 **Calibration:**
@@ -142,7 +153,7 @@ All context files use YAML frontmatter:
 name: kebab-case-identifier
 description: One-line summary (used for relevance matching)
 metadata:
-  type: decision | gotcha | implementation | reference | project | feedback | question
+  type: arch | decision | tradeoff | gotcha | api | phase | project | schema | security | perf | reference | implementation
   tags: [optional, list]
 ---
 ```
@@ -212,9 +223,12 @@ All config files support comments and trailing commas. The system strips JSONC b
 - `GET /health?probe=true` — Active health check (verifies provider reachable)
 - `GET /novelty?project=<path>` — Recently-injected patterns (for awareness hook deduplication)
 - `GET /introspect?project=<path>` — Config + corpus stats + hit tracking
+- `GET /search` — Floor-free corpus query (manual search, bypasses injection threshold)
 - `POST /query` — Main retrieval: embed → search → rerank → floor → inject
+- `POST /capture` — Write + index + embed a new context file in one call (`staging` mode capture path)
 - `POST /notify` — File change notification: triggers incremental re-embed
-- `POST /reconcile` — Corpus sync: add new, update changed, remove deleted
+- `POST /reconcile` — Corpus sync: add new, update changed, remove deleted (all sources, not just projectContext)
+- `POST /delete` — Archive a context file (moves to `.claude/context/.archive/`, removes CONTEXT.md line + LanceDB rows; never hard-deletes)
 
 See [API.md](./API.md) for comprehensive endpoint documentation.
 

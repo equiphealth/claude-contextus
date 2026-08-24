@@ -23,11 +23,11 @@
 
 **Problem**: Claude forgets your architecture decisions, coding patterns, and project conventions between sessions. You spend time re-explaining the same context, or worse — Claude gives advice that contradicts decisions you made last week.
 
-**Solution**: claude-contextus automatically captures and surfaces project knowledge as you work. When you discover a pattern or make a decision, Contextus proposes capturing it. On future prompts, Claude sees that context automatically — no manual searching, no "remember to look this up."
+**Solution**: claude-contextus automatically captures and surfaces project knowledge as you work. When you discover a pattern or make a decision, Contextus captures it — either by writing the file directly (default: `staging` mode, reviewed at your normal `git add`/commit time) or by proposing it first (`propose` mode). On future prompts, Claude sees that context automatically — no manual searching, no "remember to look this up."
 
 **How it works**:
 1. You work with Claude as normal
-2. Contextus captures patterns you discover (decisions, gotchas, conventions)
+2. Contextus captures patterns you discover (decisions, gotchas, conventions) — silently in `staging` mode, or via a one-line proposal footer in `propose` mode
 3. Claude sees them automatically when relevant
 
 The system stores everything as markdown files (git-trackable, human-readable, merge-friendly) — you *can* edit them directly, but most users let the capture flow handle it.
@@ -59,7 +59,7 @@ Markdown files, human-readable, merge-friendly, version-controlled. No vendor lo
 - **Zero-query injection** — Context appears automatically on every prompt, no manual searching
 - **Learns what's useful** — Tracks which patterns actually help vs. just retrieved
 - **Automatic rebuilds** — Embeddings stay fresh as your knowledge grows
-- **Pattern capture** — Proposes new patterns as you discover them
+- **Pattern capture** — Writes new patterns as you discover them (`staging`/`propose`/`silent` modes — see [Configuration](#configuration))
 
 ### 🧠 Smart Retrieval
 
@@ -77,7 +77,7 @@ Markdown files, human-readable, merge-friendly, version-controlled. No vendor lo
 
 ### 🛠️ Integrated Workflow
 
-- **26 skills** — Setup, create, audit, search, tag, calibrate, debug
+- **24 skills** — Setup, create, audit, archive, merge, search, tag, calibrate, debug, mine
 - **Auto-hooks** — File changes trigger rebuilds, prompts inject context
 - **JSONC config** — Hot-reload (no restart), comments allowed
 - **Team-friendly** — Markdown files, git-trackable, merge-friendly
@@ -173,16 +173,21 @@ Claude: [Sees relevant "TypeScript strict mode" context pattern injected]
 - `/add-patterns <file> <patterns>` — Add patterns to an existing context file
 - `/create-doc <topic> <content>` — Create a documentation file
 - `/migrate-memory` — Convert a legacy `.claude/memory/` system into context files
+- `/mine-transcripts` — Retrospectively mine past session transcripts for patterns never captured live
 - `/tag-context` — Backfill topical tags on untagged context files
 
 **Health, tuning & troubleshooting**
 - `/context-status` — Impact dashboard (corpus size, injection rate, latency)
+- `/context-stats` — Usage analytics (what's working, what's noisy, what's stale)
 - `/context-doctor` — Diagnose problems (no injections, wrong corpus, phantom re-embeds)
 - `/context-calibrate` — Tune the per-project injection floor + usage-eval refinement
 - `/context-search <query>` — Manual semantic search (debugging; shows scores + floor)
 - `/rebuild-embeddings` — Regenerate all embeddings from scratch
-- `/audit-context`, `/audit-stale` — Validate structure / flag stale patterns
+- `/context-archive` — Archive stale/unused patterns (moves to `.claude/context/.archive/`)
+- `/context-merge` — LLM-assisted merge of duplicate/overlapping patterns
+- `/context-audit` — Validate structure, flag staleness and zero-hit patterns
 - `/configure` — Adjust configuration
+- `/ctx` — Quick dispatcher for the above (`/ctx status`, `/ctx create`, …) — run with no args to see all shortcuts
 
 See **[docs/usage.md](docs/usage.md)** and **[docs/calibration.md](docs/calibration.md)**
 for day-to-day workflows and tuning.
@@ -207,7 +212,7 @@ Only include the keys you're overriding. The shape (from `plugin.json`):
       "injectionFloor": 0.45,
       "maxTokens": 3000
     },
-    "contextCapture": { "mode": "propose" },
+    "contextCapture": { "mode": "staging" },
     "embedding": {
       "provider": "ollama",
       "ollamaModel": "nomic-embed-text",
@@ -221,11 +226,16 @@ Only include the keys you're overriding. The shape (from `plugin.json`):
 > all?") and it's **per-project** — calibrate it to your corpus rather than trusting a
 > universal default. See [docs/calibration.md](docs/calibration.md).
 
+**`contextCapture.mode`** has three settings:
+- **`staging`** (default) — Claude writes context files directly via the daemon's `POST /capture`; they land as untracked/modified files in `git status` and ship (or don't) with your normal commit/PR review
+- **`propose`** — Claude ends its response with `Context: propose: <topic>`; you approve before `/create-context` runs
+- **`silent`** — capture prompting is suppressed entirely
+
 ## How It Works
 
 1. **Daemon**: Persistent HTTP server keeps embedding model warm (~100-200ms per query)
 2. **Auto-injection**: Every prompt triggers semantic search → top-k patterns injected automatically
-3. **Pattern proposals**: System suggests new patterns as you work ("Context: propose: topic-name")
+3. **Pattern capture**: New patterns are captured as you work — written directly in `staging` mode, or proposed via a footer in `propose` mode
 4. **Calibration**: Tracks hit counts, learns which patterns are useful, tunes retrieval over time
 5. **Multi-source**: Searches project context, project docs, user context, user docs simultaneously
 6. **Compression**: Retrieved patterns compressed before injection (lean-ctx style, ~60% reduction)
@@ -346,8 +356,10 @@ See `examples/` directory for:
 - [x] Phase 4: Reconcile, calibration infrastructure
 - [x] Phase 5: Self-documentation, introspection, stop-eval hook
 - [x] Phase 6: Multi-source (docs + user packs), chunking, packaging
-- [x] Phase 7: Transcript mining (extract patterns from session logs)
+- [x] Phase 7: Transcript mining (extract patterns from session logs, recurring + setup-triggered)
 - [ ] v2: Context-Aware Evaluation (CAE), tag-based retrieval, removal governance
+
+See [docs/dev/V2_ROADMAP.md](docs/dev/V2_ROADMAP.md) for the current backlog.
 
 ## Do You Need Another Memory System?
 
@@ -365,4 +377,4 @@ Issues and PRs welcome! This is a vacation project but I'm happy to collaborate.
 
 ---
 
-**Status**: v0.9.0 — daemon, embedding pipeline, retrieval, hooks, skills, and transcript mining all working. See [docs/dev/V2_ROADMAP.md](docs/dev/V2_ROADMAP.md) for what's next.
+**Status**: v0.19.1 — daemon, embedding pipeline, retrieval, hooks, skills, and transcript mining all working. See [docs/dev/V2_ROADMAP.md](docs/dev/V2_ROADMAP.md) for what's next.
