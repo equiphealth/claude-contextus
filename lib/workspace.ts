@@ -190,9 +190,23 @@ function saveRegistry(reg: Record<string, ProjectEntry>): void {
 /**
  * Register a project (idempotent). Call from any daemon handler that receives
  * both projectId and cwd. Only writes to disk if something changed.
+ *
+ * Validates `absolutePath` before touching the registry: must be an absolute,
+ * existing directory. Every daemon handler that accepts `cwd` from a request
+ * body (handleQuery, handleNotify, handleCapture, handleReconcile) funnels
+ * into this function, so guarding here — rather than in each call site —
+ * is the single point that stops a malformed cwd (e.g. an un-expanded shell
+ * literal like "$(pwd)") from silently writing a bogus, permanent entry into
+ * ~/.contextus/data/projects.json. See equiphealth/claude-contextus#46.
  */
 export function registerProject(id: string, absolutePath: string): void {
   if (!id || !absolutePath) return;
+  if (!path.isAbsolute(absolutePath)) return;
+  try {
+    if (!fs.statSync(absolutePath).isDirectory()) return;
+  } catch {
+    return;
+  }
   const reg = loadRegistry();
   const resolved = path.resolve(absolutePath);
   const name = path.basename(resolved);

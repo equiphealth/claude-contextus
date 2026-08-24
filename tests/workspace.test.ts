@@ -24,7 +24,10 @@ const {
   removeProjectFromWorkspace,
   workspacesForProject,
   writeWorkspace,
-  listWorkspaceNames
+  listWorkspaceNames,
+  registerProject,
+  projectPath,
+  clearRegistryCache
 } = await import('../lib/workspace.js');
 
 const WORKSPACES_DIR = path.join(tmp, '.contextus', 'workspaces');
@@ -243,4 +246,44 @@ test('removeProjectFromWorkspace: returns false when project not in workspace', 
   assert.equal(removed, false);
 
   fs.unlinkSync(path.join(WORKSPACES_DIR, 'partial-ws.jsonc'));
+});
+
+// --- registerProject validation tests (equiphealth/claude-contextus#46) ---
+// A malformed cwd (relative path, nonexistent path, or an un-expanded shell
+// literal like "$(pwd)" from a caller's quoting mistake) must never be
+// persisted into the registry — it should silently no-op, not write garbage.
+
+test('registerProject: persists a valid absolute, existing directory', () => {
+  clearRegistryCache();
+  const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-real-project-'));
+  registerProject('validhash1', realDir);
+  assert.equal(projectPath('validhash1'), path.resolve(realDir));
+  fs.rmSync(realDir, { recursive: true, force: true });
+});
+
+test('registerProject: rejects a relative path (e.g. unexpanded "$(pwd)")', () => {
+  clearRegistryCache();
+  registerProject('badhash1', '$(pwd)');
+  assert.equal(projectPath('badhash1'), null);
+});
+
+test('registerProject: rejects a nonexistent absolute path', () => {
+  clearRegistryCache();
+  registerProject('badhash2', '/tmp/definitely-does-not-exist-contextus-test');
+  assert.equal(projectPath('badhash2'), null);
+});
+
+test('registerProject: rejects a path that is a file, not a directory', () => {
+  clearRegistryCache();
+  const realFile = path.join(tmp, 'not-a-directory.txt');
+  fs.writeFileSync(realFile, 'hello');
+  registerProject('badhash3', realFile);
+  assert.equal(projectPath('badhash3'), null);
+  fs.unlinkSync(realFile);
+});
+
+test('registerProject: no-ops silently on empty id or path (no throw)', () => {
+  clearRegistryCache();
+  assert.doesNotThrow(() => registerProject('', '/tmp'));
+  assert.doesNotThrow(() => registerProject('somehash', ''));
 });

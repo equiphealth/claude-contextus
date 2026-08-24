@@ -744,6 +744,11 @@ async function handleNotify(
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for notify' });
+  // See equiphealth/claude-contextus#46 — reject malformed cwd instead of
+  // resolving/registering a bogus path.
+  if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
+    return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
+  }
 
   const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
   const sourceInfo = determineSource(absFile, cwd, projectParam);
@@ -852,6 +857,16 @@ async function executeCaptureRequest(
   // cwd required for project-scoped captures (need filesystem path for writing)
   if (scope === 'project' && !cwd) {
     sendJson(res, 400, { error: 'cwd is required for project-scoped capture' });
+    return;
+  }
+
+  // Reject malformed cwd loudly instead of silently writing to a bogus
+  // location — e.g. an un-expanded shell literal like "$(pwd)" from a
+  // caller's quoting mistake would otherwise resolve relative to the
+  // daemon's own process cwd via path.join/mkdirSync{recursive:true} and
+  // succeed with {ok:true}. See equiphealth/claude-contextus#46.
+  if (cwd && (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory())) {
+    sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
     return;
   }
 
@@ -1280,6 +1295,11 @@ async function handleReconcile(
   const projectLabel = project ?? 'default';
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for reconcile' });
+  // See equiphealth/claude-contextus#46 — reject malformed cwd instead of
+  // resolving/registering a bogus path.
+  if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
+    return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
+  }
   // Normalize project identifier (accepts hash, name, or path) to canonical hash
   const projectId = project ? resolveProjectId(project) : projectHash(cwd);
   registerProject(projectId, cwd);
