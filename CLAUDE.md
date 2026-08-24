@@ -41,6 +41,7 @@ Provider connections (ollama, bedrock, anthropic) are defined once in `providers
 - Create PR for every change (even typos, docs, context updates)
 - Squash-merge to keep main history clean
 - See `decisions/decision-pr-workflow-no-direct-main-commits.md` for full rationale
+- **If the PR is release-worthy** (adds/removes a skill, endpoint, or config option; changes user-visible behavior): update `README.md` and `docs/FEATURES.md` in the same PR, and check whether `docs/API.md`, `docs/dev/V2_ROADMAP.md`, `docs/quick-start.md`, or `docs/MIGRATION_GUIDE.md` need it too. Nothing in CI enforces this — see `implementation-doc-freshness-in-pr-checklist.md` for why it drifted before and the full checklist in `workflow-release-process.md`.
 
 **Key directories**:
 - `daemon/` — HTTP server (query, notify, reconcile, health endpoints)
