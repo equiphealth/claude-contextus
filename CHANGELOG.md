@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-08-24
+
+### Fixed
+- **Daemon handlers no longer accept a malformed `cwd` silently** (GH issue #46). `/capture`, `/notify`, and `/reconcile` only checked that `cwd` was a non-empty string — no `path.isAbsolute()` or `fs.existsSync()` check. A bad `cwd` (e.g. an un-expanded shell literal like `$(pwd)` from a caller's quoting mistake) would resolve relative to the daemon's own process cwd via `path.join()` + `mkdirSync({recursive:true})`, write files to a bogus location, and still return `{"ok":true}` — plus permanently persist the bogus path into `~/.contextus/data/projects.json` via `registerProject()`. `registerProject()` (`lib/workspace.ts`) now rejects non-absolute/nonexistent paths before touching the registry — the single chokepoint all four `cwd`-accepting handlers funnel through — and `/capture`, `/notify`, `/reconcile` each also reject a malformed `cwd` explicitly with a 400 before any filesystem write. `/query` is intentionally left permissive beyond the registry guard (hook-triggered on every prompt, must never block the response).
+
 ## [0.19.1] - 2026-08-14
 
 ### Fixed
