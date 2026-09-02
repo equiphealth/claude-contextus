@@ -16,7 +16,7 @@ Contextus cannot self-report its own absence. Its `SessionStart` hook (`scripts/
 
 The only way to catch this is a check that lives *outside* the plugin, hardcoded into the project's own committed `settings.json`, so it fires regardless of whether contextus is present.
 
-This was surfaced from a live example: a hand-written `SessionStart` hook in a separate automation repo that ran `claude-code plugin list | grep contextus` and printed install instructions if missing. It worked in intent but used the OLD flat hook shape (`{"command": "bash", "args": [...]}`)  instead of the current Claude Code schema (array of `{matcher, hooks:[{type:"command", command}]}`), so it had silently bit-rotted.
+This was surfaced from a live example: a hand-written `SessionStart` hook in a separate automation repo that ran `claude plugin list | grep contextus` and printed install instructions if missing. It worked in intent but used the OLD flat hook shape (`{"command": "bash", "args": [...]}`)  instead of the current Claude Code schema (array of `{matcher, hooks:[{type:"command", command}]}`), so it had silently bit-rotted.
 
 ## How to apply
 
@@ -31,7 +31,7 @@ This was surfaced from a live example: a hand-written `SessionStart` hook in a s
           "hooks": [
             {
               "type": "command",
-              "command": "bash -c \"if ! claude-code plugin list 2>/dev/null | grep -q 'contextus.*enabled'; then echo 'WARNING: contextus plugin not detected.'; fi\""
+              "command": "bash -c \"if ! claude plugin list 2>/dev/null | grep -q 'contextus.*enabled'; then echo 'WARNING: contextus plugin not detected.'; fi\""
             }
           ]
         }
