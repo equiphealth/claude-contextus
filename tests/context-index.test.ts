@@ -51,10 +51,6 @@ test('upsertIndexEntry: repeated re-capture of the same slug never accumulates d
 });
 
 test('upsertIndexEntry: cleans up PRE-EXISTING duplicates, not just future ones', () => {
-  // Simulates an index that already accumulated duplicates before this helper
-  // existed (the exact state found live in the automation repo's CONTEXT.md —
-  // caught in code review on #52: v1 of this helper only replaced the FIRST
-  // match, silently leaving other pre-existing duplicate lines behind).
   const before = [
     '# Context Index',
     '',

@@ -750,8 +750,6 @@ async function handleNotify(
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for notify' });
-  // See equiphealth/claude-contextus#46 — reject malformed cwd instead of
-  // resolving/registering a bogus path.
   if (!isValidProjectDir(cwd)) {
     return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
   }
@@ -866,11 +864,6 @@ async function executeCaptureRequest(
     return;
   }
 
-  // Reject malformed cwd loudly instead of silently writing to a bogus
-  // location — e.g. an un-expanded shell literal like "$(pwd)" from a
-  // caller's quoting mistake would otherwise resolve relative to the
-  // daemon's own process cwd via path.join/mkdirSync{recursive:true} and
-  // succeed with {ok:true}. See equiphealth/claude-contextus#46.
   if (cwd && !isValidProjectDir(cwd)) {
     sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
     return;
@@ -1077,11 +1070,6 @@ async function handleDelete(
     sendJson(res, 400, { ok: false, error: 'cwd is required for project-scoped delete' });
     return;
   }
-  // /delete had no cwd validation at all (unlike /capture, /notify,
-  // /reconcile) despite this PR closing #46 — caught in code review. The
-  // downstream fs.existsSync(absFile) check happened to catch most garbage
-  // in practice (404 instead of writing), but that's incidental, not
-  // intentional, and inconsistent with the other three handlers.
   if (cwd && !isValidProjectDir(cwd)) {
     sendJson(res, 400, { ok: false, error: `cwd is not an existing absolute directory: ${cwd}` });
     return;
@@ -1315,8 +1303,6 @@ async function handleReconcile(
   const projectLabel = project ?? 'default';
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for reconcile' });
-  // See equiphealth/claude-contextus#46 — reject malformed cwd instead of
-  // resolving/registering a bogus path.
   if (!isValidProjectDir(cwd)) {
     return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
   }

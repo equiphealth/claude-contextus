@@ -249,10 +249,10 @@ test('removeProjectFromWorkspace: returns false when project not in workspace', 
   fs.unlinkSync(path.join(WORKSPACES_DIR, 'partial-ws.jsonc'));
 });
 
-// --- registerProject validation tests (equiphealth/claude-contextus#46) ---
-// A malformed cwd (relative path, nonexistent path, or an un-expanded shell
-// literal like "$(pwd)" from a caller's quoting mistake) must never be
-// persisted into the registry — it should silently no-op, not write garbage.
+// --- registerProject validation tests ---
+// A malformed cwd (relative path, nonexistent path, or a literal shell
+// fragment like "$(pwd)") must never be persisted into the registry — it
+// should silently no-op, not write garbage.
 
 test('registerProject: persists a valid absolute, existing directory', () => {
   clearRegistryCache();
@@ -289,12 +289,9 @@ test('registerProject: no-ops silently on empty id or path (no throw)', () => {
   assert.doesNotThrow(() => registerProject('somehash', ''));
 });
 
-// --- isValidProjectDir direct tests (equiphealth/claude-contextus#48 code review) ---
-// Extracted so every cwd-accepting daemon handler (handleQuery, handleNotify,
-// handleCapture, handleReconcile, handleDelete) shares one throw-safe check
-// instead of each reimplementing existsSync+statSync inline (a TOCTOU/throw
-// hazard: an uncaught statSync throw gets swallowed by an outer catch-all,
-// silently turning an intended 400 into a 200 continue:true or a 500).
+// --- isValidProjectDir direct tests ---
+// Every cwd-accepting daemon handler shares this one throw-safe check
+// instead of each reimplementing existsSync+statSync inline.
 
 test('isValidProjectDir: true for an absolute, existing directory', () => {
   assert.equal(isValidProjectDir(tmp), true);

@@ -188,20 +188,15 @@ function saveRegistry(reg: Record<string, ProjectEntry>): void {
 }
 
 /**
- * Is `p` an absolute path to a directory that actually exists? Single
- * try/catch around one `statSync` call — NOT `existsSync` followed by a
- * separate `statSync` (that's both redundant and a TOCTOU/throw hazard: the
- * path can vanish, or `statSync` can throw for permissions reasons, between
- * the two calls, and an uncaught throw from handler-inline validation gets
- * swallowed by an OUTER catch-all — e.g. /reconcile's and /notify's shared
- * wrapper degrades any thrown error to `{continue:true}` (200), and
- * /capture's queue wrapper turns it into an unintended 500 — silently
- * defeating the intended 400. Caught in code review on equiphealth/claude-contextus#48.
+ * Is `p` an absolute path to a directory that actually exists? Wraps a
+ * single `statSync` in try/catch rather than `existsSync` + a separate
+ * `statSync` — several daemon handlers call this from within outer
+ * catch-alls that would otherwise turn an uncaught throw into a 200 or 500
+ * instead of the intended 400.
  *
- * Every daemon handler that accepts `cwd` from a request body (handleQuery
- * via registerProject below, handleNotify, handleCapture, handleReconcile,
- * handleDelete) should validate through this one function so the throw-safety
- * fix applies everywhere at once instead of being reimplemented per handler.
+ * Shared by every handler that accepts `cwd` from a request body, so the
+ * validation logic lives in one place instead of being reimplemented per
+ * handler.
  */
 export function isValidProjectDir(p: string): boolean {
   if (!p || !path.isAbsolute(p)) return false;
@@ -216,14 +211,10 @@ export function isValidProjectDir(p: string): boolean {
  * Register a project (idempotent). Call from any daemon handler that receives
  * both projectId and cwd. Only writes to disk if something changed.
  *
- * Validates `absolutePath` before touching the registry: must be an absolute,
- * existing directory (see isValidProjectDir above). Every daemon handler that
- * accepts `cwd` from a request body (handleQuery, handleNotify, handleCapture,
- * handleReconcile) funnels into this function, so guarding here — rather than
- * in each call site — is the single point that stops a malformed cwd (e.g. an
- * un-expanded shell literal like "$(pwd)") from silently writing a bogus,
- * permanent entry into ~/.contextus/data/projects.json. See
- * equiphealth/claude-contextus#46.
+ * Validates `absolutePath` first (must be an absolute, existing directory) —
+ * this is the single chokepoint every cwd-accepting handler funnels through,
+ * so a malformed cwd can never write a bogus, permanent entry into
+ * ~/.contextus/data/projects.json.
  */
 export function registerProject(id: string, absolutePath: string): void {
   if (!id || !absolutePath) return;
