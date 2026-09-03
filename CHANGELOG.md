@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.4] - 2026-09-03
+
+### Fixed
+- **`upsertIndexEntry()` (the #52 fix) now cleans up ALL pre-existing duplicate index lines, not just the first match** — caught in code review on #52: v1 replaced only the first matching line, silently leaving other pre-existing duplicates behind. It now collapses every line matching the same link target down to one, at the position of the first match.
+- **`/capture`'s doc target (`DOCS.md`) now uses the same upsert logic as the context target (`CONTEXT.md`)** — #52 fixed `CONTEXT.md` but missed that `DOCS.md` had the identical blind-append bug, despite the PR/CHANGELOG claiming both indexes were fixed. Also caught in code review.
+- Deduplicated the automation repo's `CONTEXT.md` by hand as a one-time cleanup (9 pre-existing duplicate lines removed) — the code fix only prevents new duplicates going forward, it doesn't retroactively touch files already on disk.
+
 ## [0.19.2] - 2026-09-03
 
 ### Fixed
