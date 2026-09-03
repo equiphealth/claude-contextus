@@ -903,12 +903,15 @@ async function executeCaptureRequest(
       return;
     }
 
-    // Update DOCS.md index
+    // Update DOCS.md index — upsert by relPath, same as the context path
+    // below (see lib/capture/context-index.ts). This path was missed when
+    // the context-index fix originally shipped (#52) — caught in review.
     const indexFile = path.join(docsDir, 'DOCS.md');
-    const indexEntry = `- [${slug}](${filename}) — ${description || slug}\n`;
+    const indexEntry = `- [${slug}](${filename}) — ${description || slug}`;
     try {
       if (fs.existsSync(indexFile)) {
-        fs.appendFileSync(indexFile, indexEntry);
+        const existing = fs.readFileSync(indexFile, 'utf-8');
+        fs.writeFileSync(indexFile, upsertIndexEntry(existing, filename, indexEntry));
       }
     } catch {
       // Non-fatal

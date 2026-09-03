@@ -20,8 +20,15 @@
 
 /**
  * Upsert a single index line into index file content, keyed by the link
- * target `](relPath)`. If a line linking to `relPath` already exists,
- * replace it in place (preserving position). Otherwise append a new line.
+ * target `](relPath)`. Replaces the FIRST matching line and drops any
+ * OTHER lines that also match — self-healing for pre-existing duplicates
+ * (e.g. an index that already accumulated 2-3 copies of the same entry
+ * before this helper existed), not just future-proofing against new ones.
+ * If no line matches, appends a new one.
+ *
+ * (v1 of this helper only replaced the first match, silently leaving any
+ * pre-existing duplicates behind — caught in code review on the PR that
+ * introduced it, equiphealth/claude-contextus#52.)
  *
  * Pure string transform — no file I/O, so this is unit-testable without a
  * filesystem. Caller does the read/write.
@@ -33,11 +40,18 @@ export function upsertIndexEntry(
 ): string {
   const linkTarget = `](${relPath})`;
   const lines = existingContent.split('\n');
-  const matchIdx = lines.findIndex((line) => line.includes(linkTarget));
+  const matchIndices = lines.reduce<number[]>((acc, line, i) => {
+    if (line.includes(linkTarget)) acc.push(i);
+    return acc;
+  }, []);
 
-  if (matchIdx !== -1) {
-    lines[matchIdx] = entryLine;
-    return lines.join('\n');
+  if (matchIndices.length > 0) {
+    const [first, ...rest] = matchIndices;
+    const restSet = new Set(rest);
+    const result = lines
+      .map((line, i) => (i === first ? entryLine : line))
+      .filter((_, i) => !restSet.has(i));
+    return result.join('\n');
   }
 
   // No existing entry — append. Preserve a single trailing newline convention:
