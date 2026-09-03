@@ -55,6 +55,7 @@ import { fuseRRF, hybridKeywordSearch } from '../lib/retrieval/hybrid.js';
 import { processSearchResults } from '../lib/retrieval/pipeline.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
+import { upsertIndexEntry } from '../lib/capture/context-index.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
@@ -995,13 +996,15 @@ ${content}
     return;
   }
 
-  // Update CONTEXT.md index
+  // Update CONTEXT.md index — upsert by relPath (see lib/capture/context-index.ts
+  // for why a blind append caused duplicate entries on re-capture).
   const indexFile = path.join(contextDir, 'CONTEXT.md');
   const relPath = `${dirName}/${filename}`;
-  const indexEntry = `- [${slug}](${relPath}) — ${description}\n`;
+  const indexEntry = `- [${slug}](${relPath}) — ${description}`;
   try {
     if (fs.existsSync(indexFile)) {
-      fs.appendFileSync(indexFile, indexEntry);
+      const existing = fs.readFileSync(indexFile, 'utf-8');
+      fs.writeFileSync(indexFile, upsertIndexEntry(existing, relPath, indexEntry));
     }
   } catch {
     // Non-fatal — file is written, index update is best-effort
