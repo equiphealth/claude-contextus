@@ -27,7 +27,8 @@ const {
   listWorkspaceNames,
   registerProject,
   projectPath,
-  clearRegistryCache
+  clearRegistryCache,
+  isValidProjectDir
 } = await import('../lib/workspace.js');
 
 const WORKSPACES_DIR = path.join(tmp, '.contextus', 'workspaces');
@@ -286,4 +287,45 @@ test('registerProject: no-ops silently on empty id or path (no throw)', () => {
   clearRegistryCache();
   assert.doesNotThrow(() => registerProject('', '/tmp'));
   assert.doesNotThrow(() => registerProject('somehash', ''));
+});
+
+// --- isValidProjectDir direct tests (equiphealth/claude-contextus#48 code review) ---
+// Extracted so every cwd-accepting daemon handler (handleQuery, handleNotify,
+// handleCapture, handleReconcile, handleDelete) shares one throw-safe check
+// instead of each reimplementing existsSync+statSync inline (a TOCTOU/throw
+// hazard: an uncaught statSync throw gets swallowed by an outer catch-all,
+// silently turning an intended 400 into a 200 continue:true or a 500).
+
+test('isValidProjectDir: true for an absolute, existing directory', () => {
+  assert.equal(isValidProjectDir(tmp), true);
+});
+
+test('isValidProjectDir: false for a relative path', () => {
+  assert.equal(isValidProjectDir('$(pwd)'), false);
+  assert.equal(isValidProjectDir('relative/path'), false);
+});
+
+test('isValidProjectDir: false for a nonexistent absolute path', () => {
+  assert.equal(isValidProjectDir('/tmp/definitely-does-not-exist-contextus-test-2'), false);
+});
+
+test('isValidProjectDir: false for a file, not a directory', () => {
+  const realFile = path.join(tmp, 'also-not-a-directory.txt');
+  fs.writeFileSync(realFile, 'hello');
+  assert.equal(isValidProjectDir(realFile), false);
+  fs.unlinkSync(realFile);
+});
+
+test('isValidProjectDir: false (not throw) for empty string', () => {
+  assert.doesNotThrow(() => isValidProjectDir(''));
+  assert.equal(isValidProjectDir(''), false);
+});
+
+test('isValidProjectDir: false (not throw) on a path with no read permission on a parent dir', () => {
+  // Best-effort: simulate the "statSync throws for a reason other than
+  // ENOENT" case (permissions, transient deletion) that motivated wrapping
+  // this in try/catch. A deeply nested nonexistent path exercises the same
+  // catch branch without needing real permission manipulation in CI.
+  assert.doesNotThrow(() => isValidProjectDir('/root/definitely/not/accessible/here'));
+  assert.equal(isValidProjectDir('/root/definitely/not/accessible/here'), false);
 });

@@ -59,7 +59,12 @@ import { upsertIndexEntry } from '../lib/capture/context-index.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { resolveProjectScope, registerProject, resolveProjectId } from '../lib/workspace.js';
+import {
+  resolveProjectScope,
+  registerProject,
+  resolveProjectId,
+  isValidProjectDir
+} from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import {
   readState as readCalibrationState,
@@ -747,7 +752,7 @@ async function handleNotify(
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for notify' });
   // See equiphealth/claude-contextus#46 — reject malformed cwd instead of
   // resolving/registering a bogus path.
-  if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
+  if (!isValidProjectDir(cwd)) {
     return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
   }
 
@@ -866,7 +871,7 @@ async function executeCaptureRequest(
   // caller's quoting mistake would otherwise resolve relative to the
   // daemon's own process cwd via path.join/mkdirSync{recursive:true} and
   // succeed with {ok:true}. See equiphealth/claude-contextus#46.
-  if (cwd && (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory())) {
+  if (cwd && !isValidProjectDir(cwd)) {
     sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
     return;
   }
@@ -1067,6 +1072,15 @@ async function handleDelete(
   }
   if (scope === 'project' && !cwd) {
     sendJson(res, 400, { ok: false, error: 'cwd is required for project-scoped delete' });
+    return;
+  }
+  // /delete had no cwd validation at all (unlike /capture, /notify,
+  // /reconcile) despite this PR closing #46 — caught in code review. The
+  // downstream fs.existsSync(absFile) check happened to catch most garbage
+  // in practice (404 instead of writing), but that's incidental, not
+  // intentional, and inconsistent with the other three handlers.
+  if (cwd && !isValidProjectDir(cwd)) {
+    sendJson(res, 400, { ok: false, error: `cwd is not an existing absolute directory: ${cwd}` });
     return;
   }
 
@@ -1300,7 +1314,7 @@ async function handleReconcile(
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for reconcile' });
   // See equiphealth/claude-contextus#46 — reject malformed cwd instead of
   // resolving/registering a bogus path.
-  if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
+  if (!isValidProjectDir(cwd)) {
     return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
   }
   // Normalize project identifier (accepts hash, name, or path) to canonical hash

@@ -188,25 +188,46 @@ function saveRegistry(reg: Record<string, ProjectEntry>): void {
 }
 
 /**
+ * Is `p` an absolute path to a directory that actually exists? Single
+ * try/catch around one `statSync` call — NOT `existsSync` followed by a
+ * separate `statSync` (that's both redundant and a TOCTOU/throw hazard: the
+ * path can vanish, or `statSync` can throw for permissions reasons, between
+ * the two calls, and an uncaught throw from handler-inline validation gets
+ * swallowed by an OUTER catch-all — e.g. /reconcile's and /notify's shared
+ * wrapper degrades any thrown error to `{continue:true}` (200), and
+ * /capture's queue wrapper turns it into an unintended 500 — silently
+ * defeating the intended 400. Caught in code review on equiphealth/claude-contextus#48.
+ *
+ * Every daemon handler that accepts `cwd` from a request body (handleQuery
+ * via registerProject below, handleNotify, handleCapture, handleReconcile,
+ * handleDelete) should validate through this one function so the throw-safety
+ * fix applies everywhere at once instead of being reimplemented per handler.
+ */
+export function isValidProjectDir(p: string): boolean {
+  if (!p || !path.isAbsolute(p)) return false;
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Register a project (idempotent). Call from any daemon handler that receives
  * both projectId and cwd. Only writes to disk if something changed.
  *
  * Validates `absolutePath` before touching the registry: must be an absolute,
- * existing directory. Every daemon handler that accepts `cwd` from a request
- * body (handleQuery, handleNotify, handleCapture, handleReconcile) funnels
- * into this function, so guarding here — rather than in each call site —
- * is the single point that stops a malformed cwd (e.g. an un-expanded shell
- * literal like "$(pwd)") from silently writing a bogus, permanent entry into
- * ~/.contextus/data/projects.json. See equiphealth/claude-contextus#46.
+ * existing directory (see isValidProjectDir above). Every daemon handler that
+ * accepts `cwd` from a request body (handleQuery, handleNotify, handleCapture,
+ * handleReconcile) funnels into this function, so guarding here — rather than
+ * in each call site — is the single point that stops a malformed cwd (e.g. an
+ * un-expanded shell literal like "$(pwd)") from silently writing a bogus,
+ * permanent entry into ~/.contextus/data/projects.json. See
+ * equiphealth/claude-contextus#46.
  */
 export function registerProject(id: string, absolutePath: string): void {
   if (!id || !absolutePath) return;
-  if (!path.isAbsolute(absolutePath)) return;
-  try {
-    if (!fs.statSync(absolutePath).isDirectory()) return;
-  } catch {
-    return;
-  }
+  if (!isValidProjectDir(absolutePath)) return;
   const reg = loadRegistry();
   const resolved = path.resolve(absolutePath);
   const name = path.basename(resolved);
