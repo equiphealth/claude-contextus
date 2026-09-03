@@ -50,6 +50,39 @@ test('upsertIndexEntry: repeated re-capture of the same slug never accumulates d
   assert.equal(matches[0], '- [x](gotchas/gotcha-x.md) — Version 4');
 });
 
+test('upsertIndexEntry: cleans up PRE-EXISTING duplicates, not just future ones', () => {
+  // Simulates an index that already accumulated duplicates before this helper
+  // existed (the exact state found live in the automation repo's CONTEXT.md —
+  // caught in code review on #52: v1 of this helper only replaced the FIRST
+  // match, silently leaving other pre-existing duplicate lines behind).
+  const before = [
+    '# Context Index',
+    '',
+    '- [foo](decisions/decision-foo.md) — v1',
+    '- [bar](decisions/decision-bar.md) — Bar',
+    '- [foo](decisions/decision-foo.md) — v2',
+    '- [baz](decisions/decision-baz.md) — Baz',
+    '- [foo](decisions/decision-foo.md) — v3',
+    ''
+  ].join('\n');
+
+  const result = upsertIndexEntry(
+    before,
+    'decisions/decision-foo.md',
+    '- [foo](decisions/decision-foo.md) — latest'
+  );
+
+  const fooLines = result.split('\n').filter((l) => l.includes('decision-foo.md'));
+  assert.equal(fooLines.length, 1, 'all 3 pre-existing duplicates collapse to 1');
+  assert.equal(fooLines[0], '- [foo](decisions/decision-foo.md) — latest');
+  // unrelated entries survive, in their original relative order
+  assert.ok(result.includes('- [bar](decisions/decision-bar.md) — Bar'));
+  assert.ok(result.includes('- [baz](decisions/decision-baz.md) — Baz'));
+  const barIdx = result.indexOf('decision-bar.md');
+  const bazIdx = result.indexOf('decision-baz.md');
+  assert.ok(barIdx < bazIdx, 'bar must still come before baz');
+});
+
 test('upsertIndexEntry: does not match a different file with a similar relPath', () => {
   const before = '- [foo](decisions/decision-foo-bar.md) — Foo Bar\n';
   const result = upsertIndexEntry(
