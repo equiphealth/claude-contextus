@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-09-03
+
+### Fixed
+- **`/capture` no longer creates duplicate `CONTEXT.md`/`DOCS.md` index entries on re-capture** (GH issue #51). The index update was an unconditional `fs.appendFileSync` with no check for an existing entry — since `/capture` correctly overwrites an existing slug's markdown file on re-capture, every re-capture left the OLD index line behind and appended a new one. Observed live: an automation repo's `CONTEXT.md` had the same entry duplicated 2-3 times, scattered non-adjacently (consistent with separate re-capture events, not a generation bug). Extracted into a pure, unit-tested `upsertIndexEntry()` helper (`lib/capture/context-index.ts`) that upserts by the markdown link target `](relPath)` — the same match key `/delete`'s index-removal logic already uses.
+
 ## [0.19.1] - 2026-08-14
 
 ### Fixed
