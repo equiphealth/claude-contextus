@@ -884,8 +884,7 @@ async function executeCaptureRequest(
     }
 
     // Update DOCS.md index — upsert by relPath, same as the context path
-    // below (see lib/capture/context-index.ts). This path was missed when
-    // the context-index fix originally shipped (#52) — caught in review.
+    // below (see lib/capture/context-index.ts).
     const indexFile = path.join(docsDir, 'DOCS.md');
     const indexEntry = `- [${slug}](${filename}) — ${description || slug}`;
     try {
