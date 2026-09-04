@@ -188,11 +188,37 @@ function saveRegistry(reg: Record<string, ProjectEntry>): void {
 }
 
 /**
+ * Is `p` an absolute path to a directory that actually exists? Wraps a
+ * single `statSync` in try/catch rather than `existsSync` + a separate
+ * `statSync` — several daemon handlers call this from within outer
+ * catch-alls that would otherwise turn an uncaught throw into a 200 or 500
+ * instead of the intended 400.
+ *
+ * Shared by every handler that accepts `cwd` from a request body, so the
+ * validation logic lives in one place instead of being reimplemented per
+ * handler.
+ */
+export function isValidProjectDir(p: string): boolean {
+  if (!p || !path.isAbsolute(p)) return false;
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Register a project (idempotent). Call from any daemon handler that receives
  * both projectId and cwd. Only writes to disk if something changed.
+ *
+ * Validates `absolutePath` first (must be an absolute, existing directory) —
+ * this is the single chokepoint every cwd-accepting handler funnels through,
+ * so a malformed cwd can never write a bogus, permanent entry into
+ * ~/.contextus/data/projects.json.
  */
 export function registerProject(id: string, absolutePath: string): void {
   if (!id || !absolutePath) return;
+  if (!isValidProjectDir(absolutePath)) return;
   const reg = loadRegistry();
   const resolved = path.resolve(absolutePath);
   const name = path.basename(resolved);

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.5] - 2026-09-03
+
+### Fixed
+- **Daemon handlers no longer accept a malformed `cwd` silently** (GH issue #46). `/capture`, `/notify`, `/reconcile`, and `/delete` only checked that `cwd` was a non-empty string — no `path.isAbsolute()` or existence check. A bad `cwd` (e.g. an un-expanded shell literal like `$(pwd)` from a caller's quoting mistake) would resolve relative to the daemon's own process cwd via `path.join()` + `mkdirSync({recursive:true})`, write files to a bogus location, and still return `{"ok":true}` — plus permanently persist the bogus path into `~/.contextus/data/projects.json` via `registerProject()`. Validation now lives in one shared, throw-safe `isValidProjectDir()` helper (`lib/workspace.ts`) — a single `statSync` in a try/catch, not the original `existsSync` + separate `statSync` pattern, which was a TOCTOU/throw hazard (an uncaught throw from inline validation got swallowed by an outer catch-all, silently turning an intended 400 into a 200 `continue:true` or a 500). `registerProject()` uses it before touching the registry; `/capture`, `/notify`, `/reconcile`, and `/delete` each also reject a malformed `cwd` explicitly with a 400 before any filesystem write (`/delete` had no validation at all in the first version of this fix — caught in code review, along with the throw-safety gap, on #48). `/query` is intentionally left permissive beyond the registry guard (hook-triggered on every prompt, must never block the response).
+
 ## [0.19.4] - 2026-09-03
 
 ### Fixed
