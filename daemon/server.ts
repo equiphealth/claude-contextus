@@ -59,7 +59,12 @@ import { upsertIndexEntry } from '../lib/capture/context-index.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { resolveProjectScope, registerProject, resolveProjectId } from '../lib/workspace.js';
+import {
+  resolveProjectScope,
+  registerProject,
+  resolveProjectId,
+  isValidProjectDir
+} from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import {
   readState as readCalibrationState,
@@ -745,6 +750,9 @@ async function handleNotify(
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for notify' });
+  if (!isValidProjectDir(cwd)) {
+    return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
+  }
 
   const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
   const sourceInfo = determineSource(absFile, cwd, projectParam);
@@ -853,6 +861,11 @@ async function executeCaptureRequest(
   // cwd required for project-scoped captures (need filesystem path for writing)
   if (scope === 'project' && !cwd) {
     sendJson(res, 400, { error: 'cwd is required for project-scoped capture' });
+    return;
+  }
+
+  if (cwd && !isValidProjectDir(cwd)) {
+    sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
     return;
   }
 
@@ -1054,6 +1067,10 @@ async function handleDelete(
   }
   if (scope === 'project' && !cwd) {
     sendJson(res, 400, { ok: false, error: 'cwd is required for project-scoped delete' });
+    return;
+  }
+  if (cwd && !isValidProjectDir(cwd)) {
+    sendJson(res, 400, { ok: false, error: `cwd is not an existing absolute directory: ${cwd}` });
     return;
   }
 
@@ -1285,6 +1302,9 @@ async function handleReconcile(
   const projectLabel = project ?? 'default';
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for reconcile' });
+  if (!isValidProjectDir(cwd)) {
+    return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
+  }
   // Normalize project identifier (accepts hash, name, or path) to canonical hash
   const projectId = project ? resolveProjectId(project) : projectHash(cwd);
   registerProject(projectId, cwd);

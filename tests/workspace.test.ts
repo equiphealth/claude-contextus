@@ -24,7 +24,11 @@ const {
   removeProjectFromWorkspace,
   workspacesForProject,
   writeWorkspace,
-  listWorkspaceNames
+  listWorkspaceNames,
+  registerProject,
+  projectPath,
+  clearRegistryCache,
+  isValidProjectDir
 } = await import('../lib/workspace.js');
 
 const WORKSPACES_DIR = path.join(tmp, '.contextus', 'workspaces');
@@ -243,4 +247,82 @@ test('removeProjectFromWorkspace: returns false when project not in workspace', 
   assert.equal(removed, false);
 
   fs.unlinkSync(path.join(WORKSPACES_DIR, 'partial-ws.jsonc'));
+});
+
+// --- registerProject validation tests ---
+// A malformed cwd (relative path, nonexistent path, or a literal shell
+// fragment like "$(pwd)") must never be persisted into the registry — it
+// should silently no-op, not write garbage.
+
+test('registerProject: persists a valid absolute, existing directory', () => {
+  clearRegistryCache();
+  const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-real-project-'));
+  registerProject('validhash1', realDir);
+  assert.equal(projectPath('validhash1'), path.resolve(realDir));
+  fs.rmSync(realDir, { recursive: true, force: true });
+});
+
+test('registerProject: rejects a relative path (e.g. unexpanded "$(pwd)")', () => {
+  clearRegistryCache();
+  registerProject('badhash1', '$(pwd)');
+  assert.equal(projectPath('badhash1'), null);
+});
+
+test('registerProject: rejects a nonexistent absolute path', () => {
+  clearRegistryCache();
+  registerProject('badhash2', '/tmp/definitely-does-not-exist-contextus-test');
+  assert.equal(projectPath('badhash2'), null);
+});
+
+test('registerProject: rejects a path that is a file, not a directory', () => {
+  clearRegistryCache();
+  const realFile = path.join(tmp, 'not-a-directory.txt');
+  fs.writeFileSync(realFile, 'hello');
+  registerProject('badhash3', realFile);
+  assert.equal(projectPath('badhash3'), null);
+  fs.unlinkSync(realFile);
+});
+
+test('registerProject: no-ops silently on empty id or path (no throw)', () => {
+  clearRegistryCache();
+  assert.doesNotThrow(() => registerProject('', '/tmp'));
+  assert.doesNotThrow(() => registerProject('somehash', ''));
+});
+
+// --- isValidProjectDir direct tests ---
+// Every cwd-accepting daemon handler shares this one throw-safe check
+// instead of each reimplementing existsSync+statSync inline.
+
+test('isValidProjectDir: true for an absolute, existing directory', () => {
+  assert.equal(isValidProjectDir(tmp), true);
+});
+
+test('isValidProjectDir: false for a relative path', () => {
+  assert.equal(isValidProjectDir('$(pwd)'), false);
+  assert.equal(isValidProjectDir('relative/path'), false);
+});
+
+test('isValidProjectDir: false for a nonexistent absolute path', () => {
+  assert.equal(isValidProjectDir('/tmp/definitely-does-not-exist-contextus-test-2'), false);
+});
+
+test('isValidProjectDir: false for a file, not a directory', () => {
+  const realFile = path.join(tmp, 'also-not-a-directory.txt');
+  fs.writeFileSync(realFile, 'hello');
+  assert.equal(isValidProjectDir(realFile), false);
+  fs.unlinkSync(realFile);
+});
+
+test('isValidProjectDir: false (not throw) for empty string', () => {
+  assert.doesNotThrow(() => isValidProjectDir(''));
+  assert.equal(isValidProjectDir(''), false);
+});
+
+test('isValidProjectDir: false (not throw) on a path with no read permission on a parent dir', () => {
+  // Best-effort: simulate the "statSync throws for a reason other than
+  // ENOENT" case (permissions, transient deletion) that motivated wrapping
+  // this in try/catch. A deeply nested nonexistent path exercises the same
+  // catch branch without needing real permission manipulation in CI.
+  assert.doesNotThrow(() => isValidProjectDir('/root/definitely/not/accessible/here'));
+  assert.equal(isValidProjectDir('/root/definitely/not/accessible/here'), false);
 });
