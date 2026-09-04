@@ -55,10 +55,16 @@ import { fuseRRF, hybridKeywordSearch } from '../lib/retrieval/hybrid.js';
 import { processSearchResults } from '../lib/retrieval/pipeline.js';
 import { recordInjection, noveltyFor } from '../lib/capture/novelty.js';
 import { embedSingleFile } from '../lib/embedding/embed-file.js';
+import { upsertIndexEntry } from '../lib/capture/context-index.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
 import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
-import { resolveProjectScope, registerProject, resolveProjectId } from '../lib/workspace.js';
+import {
+  resolveProjectScope,
+  registerProject,
+  resolveProjectId,
+  isValidProjectDir
+} from '../lib/workspace.js';
 import { recordLastInjection } from '../lib/session-state.js';
 import {
   readState as readCalibrationState,
@@ -744,6 +750,9 @@ async function handleNotify(
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!file) return sendJson(res, 200, { ok: true, embedded: false, reason: 'no_file' });
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for notify' });
+  if (!isValidProjectDir(cwd)) {
+    return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
+  }
 
   const absFile = path.isAbsolute(file) ? file : path.resolve(cwd, file);
   const sourceInfo = determineSource(absFile, cwd, projectParam);
@@ -855,6 +864,11 @@ async function executeCaptureRequest(
     return;
   }
 
+  if (cwd && !isValidProjectDir(cwd)) {
+    sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
+    return;
+  }
+
   // Lazy-register for hash→name reverse lookup
   if (cwd) {
     const id = project ? resolveProjectId(project) : projectHash(cwd);
@@ -882,12 +896,14 @@ async function executeCaptureRequest(
       return;
     }
 
-    // Update DOCS.md index
+    // Update DOCS.md index — upsert by relPath, same as the context path
+    // below (see lib/capture/context-index.ts).
     const indexFile = path.join(docsDir, 'DOCS.md');
-    const indexEntry = `- [${slug}](${filename}) — ${description || slug}\n`;
+    const indexEntry = `- [${slug}](${filename}) — ${description || slug}`;
     try {
       if (fs.existsSync(indexFile)) {
-        fs.appendFileSync(indexFile, indexEntry);
+        const existing = fs.readFileSync(indexFile, 'utf-8');
+        fs.writeFileSync(indexFile, upsertIndexEntry(existing, filename, indexEntry));
       }
     } catch {
       // Non-fatal
@@ -980,13 +996,15 @@ ${content}
     return;
   }
 
-  // Update CONTEXT.md index
+  // Update CONTEXT.md index — upsert by relPath (see lib/capture/context-index.ts
+  // for why a blind append caused duplicate entries on re-capture).
   const indexFile = path.join(contextDir, 'CONTEXT.md');
   const relPath = `${dirName}/${filename}`;
-  const indexEntry = `- [${slug}](${relPath}) — ${description}\n`;
+  const indexEntry = `- [${slug}](${relPath}) — ${description}`;
   try {
     if (fs.existsSync(indexFile)) {
-      fs.appendFileSync(indexFile, indexEntry);
+      const existing = fs.readFileSync(indexFile, 'utf-8');
+      fs.writeFileSync(indexFile, upsertIndexEntry(existing, relPath, indexEntry));
     }
   } catch {
     // Non-fatal — file is written, index update is best-effort
@@ -1049,6 +1067,10 @@ async function handleDelete(
   }
   if (scope === 'project' && !cwd) {
     sendJson(res, 400, { ok: false, error: 'cwd is required for project-scoped delete' });
+    return;
+  }
+  if (cwd && !isValidProjectDir(cwd)) {
+    sendJson(res, 400, { ok: false, error: `cwd is not an existing absolute directory: ${cwd}` });
     return;
   }
 
@@ -1280,6 +1302,9 @@ async function handleReconcile(
   const projectLabel = project ?? 'default';
   const cwd = typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined;
   if (!cwd) return sendJson(res, 400, { error: 'cwd is required for reconcile' });
+  if (!isValidProjectDir(cwd)) {
+    return sendJson(res, 400, { error: `cwd is not an existing absolute directory: ${cwd}` });
+  }
   // Normalize project identifier (accepts hash, name, or path) to canonical hash
   const projectId = project ? resolveProjectId(project) : projectHash(cwd);
   registerProject(projectId, cwd);

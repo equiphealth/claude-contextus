@@ -17,6 +17,7 @@ import {
   compareSemver,
   needsUpgrade
 } from '../lib/version.js';
+import { hasStanza } from '../lib/capture/claude-md-stanza.js';
 
 const DATA_DIR = path.resolve(expandHome('~/.contextus/data'));
 const WORKSPACES_DIR = path.resolve(expandHome('~/.contextus/workspaces'));
@@ -106,6 +107,21 @@ function detectMigrations(dataVersion: string, installedVersion: string): Migrat
         title: 'Unified Database & Workspaces',
         reason: 'Re-embed needed to add project column to rows'
       });
+    }
+  }
+
+  // 0.19.6: CLAUDE.md stanza content refresh (mid-task search fallback line)
+  if (compareSemver(dataVersion, '0.19.6') < 0 && compareSemver(installedVersion, '0.19.6') >= 0) {
+    const claudeMdPath = path.join(process.cwd(), 'CLAUDE.md');
+    if (fs.existsSync(claudeMdPath)) {
+      const content = fs.readFileSync(claudeMdPath, 'utf-8');
+      if (hasStanza(content) && !content.includes('Mid-task fallback')) {
+        migrations.push({
+          version: '0.19.6',
+          title: 'CLAUDE.md Stanza Refresh',
+          reason: 'Stanza is missing the mid-task search fallback instruction'
+        });
+      }
     }
   }
 
