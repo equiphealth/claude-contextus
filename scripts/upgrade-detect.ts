@@ -17,10 +17,19 @@ import {
   compareSemver,
   needsUpgrade
 } from '../lib/version.js';
-import { hasStanza } from '../lib/capture/claude-md-stanza.js';
+import { hasStanza, extractStanza } from '../lib/capture/claude-md-stanza.js';
 
 const DATA_DIR = path.resolve(expandHome('~/.contextus/data'));
 const WORKSPACES_DIR = path.resolve(expandHome('~/.contextus/workspaces'));
+
+/** --dir <path> to target a specific project root; defaults to cwd (same convention as contextus-setup.ts). */
+function resolveProjectDir(): string {
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--dir' && argv[i + 1]) return path.resolve(argv[++i]);
+  }
+  return process.cwd();
+}
 
 interface MigrationNeeded {
   version: string;
@@ -83,7 +92,11 @@ function findLinkedProjectConfigs(): DetectionResult['details']['linkedProjectCo
   return results;
 }
 
-function detectMigrations(dataVersion: string, installedVersion: string): MigrationNeeded[] {
+function detectMigrations(
+  dataVersion: string,
+  installedVersion: string,
+  projectDir: string
+): MigrationNeeded[] {
   const migrations: MigrationNeeded[] = [];
 
   // 0.8.0: Unified DB + Workspaces
@@ -112,10 +125,11 @@ function detectMigrations(dataVersion: string, installedVersion: string): Migrat
 
   // 0.19.6: CLAUDE.md stanza content refresh (mid-task search fallback line)
   if (compareSemver(dataVersion, '0.19.6') < 0 && compareSemver(installedVersion, '0.19.6') >= 0) {
-    const claudeMdPath = path.join(process.cwd(), 'CLAUDE.md');
+    const claudeMdPath = path.join(projectDir, 'CLAUDE.md');
     if (fs.existsSync(claudeMdPath)) {
       const content = fs.readFileSync(claudeMdPath, 'utf-8');
-      if (hasStanza(content) && !content.includes('Mid-task fallback')) {
+      const stanza = extractStanza(content);
+      if (hasStanza(content) && stanza && !stanza.includes('Mid-task fallback')) {
         migrations.push({
           version: '0.19.6',
           title: 'CLAUDE.md Stanza Refresh',
@@ -132,6 +146,7 @@ function detectMigrations(dataVersion: string, installedVersion: string): Migrat
 }
 
 function main(): void {
+  const projectDir = resolveProjectDir();
   const dataVersion = readVersionState().version;
   const installedVersion = getInstalledVersion();
   const perProjectDbs = findPerProjectDbs();
@@ -145,7 +160,7 @@ function main(): void {
     dataVersion,
     installedVersion,
     needsUpgrade: needsUpgrade(),
-    migrations: detectMigrations(dataVersion, installedVersion),
+    migrations: detectMigrations(dataVersion, installedVersion, projectDir),
     details: {
       perProjectDbs,
       linkedProjectConfigs,

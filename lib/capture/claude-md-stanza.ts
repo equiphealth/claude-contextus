@@ -50,6 +50,15 @@ export function hasStanza(text: string): boolean {
   return text.includes(STANZA_START);
 }
 
+/** Extract just the stanza block's content (between the markers), or null if absent. */
+export function extractStanza(text: string): string | null {
+  const startIdx = text.indexOf(STANZA_START);
+  if (startIdx === -1) return null;
+  const endIdx = text.indexOf(STANZA_END, startIdx);
+  if (endIdx === -1) return text.slice(startIdx);
+  return text.slice(startIdx, endIdx + STANZA_END.length);
+}
+
 /**
  * Upsert the stanza into CLAUDE.md content, idempotently.
  *  - No existing block → append the stanza (with a separating blank line).
