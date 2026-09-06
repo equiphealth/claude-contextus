@@ -101,3 +101,9 @@ test('buildRetrievalMissNotice: mentions two possible explanations', () => {
   assert.ok(notice.includes("doesn't cover this angle"));
   assert.ok(notice.includes('genuinely new topic'));
 });
+
+test('buildRetrievalMissNotice: includes mid-task fallback reminder', () => {
+  const notice = buildRetrievalMissNotice(0.4, 0.45, ['x']);
+  assert.ok(notice.includes('injection only fires once per turn'));
+  assert.ok(notice.includes('/context-search'));
+});

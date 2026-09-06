@@ -28,7 +28,10 @@ export function buildRetrievalMissNotice(
     `ACTION: If your response surfaces reusable knowledge (a decision, gotcha, pattern, or workflow), ` +
     `end it with "Context: propose: <topic-name>" and use /create-context if accepted. ` +
     `If you need context that should exist but doesn't, ask the user: ` +
-    `"Should we capture [topic] as a context pattern for future sessions?"`
+    `"Should we capture [topic] as a context pattern for future sessions?"\n\n` +
+    `Reminder: injection only fires once per turn, keyed to this prompt. If this task ` +
+    `later drifts into a subtopic this prompt didn't hint at, don't wait for another ` +
+    `automatic injection — run /context-search "<query>" yourself.`
   );
 }
 

@@ -14,6 +14,30 @@ should perform.
 
 ---
 
+## 0.19.6 — CLAUDE.md Stanza Refresh
+
+**What changed:**
+- `STANZA_BODY` (`lib/capture/claude-md-stanza.ts`) gained a "Mid-task fallback" paragraph instructing Claude to run `/context-search` when it suspects relevant context exists but wasn't surfaced mid-turn.
+
+**Why breaking:**
+- Not breaking, but not self-propagating either — the stanza only updates when `/contextus-setup` or `/contextus-upgrade` re-runs `upsertStanza()` against a project's `CLAUDE.md`. Existing projects keep the old stanza text indefinitely otherwise.
+
+**Detection:**
+- Project's `CLAUDE.md` has the marked stanza block but doesn't contain "Mid-task fallback"
+
+**Steps:**
+1. Re-run setup to upsert the stanza in place (idempotent, no duplicate block):
+   ```bash
+   pnpm contextus-setup
+   ```
+
+**Scripts:**
+- `scripts/contextus-setup.ts` (`writeStanza`, idempotent)
+
+**Rollback:** Not applicable — text-only change, no data affected.
+
+---
+
 ## 0.13.0 — Token Overflow Protection (Statusline Bridge)
 
 **What changed:**

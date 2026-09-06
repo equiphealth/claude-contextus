@@ -32,6 +32,46 @@
     }
   },
 
+  "sources": {
+    // What gets embedded into the corpus. Each of these four is independently
+    // toggleable — disable one without touching the others. Keys beyond these
+    // four are supported too (same shape); add one for e.g. a second docs tree.
+    // Linked projects (via /link-project) are NOT configured here — that's a
+    // separate workspace-registry mechanism, not a `sources` entry.
+    "projectContext": {
+      "type": "context", // 'context' | 'doc' — feeds re-ranking's typeBoost/sourceWeight
+      "scope": "project", // 'project' | 'user' — user-scope is shared across all projects
+      "path": ".claude/context",
+      "enabled": true,
+      "indexFile": "CONTEXT.md", // Auto-maintained index; excluded from embedding itself
+      "exclude": ["**/CONTEXT.md", "**/README.md", "**/.archive/**"]
+    },
+    "projectDocs": {
+      "type": "doc",
+      "scope": "project",
+      "path": "docs",
+      "enabled": true,
+      "indexFile": "DOCS.md",
+      "exclude": ["**/DOCS.md", "**/README.md"]
+    },
+    "userContext": {
+      "type": "context",
+      "scope": "user", // Cross-project corpus at ~/.contextus/context, ranked below project-scoped
+      "path": "~/.contextus/context",
+      "enabled": true,
+      "indexFile": "CONTEXT.md",
+      "exclude": ["**/CONTEXT.md", "**/README.md", "**/.archive/**"]
+    },
+    "userDocs": {
+      "type": "doc",
+      "scope": "user",
+      "path": "~/.contextus/docs",
+      "enabled": true,
+      "indexFile": "DOCS.md",
+      "exclude": ["**/DOCS.md", "**/README.md"]
+    }
+  },
+
   "retrieval": {
     // Controls what gets injected into Claude's context.
     "topK": 5, // Max context files per prompt (after dedup + floor)
