@@ -32,6 +32,8 @@
     "migrate-workspaces": "tsx scripts/migrate-workspaces.ts",
     "mine-transcripts": "tsx scripts/mine-transcripts.ts",
     "check-release": "tsx scripts/check-release.ts",
+    "review": "./scripts/review/pre-pr-review.sh",
+    "review:pr": "./scripts/review/pre-pr-review.sh --pr",
     "lint": "eslint lib scripts daemon --ext .ts",
     "format": "prettier --write .",
     "type-check": "tsc --noEmit",
