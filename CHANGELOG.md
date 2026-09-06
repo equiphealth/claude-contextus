@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Retrieval near-miss notice also carries the mid-task fallback reminder.** `buildRetrievalMissNotice()` (`lib/retrieval/miss-notice.ts`) now appends a short reminder to run `/context-search` on drift, riding the same rare near-miss event rather than adding cost to every injected query.
 
 ### Fixed
-- **`STANZA_BODY` had drifted to a narrower multi-source description** (only `.claude/context/`), losing the `docs/`, `~/.contextus/`, and linked-projects mention that this repo's own `CLAUDE.md` still carried by hand. Restored the fuller wording as the source of truth.
+- **`STANZA_BODY` had drifted to a narrower multi-source description** (only `.claude/context/`), losing the `docs/`, `~/.contextus/`, and linked-projects mention that this repo's own `CLAUDE.md` still carried by hand. Rather than hardcoding a source list again (each source is individually toggleable via `sources.*.enabled` in `.claude/contextus.jsonc`, so a fixed list goes stale the moment one is disabled), the stanza now points at the config's `sources` block instead of asserting specifics.
 
 ## [0.19.5] - 2026-09-03
 

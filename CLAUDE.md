@@ -146,9 +146,11 @@ Provider chain: ollama (qwen2.5:3b, ~100-400ms) → bedrock fallback (Haiku, ~2s
 ## Context (claude-contextus)
 
 This project uses [claude-contextus](https://github.com/equiphealth/claude-contextus):
-relevant patterns from `.claude/context/`, `docs/`, `~/.contextus/`, and linked projects
-are **retrieved and injected automatically** on each prompt — you don't need to search
-for them. Injected blocks are tagged `[contextus — …]`.
+relevant patterns are **retrieved and injected automatically** on each prompt — you
+don't need to search for them. Which sources feed this (project context, project docs,
+user-scope, linked projects) are individually toggleable — check the `sources` block in
+`.claude/contextus.jsonc` for what's actually enabled here. Injected blocks are tagged
+`[contextus — …]`.
 
 **Mid-task fallback**: injection only fires once, keyed to the prompt that started the
 turn. If a long task drifts into a subtopic that prompt didn't hint at, and you suspect
