@@ -164,14 +164,53 @@ STARTED_TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
   echo
 } > "$RESULTS_FILE"
 
-# --permission-mode plan keeps it read-only; it can still run git/gh/read/grep.
+# --permission-mode auto: read-only tools (git/gh/read/grep) run without
+# prompting, but an actual write/edit attempt stalls waiting for permission
+# that never arrives headlessly -- an effective deny, not just a request in
+# the prompt text. Do NOT use "plan" (triggers Claude's interactive-planning
+# workflow -- it writes a plan file and returns a one-line "plan complete"
+# summary instead of directly answering, observed live) or "dontAsk" (silently
+# ALLOWS writes with no prompt at all -- verified via a real file-write test;
+# wrong for a script whose entire premise is "advisory only, never modifies
+# files").
 # Interactive (npm run review): stream to terminal + file.
 # Background (future hook): write to file only.
 if [ -t 1 ]; then
-  $RUNNER claude -p "$PROMPT" --model "$MODEL" --permission-mode plan </dev/null | tee -a "$RESULTS_FILE"
-  STATUS=${PIPESTATUS[0]:-0}
+  # Default text output mode buffers everything and prints it all at once
+  # when claude exits -- there's no partial output to show meanwhile. A
+  # heartbeat is the simplest robust indication something's happening: each
+  # tick is a complete line ending in \n (never an in-place \r overwrite),
+  # so it can never visually collide with the report's eventual output
+  # regardless of exact timing.
+  (
+    elapsed=0
+    while :; do
+      sleep 15
+      elapsed=$((elapsed + 15))
+      printf '   \033[2m… still working (%ds elapsed, 300s timeout)\033[0m\n' "$elapsed"
+    done
+  ) &
+  HEARTBEAT_PID=$!
+  trap 'kill "$HEARTBEAT_PID" 2>/dev/null' EXIT
+
+  # Capture claude's own exit status via a temp file rather than
+  # ${PIPESTATUS[0]}, which is bash-specific -- the shebang is `sh`, and a
+  # genuinely POSIX /bin/sh (dash, ash -- common on Linux) doesn't have
+  # PIPESTATUS, silently falling through to the ":-0" default and masking
+  # real failures (caught in code review). This grouped-command form works
+  # in any POSIX shell: the group's stdout (claude's output) still flows
+  # into tee; claude's actual exit code lands in $STATUS_FILE regardless.
+  STATUS_FILE="$(mktemp)"
+  { $RUNNER claude -p "$PROMPT" --model "$MODEL" --permission-mode auto </dev/null; echo "$?" > "$STATUS_FILE"; } | tee -a "$RESULTS_FILE"
+  STATUS="$(cat "$STATUS_FILE" 2>/dev/null)"
+  rm -f "$STATUS_FILE"
+  STATUS="${STATUS:-0}"
+
+  kill "$HEARTBEAT_PID" 2>/dev/null
+  wait "$HEARTBEAT_PID" 2>/dev/null
+  trap - EXIT
 else
-  $RUNNER claude -p "$PROMPT" --model "$MODEL" --permission-mode plan </dev/null >> "$RESULTS_FILE" 2>/dev/null
+  $RUNNER claude -p "$PROMPT" --model "$MODEL" --permission-mode auto </dev/null >> "$RESULTS_FILE" 2>/dev/null
   STATUS=$?
 fi
 
