@@ -289,6 +289,67 @@ test('registerProject: no-ops silently on empty id or path (no throw)', () => {
   assert.doesNotThrow(() => registerProject('somehash', ''));
 });
 
+// --- registry cache invalidation on external edit (#47) ---
+// Repro: the registry was cached for the daemon's whole process lifetime;
+// any out-of-band edit to projects.json was invisible until restart, and the
+// next unrelated registerProject() call clobbered it back by writing out the
+// stale in-memory snapshot. mtime-check invalidation (loadRegistry) should
+// make external edits visible on the very next read, with no restart needed.
+
+const REGISTRY_PATH = path.join(tmp, '.contextus', 'data', 'projects.json');
+
+/** Externally edit the registry file the way a manual cleanup or another
+ *  tool would — bypassing registerProject/saveRegistry entirely — then bump
+ *  its mtime forward so filesystems with coarse mtime resolution still see
+ *  a real change. */
+function editRegistryExternally(mutate: (reg: Record<string, unknown>) => void): void {
+  const raw = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf-8'));
+  mutate(raw);
+  fs.writeFileSync(REGISTRY_PATH, JSON.stringify(raw, null, 2) + '\n');
+  const future = new Date(Date.now() + 2000);
+  fs.utimesSync(REGISTRY_PATH, future, future);
+}
+
+test('registry: external edit to projects.json is visible on next read (no restart needed)', () => {
+  clearRegistryCache();
+  const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-ext-edit-'));
+  registerProject('extedit1', realDir);
+  assert.equal(projectPath('extedit1'), path.resolve(realDir));
+
+  editRegistryExternally((reg) => delete reg['extedit1']);
+
+  assert.equal(
+    projectPath('extedit1'),
+    null,
+    'external removal should be visible without a restart'
+  );
+  fs.rmSync(realDir, { recursive: true, force: true });
+});
+
+test('registry: a subsequent unrelated write does not resurrect an externally-removed entry', () => {
+  clearRegistryCache();
+  const realDirA = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-ext-edit-a-'));
+  const realDirB = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-ext-edit-b-'));
+  registerProject('extedit2', realDirA);
+
+  editRegistryExternally((reg) => delete reg['extedit2']);
+
+  // Unrelated write — previously this dumped the stale in-memory snapshot
+  // (still containing extedit2) back onto disk, resurrecting it (the exact
+  // repro in #47).
+  registerProject('extedit3', realDirB);
+
+  assert.equal(
+    projectPath('extedit2'),
+    null,
+    'unrelated write must not resurrect the externally-removed entry'
+  );
+  assert.equal(projectPath('extedit3'), path.resolve(realDirB));
+
+  fs.rmSync(realDirA, { recursive: true, force: true });
+  fs.rmSync(realDirB, { recursive: true, force: true });
+});
+
 // --- isValidProjectDir direct tests ---
 // Every cwd-accepting daemon handler shares this one throw-safe check
 // instead of each reimplementing existsSync+statSync inline.

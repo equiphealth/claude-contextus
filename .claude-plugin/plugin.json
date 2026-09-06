@@ -1,7 +1,7 @@
 {
   "name": "contextus",
   "description": "Proactive context delivery — automatic semantic retrieval of project patterns from .claude/context/, injected on every prompt",
-  "version": "0.19.6",
+  "version": "0.19.7",
   "author": {
     "name": "Anthony Dawson"
   }
