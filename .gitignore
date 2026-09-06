@@ -48,3 +48,6 @@ examples/test-output/
 docs/presentation/
 assets/model.zip
 assets/model/
+
+# Pre-PR review output (scripts/review/pre-pr-review.sh)
+.pre-pr-review.md
