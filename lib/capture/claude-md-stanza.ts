@@ -29,8 +29,10 @@ export const STANZA_BODY = `## Context (claude-contextus)
 This project uses [claude-contextus](https://github.com/equiphealth/claude-contextus):
 relevant patterns are **retrieved and injected automatically** on each prompt — you
 don't need to search for them. Which sources feed this (project context, project docs,
-user-scope, linked projects) are individually toggleable — check the \`sources\` block in
-\`.claude/contextus.jsonc\` for what's actually enabled here. Injected blocks are tagged
+user-scope, linked projects) are individually toggleable via \`sources.*.enabled\` — most
+projects don't override this in \`.claude/contextus.jsonc\` and just inherit the shipped
+defaults (all four enabled), so run \`/context-status\` for the actual merged answer
+rather than assuming from the project file alone. Injected blocks are tagged
 \`[contextus — …]\`.
 
 **Mid-task fallback**: injection only fires once, keyed to the prompt that started the
