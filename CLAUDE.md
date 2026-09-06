@@ -32,8 +32,6 @@ All config files are **JSONC** (comments supported). Config hot-reloads on every
 
 Provider connections (ollama, bedrock, anthropic) are defined once in `providers {}` and referenced by all features.
 
-**Sources** (`sources.projectContext`, `sources.projectDocs`, `sources.userContext`, `sources.userDocs` — see `lib/config.ts` `DEFAULT_CONFIG`) are each individually toggleable via `sources.*.enabled`. Most projects never override this in `.claude/contextus.jsonc` — they just inherit the shipped defaults (all four enabled). Don't assume from the project file alone; `/context-status` reports the actual merged (defaults + override) answer.
-
 ## Working with This Codebase
 
 **Git workflow** (CRITICAL — no branch protection, manual discipline required):
