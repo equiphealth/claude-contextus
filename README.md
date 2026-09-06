@@ -339,6 +339,25 @@ pnpm query "your query"                     # replay retrieval (scores + floor)
 > target project as cwd instead: `cd <target> && ~/src/claude-contextus/node_modules/.bin/tsx ~/src/claude-contextus/scripts/embed-contexts.ts`.
 > The skills (`/contextus-setup`, `/migrate-memory`, …) handle this for you.
 
+### Advisory pre-PR review
+
+`pnpm review` runs an advisory Claude Code review over your changes before you push or
+open a PR. Standalone script for now — not wired into any git hook.
+
+```bash
+pnpm review       # what's new since your last push (or the whole branch, if unpushed) + staged
+pnpm review:pr    # the entire local branch vs main, committed only
+```
+
+Never blocks anything (always exits 0) and never modifies files. Report is streamed to
+the terminal and saved to `.pre-pr-review.md` (git-ignored).
+
+```bash
+SKIP_AI_REVIEW=1 pnpm review                        # opt out for a single run
+git config contextus.aiReview.enabled false         # disable entirely
+git config contextus.aiReview.model opus            # stronger model (or AI_REVIEW_MODEL=opus)
+```
+
 ## Examples
 
 See `examples/` directory for:
