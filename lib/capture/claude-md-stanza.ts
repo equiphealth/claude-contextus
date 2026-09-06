@@ -27,9 +27,14 @@ export const STANZA_END = '<!-- contextus:end -->';
 export const STANZA_BODY = `## Context (claude-contextus)
 
 This project uses [claude-contextus](https://github.com/equiphealth/claude-contextus):
-relevant patterns from \`.claude/context/\` are **retrieved and injected automatically**
-on each prompt — you don't need to search for them. Injected blocks are tagged
-\`[contextus — …]\`.
+relevant patterns from your configured sources are **retrieved and injected
+automatically** on each prompt — you don't need to search for them. Injected blocks are
+tagged \`[contextus — …]\`.
+
+**Mid-task fallback**: injection only fires once, keyed to the prompt that started the
+turn. If a long task drifts into a subtopic that prompt didn't hint at, and you suspect
+relevant project knowledge exists but wasn't surfaced, proactively run
+\`/context-search "<query>"\` yourself rather than assuming silence means nothing exists.
 
 Context capture behavior is controlled by the per-prompt injected footer — follow
 its instructions exactly (it may tell you to propose, write directly, or stay silent).
@@ -43,6 +48,15 @@ export function renderStanza(body: string = STANZA_BODY): string {
 /** Does the text already contain a contextus stanza? */
 export function hasStanza(text: string): boolean {
   return text.includes(STANZA_START);
+}
+
+/** Extract just the stanza block's content (between the markers), or null if absent. */
+export function extractStanza(text: string): string | null {
+  const startIdx = text.indexOf(STANZA_START);
+  if (startIdx === -1) return null;
+  const endIdx = text.indexOf(STANZA_END, startIdx);
+  if (endIdx === -1) return text.slice(startIdx);
+  return text.slice(startIdx, endIdx + STANZA_END.length);
 }
 
 /**

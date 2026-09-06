@@ -5,7 +5,7 @@
   // Two files on purpose: this is the tunable runtime config, that is the install descriptor.
   // Keep `version` in sync with the manifest.
   "name": "contextus",
-  "version": "0.19.5",
+  "version": "0.19.6",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
   "repository": "github:equiphealth/claude-contextus",

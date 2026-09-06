@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.6] - 2026-09-04
+
+### Added
+- **CLAUDE.md stanza now includes a mid-task search fallback instruction.** Injection fires once per turn, keyed to the prompt that started it — if a long task drifts into a subtopic the opening prompt didn't hint at, nothing re-injects and nothing previously told Claude to check for itself. `STANZA_BODY` (`lib/capture/claude-md-stanza.ts`) now instructs Claude to proactively run `/context-search "<query>"` mid-task when it suspects relevant context exists but wasn't surfaced. Existing projects pick up the updated stanza via `/contextus-upgrade` (new migration, `scripts/upgrade-detect.ts`) or by re-running `/contextus-setup` — see `migrations/MIGRATIONS.md`.
+- **Retrieval near-miss notice also carries the mid-task fallback reminder.** `buildRetrievalMissNotice()` (`lib/retrieval/miss-notice.ts`) now appends a short reminder to run `/context-search` on drift, riding the same rare near-miss event rather than adding cost to every injected query.
+
+### Fixed
+- **`STANZA_BODY`'s source description no longer enumerates specifics.** It previously named `.claude/context/`, `docs/`, `~/.contextus/`, and linked projects explicitly — each is individually toggleable via `sources.*.enabled`, so a fixed list drifts stale the moment one is disabled (this repo's own `CLAUDE.md` had already drifted from it by hand). Genericized to "your configured sources": the stanza is system-prompt content paid on every turn, so it should stay to stable, load-bearing facts rather than troubleshooting detail (e.g. how to inspect the merged config) that belongs in `/context-status`, not repeated every turn.
+
 ## [0.19.5] - 2026-09-03
 
 ### Fixed
