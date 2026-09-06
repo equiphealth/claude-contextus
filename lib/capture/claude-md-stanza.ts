@@ -27,9 +27,9 @@ export const STANZA_END = '<!-- contextus:end -->';
 export const STANZA_BODY = `## Context (claude-contextus)
 
 This project uses [claude-contextus](https://github.com/equiphealth/claude-contextus):
-relevant patterns from \`.claude/context/\` are **retrieved and injected automatically**
-on each prompt — you don't need to search for them. Injected blocks are tagged
-\`[contextus — …]\`.
+relevant patterns from \`.claude/context/\`, \`docs/\`, \`~/.contextus/\`, and linked projects
+are **retrieved and injected automatically** on each prompt — you don't need to search
+for them. Injected blocks are tagged \`[contextus — …]\`.
 
 **Mid-task fallback**: injection only fires once, keyed to the prompt that started the
 turn. If a long task drifts into a subtopic that prompt didn't hint at, and you suspect
