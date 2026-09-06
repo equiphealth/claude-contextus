@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Retrieval near-miss notice also carries the mid-task fallback reminder.** `buildRetrievalMissNotice()` (`lib/retrieval/miss-notice.ts`) now appends a short reminder to run `/context-search` on drift, riding the same rare near-miss event rather than adding cost to every injected query.
 
 ### Fixed
-- **`STANZA_BODY` had drifted to a narrower multi-source description** (only `.claude/context/`), losing the `docs/`, `~/.contextus/`, and linked-projects mention that this repo's own `CLAUDE.md` still carried by hand. Rather than hardcoding a source list again (each source is individually toggleable via `sources.*.enabled`, and most projects never override this in `.claude/contextus.jsonc` — they just inherit the shipped defaults), the stanza now tells Claude to run `/context-status` for the actual merged answer instead of asserting specifics or assuming from the project file alone.
+- **`STANZA_BODY`'s source description no longer enumerates specifics.** It previously named `.claude/context/`, `docs/`, `~/.contextus/`, and linked projects explicitly — each is individually toggleable via `sources.*.enabled`, so a fixed list drifts stale the moment one is disabled (this repo's own `CLAUDE.md` had already drifted from it by hand). Genericized to "your configured sources": the stanza is system-prompt content paid on every turn, so it should stay to stable, load-bearing facts rather than troubleshooting detail (e.g. how to inspect the merged config) that belongs in `/context-status`, not repeated every turn.
 
 ## [0.19.5] - 2026-09-03
 
