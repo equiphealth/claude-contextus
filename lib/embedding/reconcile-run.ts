@@ -16,7 +16,7 @@
  * automatically every session).
  */
 
-import { loadContexts, findPrefixTypeMismatches } from './context-loader.js';
+import { loadContexts, quarantineMismatches } from './context-loader.js';
 import { embedDocuments } from './embedder.js';
 import { embedSingleFile } from './embed-file.js';
 import { planChunks, buildRows } from './file-to-rows.js';
@@ -54,16 +54,19 @@ export async function runReconcile(
   projectName?: string,
   projectId = '',
   source = 'projectContext',
-  exclude?: string[]
+  exclude?: string[],
+  sourceType?: string
 ): Promise<ReconcileResult> {
   const allContexts = await loadContexts(contextDir, exclude);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
   // so if reconcile kept them in the disk set planReconcile would mark them "new"
   // EVERY session — the "re-embedding 1 forever" phantom (observed 2026-06-15 with a
   // stray `type: pattern`). Drop them here so reconcile and embed agree; they simply
-  // don't inject until fixed. A full `pnpm run embed` reports them loudly.
-  const badPaths = new Set(findPrefixTypeMismatches(allContexts).map((m) => m.relPath));
-  const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
+  // don't inject until fixed. A full `pnpm run embed` reports them loudly. Shared
+  // with the daemon's check-mode twin via quarantineMismatches() — MUST stay the
+  // one implementation both call, not two copies of the same guard (see its doc
+  // comment for why: this exact divergence caused a real docs-file false positive).
+  const { contexts } = quarantineMismatches(allContexts, sourceType);
   const exists = await tableExists(projectName);
   // Scope hash lookup to this source + projectId to avoid treating other sources' rows as orphans
   const hashes = await getContentHashes(projectName, source, projectId || undefined);
@@ -98,7 +101,14 @@ export async function runReconcile(
   // chunks + replaces per file; orphans (files gone from disk) delete all their chunks.
   let embedded = 0;
   for (const absPath of plan.embedPaths) {
-    const r = await embedSingleFile(absPath, contextDir, projectName, source, projectId);
+    const r = await embedSingleFile(
+      absPath,
+      contextDir,
+      projectName,
+      source,
+      projectId,
+      sourceType
+    );
     if (r.embedded) embedded++;
   }
   for (const filename of plan.toRemove)
