@@ -10,7 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadContext, categoryPrefix } from './context-loader.js';
+import { loadContext, categoryPrefix, quarantineMismatches } from './context-loader.js';
 import { embedDocument } from './embedder.js';
 import { upsertRows, deleteByFilename, getContentHashes } from '../storage/lance-client.js';
 import { isStale } from '../storage/staleness.js';
@@ -39,7 +39,8 @@ export async function embedSingleFile(
   contextDir: string,
   projectName?: string,
   source = 'projectContext',
-  projectId = ''
+  projectId = '',
+  sourceType?: string
 ): Promise<EmbedFileResult> {
   const normFile = path.resolve(absFile);
   const normDir = path.resolve(contextDir);
@@ -74,9 +75,13 @@ export async function embedSingleFile(
   }
 
   const ctx = loadContext(normFile, normDir);
-  // Honor the same prefix↔type hygiene gate as the full build.
-  const prefix = categoryPrefix(ctx.relPath);
-  if (prefix && ctx.type !== 'unknown' && ctx.type !== prefix) {
+  // Honor the same prefix↔type hygiene gate as the full build -- via the one
+  // shared quarantineMismatches() every embed/reconcile path now calls, so a
+  // doc source is exempt here exactly the same way it is everywhere else (this
+  // was its own independent, diverged copy of the guard until caught in review
+  // on PR #65 -- fourth occurrence of the same bug class).
+  if (quarantineMismatches([ctx], sourceType).contexts.length === 0) {
+    const prefix = categoryPrefix(ctx.relPath);
     return { embedded: false, reason: `prefix_type_mismatch (${prefix} vs ${ctx.type})` };
   }
 

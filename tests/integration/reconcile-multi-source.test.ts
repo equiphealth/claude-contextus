@@ -109,6 +109,68 @@ test('/reconcile {check:true} counts a NEW projectDocs file, not just projectCon
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
+test('/reconcile {check:true} does not quarantine a projectDocs file whose name coincidentally matches a category prefix', async () => {
+  // Regression for a real bug: categoryPrefix() is a pure filename matcher with no
+  // source-type awareness -- a docs file named `project-quirks.md` collides with the
+  // `project` metadata.type purely by naming coincidence. Only context-style sources
+  // should ever be subject to the <type>-<slug>.md prefix/type consistency check;
+  // docs are free-form (observed live in a real project; fixed directly in PR #65,
+  // no separate tracking issue was filed).
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  const contextDir = path.join(projectDir, '.claude', 'context');
+  const docsDir = path.join(projectDir, 'docs');
+  fs.mkdirSync(contextDir, { recursive: true });
+  fs.mkdirSync(docsDir, { recursive: true });
+
+  // Docs file whose name happens to start with a valid category word ("project-"),
+  // with a declared type that legitimately differs -- this is exactly the shape that
+  // false-positives if the source-type guard is missing.
+  fs.writeFileSync(
+    path.join(docsDir, 'project-quirks.md'),
+    '---\nname: project-quirks\nmetadata:\n  type: reference\n---\nsome quirky project notes'
+  );
+
+  const { status, json } = await post(
+    '/reconcile',
+    JSON.stringify({ cwd: projectDir, check: true })
+  );
+
+  assert.equal(status, 200);
+  assert.equal(json.quarantined.length, 0, 'a docs file must never be quarantined');
+  assert.equal(json.newCount, 1, 'the docs file should still count as embeddable');
+
+  fs.rmSync(projectDir, { recursive: true, force: true });
+});
+
+test('/reconcile {check:true} DOES quarantine a projectContext file with a real prefix/type mismatch', async () => {
+  // Same scenario, but in a real context-style source -- this one legitimately
+  // should be caught, confirming the docs exemption didn't just disable the check
+  // everywhere.
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  const contextDir = path.join(projectDir, '.claude', 'context');
+  fs.mkdirSync(path.join(contextDir, 'decisions'), { recursive: true });
+
+  fs.writeFileSync(
+    path.join(contextDir, 'decisions', 'decision-mismatched.md'),
+    '---\nname: mismatched\nmetadata:\n  type: gotcha\n---\nbody'
+  );
+
+  const { status, json } = await post(
+    '/reconcile',
+    JSON.stringify({ cwd: projectDir, check: true })
+  );
+
+  assert.equal(status, 200);
+  assert.equal(
+    json.quarantined.length,
+    1,
+    'a real context prefix/type mismatch must still be caught'
+  );
+  assert.match(json.quarantined[0], /decision-mismatched\.md$/);
+
+  fs.rmSync(projectDir, { recursive: true, force: true });
+});
+
 test('/reconcile {check:true} reports state:fresh when nothing changed across any source', async () => {
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
   const contextDir = path.join(projectDir, '.claude', 'context');
