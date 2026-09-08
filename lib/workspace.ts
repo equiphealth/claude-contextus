@@ -167,17 +167,42 @@ export interface ProjectEntry {
 const REGISTRY_PATH = expandHome('~/.contextus/data/projects.json');
 
 let registryCache: Record<string, ProjectEntry> | null = null;
+let registryMtimeMs: number | null = null;
 
+/** Current on-disk mtime, or null if the file doesn't exist. */
+function statRegistryMtime(): number | null {
+  try {
+    return fs.statSync(REGISTRY_PATH).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Loads the registry, re-reading from disk whenever the file's mtime has
+ * moved since our last load/save — not just once per process lifetime (#47).
+ * An external edit (manual cleanup, another tool) previously stayed invisible
+ * to a running daemon until restart, and got silently clobbered by the next
+ * unrelated write. The mtime check is one cheap `statSync` per call; when
+ * nothing external has touched the file it still returns the in-memory cache.
+ */
 function loadRegistry(): Record<string, ProjectEntry> {
-  if (registryCache) return registryCache;
+  const currentMtimeMs = statRegistryMtime();
+  if (registryCache && currentMtimeMs === registryMtimeMs) return registryCache;
+
   try {
     const text = fs.readFileSync(REGISTRY_PATH, 'utf-8');
     registryCache = JSON.parse(text);
-    return registryCache!;
   } catch {
     registryCache = {};
-    return registryCache;
   }
+  // Re-stat after the read (mirrors saveRegistry) instead of reusing the
+  // pre-read currentMtimeMs — if the file changed in the window between the
+  // initial stat and the read/parse above, the pre-read value wouldn't match
+  // what was actually parsed, causing one avoidable extra re-read next call
+  // (caught in code review on PR #57).
+  registryMtimeMs = statRegistryMtime();
+  return registryCache!;
 }
 
 function saveRegistry(reg: Record<string, ProjectEntry>): void {
@@ -185,6 +210,9 @@ function saveRegistry(reg: Record<string, ProjectEntry>): void {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(REGISTRY_PATH, JSON.stringify(reg, null, 2) + '\n');
   registryCache = reg;
+  // Read back our own write's mtime rather than assuming Date.now() — keeps us
+  // in sync with whatever timestamp resolution the filesystem actually used.
+  registryMtimeMs = statRegistryMtime();
 }
 
 /**
@@ -278,4 +306,5 @@ export function listProjects(): Array<{ id: string } & ProjectEntry> {
 /** Invalidate the in-memory cache (for tests). */
 export function clearRegistryCache(): void {
   registryCache = null;
+  registryMtimeMs = null;
 }

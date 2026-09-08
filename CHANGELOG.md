@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.7] - 2026-09-06
+
+### Fixed
+- **Workspace registry cache never re-synced with disk after first load** (GH issue #47). `loadRegistry()` (`lib/workspace.ts`) cached `~/.contextus/data/projects.json` for the daemon's entire process lifetime — any out-of-band edit (manual cleanup, another tool) was invisible to a running daemon, and the next unrelated `registerProject()` call silently clobbered it back by writing out the stale in-memory snapshot with its original timestamp. Fixed via mtime-check invalidation: `loadRegistry()` now compares the file's on-disk mtime against the mtime it last loaded/saved, and re-reads whenever they differ — one cheap `statSync` per call, no behavior change when nothing external has touched the file. No restart required for external edits to take effect anymore.
+
 ## [0.19.6] - 2026-09-04
 
 ### Added
