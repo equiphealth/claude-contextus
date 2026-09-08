@@ -32,10 +32,13 @@ for what you're debugging.
 ## Usage
 
 **Preferred: call the daemon directly with curl** — the daemon is already running
-(same one `/capture` talks to), and this skips a subprocess spin-up entirely:
+(same one `/capture` talks to), and this skips a subprocess spin-up entirely. The
+daemon's base URL defaults to `http://127.0.0.1:37800` but can differ (env override or
+a dynamic port written to `~/.contextus/runtime/daemon.port`) — respect
+`CONTEXTUS_DAEMON_URL` when it's set rather than hardcoding the port:
 
 ```bash
-curl -s -X POST http://127.0.0.1:37800/search \
+curl -s -X POST "${CONTEXTUS_DAEMON_URL:-http://127.0.0.1:37800}/search" \
   -H 'content-type: application/json' \
   -d '{"query":"error handling patterns","cwd":"'"$(pwd)"'","limit":10}'
 ```
@@ -47,9 +50,15 @@ Body fields:
 | `query` | Search text (required) | — |
 | `limit` | Max results to return | 10 |
 | `cwd` | Anchors scope resolution (workspace siblings + `__user__`) to this path | none |
-| `project` | Target by hash/name instead of `cwd` (skips workspace-scope resolution if `cwd` is omitted) | none |
+| `project` | Target by hash, friendly name, or filesystem path instead of `cwd` (resolved via `resolveProjectId`; skips workspace-scope resolution if `cwd` is omitted) | none |
 
-Response is raw JSON: `{ results: [{ id, filename, description, type, source, similarity }], query, project }`. No floor filtering — every match is included, similarity and all, so you can see exactly where the injection floor would have cut it off.
+Response shape depends on how the request resolves — don't assume every field is always present:
+- Empty/whitespace `query` → `{ results: [] }` only (no `query`/`project` fields)
+- No corpus table yet for the resolved project → `{ results: [] }` only
+- A real search → `{ results: [{ id, filename, description, type, source, similarity }], query, project }`
+- Failure (bad JSON body, embedding/search error) → `{ error: "..." }` with a non-200 status
+
+When there IS a full result set, it's unfiltered — no floor filtering, every match included, similarity and all, so you can see exactly where the injection floor would have cut it off.
 
 **Alternative: the CLI wrapper** (`scripts/cli/context-search.ts`) — same daemon call under the hood, just formats output for a human reading a terminal (`--scores`, human-readable by default, `--json` for the raw form) instead of a directly-consumable JSON blob:
 
