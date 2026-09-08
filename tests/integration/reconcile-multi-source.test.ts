@@ -114,7 +114,8 @@ test('/reconcile {check:true} does not quarantine a projectDocs file whose name 
   // source-type awareness -- a docs file named `project-quirks.md` collides with the
   // `project` metadata.type purely by naming coincidence. Only context-style sources
   // should ever be subject to the <type>-<slug>.md prefix/type consistency check;
-  // docs are free-form (observed live in a real project, GH issue TBD).
+  // docs are free-form (observed live in a real project; fixed directly in PR #65,
+  // no separate tracking issue was filed).
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
   const contextDir = path.join(projectDir, '.claude', 'context');
   const docsDir = path.join(projectDir, 'docs');
