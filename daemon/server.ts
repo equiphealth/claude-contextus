@@ -58,7 +58,7 @@ import { embedSingleFile } from '../lib/embedding/embed-file.js';
 import { upsertIndexEntry } from '../lib/capture/context-index.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { planReconcile, type DiskFile } from '../lib/storage/reconcile.js';
-import { loadContexts, findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
+import { loadContexts, quarantineMismatches } from '../lib/embedding/context-loader.js';
 import {
   resolveProjectScope,
   registerProject,
@@ -1325,6 +1325,7 @@ async function handleReconcile(
       {
         scope: 'project' | 'user';
         path: string;
+        type?: string;
         enabled?: boolean;
         exclude?: string[];
       }
@@ -1349,14 +1350,12 @@ async function handleReconcile(
       const sourceProjectId = s.scope === 'project' ? projectId : '';
 
       const allContexts = await loadContexts(sourcePath, s.exclude);
-      // Quarantine prefix/type-mismatch files — MUST match runReconcile, or they'd
-      // show as perpetual "new" here (the "re-embedding 1 forever" phantom). Report
-      // the count so session-start can surface "N file(s) can't embed — fix them".
-      // categoryPrefix() only matches known context prefixes (gotcha-, decision-,
-      // ...), so doc sources (no such prefix convention) never false-positive here.
-      const mismatches = findPrefixTypeMismatches(allContexts).map((m) => m.relPath);
-      const badPaths = new Set(mismatches);
-      const contexts = allContexts.filter((c) => !badPaths.has(c.relPath));
+      // Quarantine prefix/type-mismatch files — MUST match runReconcile (both call
+      // the shared quarantineMismatches(), so this can only drift out of sync with
+      // itself in one place now), or they'd show as perpetual "new" here (the
+      // "re-embedding 1 forever" phantom). Report the count so session-start can
+      // surface "N file(s) can't embed — fix them".
+      const { contexts, quarantined: mismatches } = quarantineMismatches(allContexts, s.type);
       // Scope hash lookup to THIS source + projectId — MUST match runReconcile,
       // or another source's rows look like orphans (or this source's look unembedded).
       const hashes = await getContentHashes(project, sourceName, sourceProjectId || undefined);
@@ -1414,6 +1413,7 @@ async function handleReconcile(
     {
       scope: 'project' | 'user';
       path: string;
+      type?: string;
       enabled?: boolean;
       exclude?: string[];
     }
@@ -1427,11 +1427,21 @@ async function handleReconcile(
       const pid = s.scope === 'project' ? projectId : '';
       const proj = s.scope === 'project' ? project : undefined;
 
-      return { sourceName, sourcePath, pid, proj, scope: s.scope, exclude: s.exclude };
+      return {
+        sourceName,
+        sourcePath,
+        pid,
+        proj,
+        scope: s.scope,
+        exclude: s.exclude,
+        sourceType: s.type
+      };
     });
 
   Promise.all(
-    reconcileTasks.map((t) => runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName, t.exclude))
+    reconcileTasks.map((t) =>
+      runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName, t.exclude, t.sourceType)
+    )
   )
     .then(async (results) => {
       const totalEmbedded = results.reduce((sum, r) => sum + r.embedded, 0);

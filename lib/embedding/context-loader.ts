@@ -164,3 +164,35 @@ export function findPrefixTypeMismatches(contexts: LoadedContext[]): PrefixTypeI
   }
   return issues;
 }
+
+/** Files quarantined by {@link quarantineMismatches}, plus what's left to embed. */
+export interface QuarantineResult {
+  contexts: LoadedContext[];
+  quarantined: string[];
+}
+
+/**
+ * Quarantine prefix/type-mismatch files from a source, UNLESS the source is a
+ * `doc`-type source. `categoryPrefix()` (used by `findPrefixTypeMismatches`) is a
+ * pure filename matcher with no source-type awareness — it false-positives on any
+ * docs file whose name happens to start with a valid `metadata.type` word (e.g. a
+ * docs file named `project-quirks.md` collides with the `project` type purely by
+ * naming coincidence). Only context-style sources actually follow the
+ * `<type>-<slug>.md` convention this check enforces; docs are free-form.
+ *
+ * The single shared implementation every reconcile/check code path calls — this
+ * rule diverged into two independent (and one correct, two wrong) copies before
+ * being unified here; a docs file could get silently quarantined depending on
+ * which code path happened to process it. Callers that don't need the filtered
+ * `contexts` back (they just want the quarantined list, or vice versa) can
+ * destructure only what they need.
+ */
+export function quarantineMismatches(
+  contexts: LoadedContext[],
+  sourceType?: string
+): QuarantineResult {
+  if (sourceType === 'doc') return { contexts, quarantined: [] };
+  const quarantined = findPrefixTypeMismatches(contexts).map((m) => m.relPath);
+  const badPaths = new Set(quarantined);
+  return { contexts: contexts.filter((c) => !badPaths.has(c.relPath)), quarantined };
+}
