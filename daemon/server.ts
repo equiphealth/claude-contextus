@@ -707,6 +707,7 @@ export function determineSource(
 ): {
   sourceName: string;
   sourceDir: string;
+  sourceType?: string;
   projectId: string;
   project: string | undefined;
 } | null {
@@ -717,6 +718,7 @@ export function determineSource(
     {
       scope: 'project' | 'user';
       path: string;
+      type?: string;
       enabled?: boolean;
     }
   >;
@@ -729,7 +731,7 @@ export function determineSource(
     if (absFile.startsWith(sourceDir + path.sep) || absFile === sourceDir) {
       const pid = s.scope === 'project' ? (project ?? projectHash(cwd)) : '';
       const proj = s.scope === 'project' ? project : undefined;
-      return { sourceName, sourceDir, projectId: pid, project: proj };
+      return { sourceName, sourceDir, sourceType: s.type, projectId: pid, project: proj };
     }
   }
 
@@ -761,10 +763,17 @@ async function handleNotify(
     return sendJson(res, 200, { ok: true, embedded: false, reason: 'not_in_any_source' });
   }
 
-  const { sourceName, sourceDir, projectId, project } = sourceInfo;
+  const { sourceName, sourceDir, sourceType, projectId, project } = sourceInfo;
   registerProject(projectId, cwd);
-  watchContextDir(sourceDir, project, sourceName, projectId);
-  const result = await embedSingleFile(absFile, sourceDir, project, sourceName, projectId);
+  watchContextDir(sourceDir, project, sourceName, projectId, sourceType);
+  const result = await embedSingleFile(
+    absFile,
+    sourceDir,
+    project,
+    sourceName,
+    projectId,
+    sourceType
+  );
   if (result.embedded) {
     invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
@@ -924,7 +933,7 @@ async function executeCaptureRequest(
     // Embed async
     const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
     const source = scope === 'user' ? 'userDocs' : 'projectDocs';
-    embedSingleFile(absFile, docsDir, project, source, projectId)
+    embedSingleFile(absFile, docsDir, project, source, projectId, 'doc')
       .then((result) => {
         if (result.embedded) invalidateCorpusCache(project);
         logInfo('Doc embedded', { file: filename, embedded: result.embedded });
@@ -1027,7 +1036,7 @@ ${content}
   // Embed async (fire-and-forget) — reconcile catches failures
   const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
   const source = scope === 'user' ? 'userContext' : 'projectContext';
-  embedSingleFile(absFile, contextDir, project, source, projectId)
+  embedSingleFile(absFile, contextDir, project, source, projectId, 'context')
     .then((result) => {
       if (result.embedded) invalidateCorpusCache(project);
       logInfo('Capture embedded', { file: relPath, embedded: result.embedded });
@@ -1217,7 +1226,8 @@ function watchContextDir(
   contextDir: string,
   project: string | undefined,
   source = 'projectContext',
-  projectId = ''
+  projectId = '',
+  sourceType?: string
 ): void {
   if (activeWatchers.has(contextDir)) return;
   if (!fs.existsSync(contextDir)) return;
@@ -1231,7 +1241,7 @@ function watchContextDir(
       if (!fs.existsSync(absPath)) {
         const projectLabel = project ?? 'default';
         if (reconcilingProjects.has(projectLabel)) return;
-        embedSingleFile(absPath, contextDir, project, source, projectId)
+        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType)
           .then((result) => {
             if (result.reason === 'deleted') {
               invalidateCorpusCache(project);
@@ -1247,7 +1257,7 @@ function watchContextDir(
         // File created or modified — re-embed it
         const projectLabel = project ?? 'default';
         if (reconcilingProjects.has(projectLabel)) return;
-        embedSingleFile(absPath, contextDir, project, source, projectId)
+        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType)
           .then((result) => {
             if (result.embedded) {
               invalidateCorpusCache(project);
@@ -1465,7 +1475,7 @@ async function handleReconcile(
 
       // Watch all source directories
       reconcileTasks.forEach((t) => {
-        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid);
+        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType);
       });
     })
     .catch((err) =>
