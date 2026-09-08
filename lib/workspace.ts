@@ -196,7 +196,12 @@ function loadRegistry(): Record<string, ProjectEntry> {
   } catch {
     registryCache = {};
   }
-  registryMtimeMs = currentMtimeMs;
+  // Re-stat after the read (mirrors saveRegistry) instead of reusing the
+  // pre-read currentMtimeMs — if the file changed in the window between the
+  // initial stat and the read/parse above, the pre-read value wouldn't match
+  // what was actually parsed, causing one avoidable extra re-read next call
+  // (caught in code review on PR #57).
+  registryMtimeMs = statRegistryMtime();
   return registryCache!;
 }
 
