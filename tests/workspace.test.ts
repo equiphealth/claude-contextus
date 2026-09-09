@@ -28,7 +28,8 @@ const {
   registerProject,
   projectPath,
   clearRegistryCache,
-  isValidProjectDir
+  isValidProjectDir,
+  resolveProjectId
 } = await import('../lib/workspace.js');
 
 const WORKSPACES_DIR = path.join(tmp, '.contextus', 'workspaces');
@@ -386,4 +387,40 @@ test('isValidProjectDir: false (not throw) on a path with no read permission on 
   // catch branch without needing real permission manipulation in CI.
   assert.doesNotThrow(() => isValidProjectDir('/root/definitely/not/accessible/here'));
   assert.equal(isValidProjectDir('/root/definitely/not/accessible/here'), false);
+});
+
+// --- resolveProjectId: unregistered-path canonicalization (GH issue #56 follow-up) ---
+
+test('resolveProjectId: an UNREGISTERED absolute path canonicalizes to projectHash, not itself', () => {
+  // Before this fix, an absolute path with no registry entry fell through to
+  // "assume it IS a hash" and was returned verbatim — so a first-ever call
+  // using a path (rather than cwd alone) would register that raw path string
+  // as the project's "id", while a later cwd-only call for the same project
+  // computed projectHash(cwd) instead. Two identities for one project.
+  const realDir = fs.mkdtempSync(path.join(tmp, 'unregistered-'));
+  const result = resolveProjectId(realDir);
+  assert.equal(result, projectHash(realDir));
+  assert.notEqual(result, realDir, 'must not return the raw path unchanged');
+});
+
+test('resolveProjectId: a REGISTERED path still resolves to its registered hash (unchanged behavior)', () => {
+  const realDir = fs.mkdtempSync(path.join(tmp, 'registered-'));
+  registerProject('customhash123', realDir);
+  assert.equal(resolveProjectId(realDir), 'customhash123');
+});
+
+test('resolveProjectId: a plain string that is not a path (and not registered) is still assumed to be a hash', () => {
+  // Preserves the original fallback for genuine hash inputs — only
+  // path-shaped strings (absolute or ~-prefixed) get the new canonicalization.
+  assert.equal(resolveProjectId('abc123def456'), 'abc123def456');
+});
+
+test('resolveProjectId: name-based, path-based, and cwd-derived-hash calls for the SAME unregistered project all agree', () => {
+  // The concrete scenario from PR #67's review: one call passes the project's
+  // path, another computes projectHash(cwd) directly (what handleReconcile's
+  // cwd-only branch does) — both must land on the identical id.
+  const realDir = fs.mkdtempSync(path.join(tmp, 'agree-'));
+  const byPath = resolveProjectId(realDir);
+  const byHash = projectHash(realDir);
+  assert.equal(byPath, byHash);
 });

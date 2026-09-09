@@ -772,12 +772,18 @@ async function handleNotify(
 
   const { sourceName, sourceDir, sourceType, projectId, project } = sourceInfo;
   registerProject(projectId, cwd);
-  // Reconcile-guard key must be the CALLING project's canonical id, not
-  // `projectId` above (which is '' for user-scoped sources — see
-  // determineSource). Otherwise this watcher could never recognize a bulk
-  // reconcile that's in flight for this project (GH issue #56).
-  const reconcileKey = projectParam ? resolveProjectId(projectParam) : projectHash(cwd);
-  watchContextDir(sourceDir, project, sourceName, projectId, sourceType, reconcileKey);
+  watchContextDir(sourceDir, project, sourceName, projectId, sourceType);
+  // Deliberately embeds even if `reconcilingSources.has(sourceDir)` — i.e. even
+  // while a bulk reconcile is mid-flight over this same source. embedSingleFile
+  // re-reads the file from disk at call time (it doesn't consume a pre-fetched
+  // snapshot), and this call only fires after the PostToolUse edit that
+  // triggered it has already landed on disk. So whichever of {this call,
+  // reconcile's own per-file embed for this exact path} runs LAST simply
+  // upserts whatever is currently on disk — last-write-wins, not
+  // stale-overwrites-fresh. Skipping here to avoid a hypothetical race would
+  // risk the opposite, real failure mode: silently dropping an edit that
+  // reconcile's already-computed plan (a snapshot taken before this edit)
+  // doesn't know to re-check. See PR #67 review discussion.
   const result = await embedSingleFile(
     absFile,
     sourceDir,
@@ -1239,15 +1245,7 @@ function watchContextDir(
   project: string | undefined,
   source = 'projectContext',
   projectId = '',
-  sourceType?: string,
-  // The reconcilingProjects dedup key for the project THIS source's bulk
-  // reconcile ran under — always the canonical resolveProjectId()/projectHash()
-  // hash, never a raw name/path/label. Distinct from `project` (a human label,
-  // used only for logging) and from `projectId` (per-source storage scoping,
-  // '' for user-scoped sources that don't belong to any one project). Without
-  // this, a user-scoped source's watcher guard fell back to the constant
-  // 'default' regardless of which project's reconcile call armed it — see #56.
-  reconcileKey?: string
+  sourceType?: string
 ): void {
   if (activeWatchers.has(contextDir)) return;
   if (!fs.existsSync(contextDir)) return;
@@ -1257,10 +1255,22 @@ function watchContextDir(
       if (!filename || !filename.endsWith('.md')) return;
       // Handle both 'rename' (create/delete) and 'change' (in-place edit)
       const absPath = path.join(contextDir, filename);
+      // Guard is checked LIVE against the current set every time an event
+      // fires — not captured once at watcher-creation time. A watcher for a
+      // user-scoped (shared) source dir is created once and then reused by
+      // every project that touches it (activeWatchers is keyed by contextDir,
+      // and this function returns early once one exists) — a key captured at
+      // creation would go stale the moment a DIFFERENT project's bulk
+      // reconcile is the one actually in flight over this same directory. Since
+      // `contextDir` here is the exact same absolute path handleReconcile adds
+      // to `reconcilingSources` for every task (project- or user-scoped), this
+      // check is correct regardless of which project armed the watcher or
+      // which project is currently reconciling it (GH issue #56 follow-up,
+      // surfaced by code review on PR #67).
+      if (reconcilingSources.has(contextDir)) return;
       // Only act on deletions — file gone from disk
       if (!fs.existsSync(absPath)) {
         const projectLabel = project ?? 'default';
-        if (reconcileKey && reconcilingProjects.has(reconcileKey)) return;
         embedSingleFile(absPath, contextDir, project, source, projectId, sourceType)
           .then((result) => {
             if (result.reason === 'deleted') {
@@ -1276,7 +1286,6 @@ function watchContextDir(
       } else {
         // File created or modified — re-embed it
         const projectLabel = project ?? 'default';
-        if (reconcileKey && reconcilingProjects.has(reconcileKey)) return;
         embedSingleFile(absPath, contextDir, project, source, projectId, sourceType)
           .then((result) => {
             if (result.embedded) {
@@ -1304,12 +1313,40 @@ function watchContextDir(
 }
 
 /**
- * Projects with an in-flight background reconcile. Prevents a re-fire (e.g. two
- * session-starts in quick succession) from stacking a second embed pass over the
- * same corpus. The reconcile itself is idempotent, so this is an efficiency
- * guard, not a correctness one.
+ * Absolute source directory paths with an in-flight background reconcile.
+ * Prevents a re-fire (e.g. two session-starts in quick succession) from
+ * stacking a second embed pass over the same corpus, and stops a source's
+ * live fs.watch from double-embedding a file the bulk reconcile is already
+ * about to (re-)embed. The reconcile itself is idempotent, so this is an
+ * efficiency guard, not a correctness one.
+ *
+ * Keyed by the source's absolute directory path (the same value passed to
+ * both `runReconcile` and `watchContextDir`), NOT by project identity. A
+ * project label/name/hash can be represented multiple inconsistent ways
+ * across calls (GH issue #56); a filesystem path canonicalizes for free via
+ * path.resolve and — crucially — is the same value regardless of which
+ * project's `/reconcile` call happens to be the one processing a *shared*
+ * user-scoped source, so a watcher for a shared dir stays correct no matter
+ * which project currently owns the in-flight reconcile over it.
  */
-const reconcilingProjects = new Set<string>();
+const reconcilingSources = new Set<string>();
+
+/**
+ * TEST-ONLY escape hatch. `handleReconcile`'s non-check path never resolves
+ * without a real embedding provider (modelLoaded gate), which CI doesn't have
+ * — see reconcile-multi-source.test.ts's file-level doc comment for why every
+ * other test in that file sticks to `check: true`. Seeding this set directly
+ * lets a test simulate "a bulk reconcile is already in flight over path X"
+ * and then assert the busy-guard (`/reconcile`, non-check) and the watcher
+ * guard (`watchContextDir`'s fs.watch callback) both respect it — without
+ * needing a live model. Never used by the real daemon.
+ */
+export function __test_seedReconcilingSource(sourcePath: string): void {
+  reconcilingSources.add(sourcePath);
+}
+export function __test_clearReconcilingSources(): void {
+  reconcilingSources.clear();
+}
 
 /**
  * POST /reconcile — bring a project's corpus in line with its `.claude/context/`.
@@ -1421,27 +1458,12 @@ async function handleReconcile(
     });
   }
 
-  // Guard key is the canonical projectId hash (computed above via
-  // resolveProjectId()/projectHash()), NOT projectLabel — projectLabel is the
-  // raw caller-supplied label (name, hash, or path, or 'default' if omitted)
-  // and can render differently across calls for the SAME project, letting two
-  // reconciles for it race past this guard simultaneously (GH issue #56).
-  if (reconcilingProjects.has(projectId)) {
-    return sendJson(res, 200, { state: 'busy' });
-  }
-  if (!modelLoaded) {
-    // Can't embed without the model; the caller can retry once /health is warm.
-    return sendJson(res, 200, { state: 'cold', reason: 'model_not_loaded' });
-  }
-
-  reconcilingProjects.add(projectId);
-  // Respond immediately; the embed runs detached from the request lifecycle.
-  sendJson(res, 200, { state: 'started' });
-
   // Reconcile all enabled sources from the 3-tier MERGED config — not the raw
   // plugin manifest, so a project's .claude/contextus.jsonc overrides (custom
   // exclude, disabled source, custom path) are honored the same way the manual
-  // `pnpm embed` CLI already honors them (GH issue #22).
+  // `pnpm embed` CLI already honors them (GH issue #22). Computed BEFORE the
+  // busy-guard below so the guard can check by source path (see
+  // reconcilingSources's doc comment for why that's the right key — GH #56).
   const cfg = loadProjectConfig(projectId, cwd);
   const sources = cfg.sources as Record<
     string,
@@ -1473,6 +1495,18 @@ async function handleReconcile(
       };
     });
 
+  if (reconcileTasks.some((t) => reconcilingSources.has(t.sourcePath))) {
+    return sendJson(res, 200, { state: 'busy' });
+  }
+  if (!modelLoaded) {
+    // Can't embed without the model; the caller can retry once /health is warm.
+    return sendJson(res, 200, { state: 'cold', reason: 'model_not_loaded' });
+  }
+
+  reconcileTasks.forEach((t) => reconcilingSources.add(t.sourcePath));
+  // Respond immediately; the embed runs detached from the request lifecycle.
+  sendJson(res, 200, { state: 'started' });
+
   Promise.all(
     reconcileTasks.map((t) =>
       runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName, t.exclude, t.sourceType)
@@ -1498,13 +1532,9 @@ async function handleReconcile(
         });
       }
 
-      // Watch all source directories. Pass the CALLING project's canonical
-      // projectId as the reconcile-guard key for every source, including
-      // user-scoped ones (t.pid is '' for those) — see watchContextDir's
-      // reconcileKey param doc for why this must be the same key for all
-      // sources reconciled by this one call, not each source's own scoping id.
+      // Watch all source directories.
       reconcileTasks.forEach((t) => {
-        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType, projectId);
+        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType);
       });
     })
     .catch((err) =>
@@ -1513,7 +1543,7 @@ async function handleReconcile(
         message: err instanceof Error ? err.message : String(err)
       })
     )
-    .finally(() => reconcilingProjects.delete(projectId));
+    .finally(() => reconcileTasks.forEach((t) => reconcilingSources.delete(t.sourcePath)));
 }
 
 /**

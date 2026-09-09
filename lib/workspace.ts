@@ -293,6 +293,16 @@ export function resolveProjectId(nameOrHash: string): string {
   for (const [hash, entry] of Object.entries(reg)) {
     if (entry.path === resolved) return hash;
   }
+  // An absolute (or ~-expandable) path that isn't registered yet — canonicalize
+  // via projectHash instead of returning it raw. Without this, the FIRST call
+  // for a brand-new project that happens to pass its path (rather than cwd
+  // alone) would register that raw path string as the "projectId", and a later
+  // cwd-only call for the same project would compute projectHash(cwd) instead
+  // — two different identities for one project (GH issue #56 follow-up,
+  // surfaced by code review on PR #67).
+  if (path.isAbsolute(nameOrHash) || nameOrHash.startsWith('~')) {
+    return projectHash(resolved);
+  }
   // Assume it IS a hash (caller may have computed it directly)
   return nameOrHash;
 }

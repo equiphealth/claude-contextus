@@ -211,6 +211,47 @@ test('/reconcile {check:true} reflects a project-level transcriptMining override
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
+test('/reconcile (non-check) busy-guard agrees across project-name and cwd-only representations of the same project', async () => {
+  // Regression for GH issue #56, as redesigned after PR #67 review: the guard
+  // is keyed by the source's absolute directory path (reconcilingSources), not
+  // by any caller-supplied project label — so two /reconcile calls for the
+  // SAME cwd must report 'busy' regardless of how `project` is (or isn't)
+  // specified, since the path is derived purely from cwd + the source's
+  // configured relative path. Seeds the guard directly (see
+  // __test_seedReconcilingSource's doc comment) since the real busy path only
+  // populates it after a modelLoaded check this suite can't satisfy without a
+  // live embedding provider.
+  const { __test_seedReconcilingSource, __test_clearReconcilingSources } =
+    await import('../../daemon/server.js');
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  fs.mkdirSync(path.join(projectDir, '.claude', 'context'), { recursive: true });
+
+  const sourcePath = path.join(projectDir, '.claude', 'context');
+  __test_seedReconcilingSource(sourcePath);
+
+  try {
+    const byFriendlyName = await post(
+      '/reconcile',
+      JSON.stringify({ cwd: projectDir, project: path.basename(projectDir) })
+    );
+    const byCwdOnly = await post('/reconcile', JSON.stringify({ cwd: projectDir }));
+
+    assert.equal(
+      byFriendlyName.json.state,
+      'busy',
+      'a friendly-name call must see the in-flight guard'
+    );
+    assert.equal(
+      byCwdOnly.json.state,
+      'busy',
+      'a cwd-only call for the same project must see it too'
+    );
+  } finally {
+    __test_clearReconcilingSources();
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
 test('determineSource routes a docs/ file to the projectDocs source, not just .claude/context/', async () => {
   const { determineSource } = await import('../../daemon/server.js');
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
