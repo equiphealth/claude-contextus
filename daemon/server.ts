@@ -729,7 +729,14 @@ export function determineSource(
     const sourceDir = s.scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
 
     if (absFile.startsWith(sourceDir + path.sep) || absFile === sourceDir) {
-      const pid = s.scope === 'project' ? (project ?? projectHash(cwd)) : '';
+      // Reuse the already-canonicalized projectIdForConfig (resolveProjectId()/
+      // projectHash()) rather than the raw `project` label — the old `project ??
+      // projectHash(cwd)` fallback returned an UNRESOLVED name/path verbatim
+      // whenever a caller passed one, so rows for the same project could end up
+      // scoped under two different projectId strings depending on how the
+      // caller referred to it (GH issue #56 — same normalization gap that hit
+      // reconcilingProjects's dedup key).
+      const pid = s.scope === 'project' ? projectIdForConfig : '';
       const proj = s.scope === 'project' ? project : undefined;
       return { sourceName, sourceDir, sourceType: s.type, projectId: pid, project: proj };
     }
@@ -765,7 +772,12 @@ async function handleNotify(
 
   const { sourceName, sourceDir, sourceType, projectId, project } = sourceInfo;
   registerProject(projectId, cwd);
-  watchContextDir(sourceDir, project, sourceName, projectId, sourceType);
+  // Reconcile-guard key must be the CALLING project's canonical id, not
+  // `projectId` above (which is '' for user-scoped sources — see
+  // determineSource). Otherwise this watcher could never recognize a bulk
+  // reconcile that's in flight for this project (GH issue #56).
+  const reconcileKey = projectParam ? resolveProjectId(projectParam) : projectHash(cwd);
+  watchContextDir(sourceDir, project, sourceName, projectId, sourceType, reconcileKey);
   const result = await embedSingleFile(
     absFile,
     sourceDir,
@@ -1227,7 +1239,15 @@ function watchContextDir(
   project: string | undefined,
   source = 'projectContext',
   projectId = '',
-  sourceType?: string
+  sourceType?: string,
+  // The reconcilingProjects dedup key for the project THIS source's bulk
+  // reconcile ran under — always the canonical resolveProjectId()/projectHash()
+  // hash, never a raw name/path/label. Distinct from `project` (a human label,
+  // used only for logging) and from `projectId` (per-source storage scoping,
+  // '' for user-scoped sources that don't belong to any one project). Without
+  // this, a user-scoped source's watcher guard fell back to the constant
+  // 'default' regardless of which project's reconcile call armed it — see #56.
+  reconcileKey?: string
 ): void {
   if (activeWatchers.has(contextDir)) return;
   if (!fs.existsSync(contextDir)) return;
@@ -1240,7 +1260,7 @@ function watchContextDir(
       // Only act on deletions — file gone from disk
       if (!fs.existsSync(absPath)) {
         const projectLabel = project ?? 'default';
-        if (reconcilingProjects.has(projectLabel)) return;
+        if (reconcileKey && reconcilingProjects.has(reconcileKey)) return;
         embedSingleFile(absPath, contextDir, project, source, projectId, sourceType)
           .then((result) => {
             if (result.reason === 'deleted') {
@@ -1256,7 +1276,7 @@ function watchContextDir(
       } else {
         // File created or modified — re-embed it
         const projectLabel = project ?? 'default';
-        if (reconcilingProjects.has(projectLabel)) return;
+        if (reconcileKey && reconcilingProjects.has(reconcileKey)) return;
         embedSingleFile(absPath, contextDir, project, source, projectId, sourceType)
           .then((result) => {
             if (result.embedded) {
@@ -1401,7 +1421,12 @@ async function handleReconcile(
     });
   }
 
-  if (reconcilingProjects.has(projectLabel)) {
+  // Guard key is the canonical projectId hash (computed above via
+  // resolveProjectId()/projectHash()), NOT projectLabel — projectLabel is the
+  // raw caller-supplied label (name, hash, or path, or 'default' if omitted)
+  // and can render differently across calls for the SAME project, letting two
+  // reconciles for it race past this guard simultaneously (GH issue #56).
+  if (reconcilingProjects.has(projectId)) {
     return sendJson(res, 200, { state: 'busy' });
   }
   if (!modelLoaded) {
@@ -1409,7 +1434,7 @@ async function handleReconcile(
     return sendJson(res, 200, { state: 'cold', reason: 'model_not_loaded' });
   }
 
-  reconcilingProjects.add(projectLabel);
+  reconcilingProjects.add(projectId);
   // Respond immediately; the embed runs detached from the request lifecycle.
   sendJson(res, 200, { state: 'started' });
 
@@ -1473,9 +1498,13 @@ async function handleReconcile(
         });
       }
 
-      // Watch all source directories
+      // Watch all source directories. Pass the CALLING project's canonical
+      // projectId as the reconcile-guard key for every source, including
+      // user-scoped ones (t.pid is '' for those) — see watchContextDir's
+      // reconcileKey param doc for why this must be the same key for all
+      // sources reconciled by this one call, not each source's own scoping id.
       reconcileTasks.forEach((t) => {
-        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType);
+        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType, projectId);
       });
     })
     .catch((err) =>
@@ -1484,7 +1513,7 @@ async function handleReconcile(
         message: err instanceof Error ? err.message : String(err)
       })
     )
-    .finally(() => reconcilingProjects.delete(projectLabel));
+    .finally(() => reconcilingProjects.delete(projectId));
 }
 
 /**

@@ -230,6 +230,53 @@ test('determineSource routes a docs/ file to the projectDocs source, not just .c
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
+test('determineSource resolves a friendly project name to the canonical hash, not the raw label', async () => {
+  // Regression for GH issue #56: determineSource used to return
+  // `project ?? projectHash(cwd)` verbatim as `projectId` for project-scoped
+  // sources — so calling with a friendly name returned that NAME as the
+  // "projectId", not its canonical hash. Since projectId feeds both storage
+  // scoping (embedSingleFile/getContentHashes) and the reconcilingProjects
+  // dedup guard (via the reconcileKey threaded through watchContextDir), two
+  // calls for the same project — one by name, one by hash or cwd alone —
+  // would disagree on identity and let concurrent reconciles race past the
+  // guard.
+  const { determineSource } = await import('../../daemon/server.js');
+  const { registerProject, resolveProjectId } = await import('../../lib/workspace.js');
+  const { projectHash } = await import('../../lib/config.js');
+
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  fs.mkdirSync(path.join(projectDir, '.claude', 'context'), { recursive: true });
+  const canonicalId = projectHash(projectDir);
+  registerProject(canonicalId, projectDir);
+  const friendlyName = path.basename(projectDir);
+  assert.equal(
+    resolveProjectId(friendlyName),
+    canonicalId,
+    'sanity: name must resolve to the hash'
+  );
+
+  const absFile = path.join(projectDir, '.claude', 'context', 'decisions', 'decision-foo.md');
+  fs.mkdirSync(path.dirname(absFile), { recursive: true });
+  fs.writeFileSync(absFile, '---\nname: foo\nmetadata:\n  type: decision\n---\nbody');
+
+  const byName = determineSource(absFile, projectDir, friendlyName);
+  const byNothing = determineSource(absFile, projectDir, undefined);
+
+  assert.ok(byName && byNothing);
+  assert.equal(
+    byName!.projectId,
+    canonicalId,
+    'a friendly-name call must resolve to the canonical hash'
+  );
+  assert.equal(
+    byName!.projectId,
+    byNothing!.projectId,
+    'name-based and cwd-only calls for the same project must agree on projectId'
+  );
+
+  fs.rmSync(projectDir, { recursive: true, force: true });
+});
+
 test('determineSource still returns null for a file outside every configured source', async () => {
   const { determineSource } = await import('../../daemon/server.js');
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
