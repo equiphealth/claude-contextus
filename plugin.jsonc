@@ -114,7 +114,12 @@
       "mode": "staging",
       // "always" = emit "Context: captured:" for every capture
       // "off" = no capture confirmation in response
-      "captureFooter": "always"
+      "captureFooter": "always",
+      // PROTOTYPE (default off): Stop-hook enforcement gate. When true, a
+      // `git commit` with no capture logged since blocks turn completion once,
+      // asking for a /capture call or an explicit "Context: capture-skip: <why>".
+      // See decisions/decision-capture-enforcement-needs-a-stop-hook-not-wording.md
+      "stopGate": false
     },
     "calibration": {
       // Quality evaluation (LOGGING.md calibration_eval). Provider judges whether

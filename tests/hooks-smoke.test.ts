@@ -107,6 +107,27 @@ test('stop-evaluation.js: no active campaign → loads, exits 0 (the ESM-regress
   assert.ok(r.parsed !== null || r.stdout.trim() === '', `unexpected stdout: ${r.stdout}`);
 });
 
+test('capture-gate-hook.js: gate disabled by default → loads, exits 0, no output', () => {
+  const r = runHook('capture-gate-hook.js', {
+    transcript_path: '/nonexistent/transcript.jsonl',
+    cwd: process.cwd()
+  });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+  // stopGate defaults to false, so this must be a silent no-op — never blocks
+  // by default (prototype opt-in only).
+  assert.equal(r.stdout.trim(), '');
+});
+
+test('capture-gate-hook.js: stop_hook_active=true → never blocks (loop guard)', () => {
+  const r = runHook('capture-gate-hook.js', {
+    transcript_path: '/nonexistent/transcript.jsonl',
+    cwd: process.cwd(),
+    stop_hook_active: true
+  });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+  assert.equal(r.stdout.trim(), '');
+});
+
 test('session-start-hook.js: silent verbosity → loads, exits 0, continues', () => {
   const r = runHook(
     'session-start-hook.js',
