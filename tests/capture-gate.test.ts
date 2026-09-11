@@ -9,7 +9,9 @@ import {
   hasExplicitSkip,
   hasCaptureFooter,
   lastCaptureTimestamp,
-  shouldBlockForCapture
+  shouldBlockForCapture,
+  extractCommitSummary,
+  logCaptureNudge
 } from '../scripts/lib/capture-gate.js';
 
 function writeTranscript(lines: unknown[]): string {
@@ -170,6 +172,103 @@ describe('shouldBlockForCapture', () => {
         lastCaptureTs: '2026-09-11T10:05:00.000Z' // after turn start
       }),
       false
+    );
+  });
+});
+
+describe('extractCommitSummary', () => {
+  it('extracts a double-quoted -m message', () => {
+    const summary = extractCommitSummary([
+      { name: 'Bash', input: { command: 'git commit -m "fix: normalize dedup key"' } }
+    ]);
+    assert.equal(summary, 'fix: normalize dedup key');
+  });
+
+  it('extracts a single-quoted -m message', () => {
+    const summary = extractCommitSummary([
+      { name: 'Bash', input: { command: "git commit -m 'chore: bump deps'" } }
+    ]);
+    assert.equal(summary, 'chore: bump deps');
+  });
+
+  it('extracts the first line of a heredoc commit message', () => {
+    const summary = extractCommitSummary([
+      {
+        name: 'Bash',
+        input: {
+          command:
+            'git commit -m "$(cat <<\'EOF\'\nfeat: prototype Stop-hook gate\n\nlonger body here\nEOF\n)"'
+        }
+      }
+    ]);
+    assert.equal(summary, 'feat: prototype Stop-hook gate');
+  });
+
+  it('falls back to a generic label when the message cannot be parsed', () => {
+    const summary = extractCommitSummary([{ name: 'Bash', input: { command: 'git commit' } }]);
+    assert.equal(summary, 'recent commit');
+  });
+
+  it('returns null when there is no commit call at all', () => {
+    assert.equal(extractCommitSummary([bashLs]), null);
+  });
+});
+
+describe('logCaptureNudge', () => {
+  function tmpLogDir(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'capture-nudge-log-'));
+  }
+
+  it('appends a JSONL record and a human-readable daemon.log line for a nudge', () => {
+    const logDir = tmpLogDir();
+    logCaptureNudge({ outcome: 'nudged', project: 'abc123', commitSummary: 'fix: x', logDir });
+
+    const jsonl = fs.readFileSync(path.join(logDir, 'capture-nudges.jsonl'), 'utf-8').trim();
+    const record = JSON.parse(jsonl);
+    assert.equal(record.type, 'capture_nudge');
+    assert.equal(record.outcome, 'nudged');
+    assert.equal(record.project, 'abc123');
+    assert.equal(record.commitSummary, 'fix: x');
+    assert.ok(record.timestamp);
+
+    const humanLog = fs.readFileSync(path.join(logDir, 'daemon.log'), 'utf-8');
+    assert.match(humanLog, /Nudged Claude to capture context for "fix: x" — waiting for response/);
+  });
+
+  it('logs the "but it did not" message on a missed outcome', () => {
+    const logDir = tmpLogDir();
+    logCaptureNudge({ outcome: 'missed', project: 'abc123', commitSummary: 'fix: y', logDir });
+    const humanLog = fs.readFileSync(path.join(logDir, 'daemon.log'), 'utf-8');
+    assert.match(humanLog, /Nudged Claude to capture context for "fix: y" but it did not/);
+    assert.match(humanLog, /WARN/);
+  });
+
+  it('logs the recovered message on a captured-after-nudge outcome', () => {
+    const logDir = tmpLogDir();
+    logCaptureNudge({
+      outcome: 'captured_after_nudge',
+      project: 'abc123',
+      commitSummary: 'fix: z',
+      logDir
+    });
+    const humanLog = fs.readFileSync(path.join(logDir, 'daemon.log'), 'utf-8');
+    assert.match(humanLog, /Claude captured context for "fix: z" after being nudged/);
+  });
+
+  it('never throws when the log directory cannot be created', () => {
+    // A file path used as a "directory" — mkdirSync will fail; must be silently best-effort.
+    const fakeDir = path.join(
+      os.tmpdir(),
+      `capture-nudge-not-a-dir-${Math.random().toString(36).slice(2)}`
+    );
+    fs.writeFileSync(fakeDir, 'not a directory');
+    assert.doesNotThrow(() =>
+      logCaptureNudge({
+        outcome: 'nudged',
+        project: 'abc123',
+        commitSummary: 'fix: x',
+        logDir: fakeDir
+      })
     );
   });
 });

@@ -12,29 +12,20 @@ metadata:
 See [[gotcha-trigger-capture-on-the-verbalized-insight-not-at-wrapup]]. Even with an already-maximally-directive instruction ("OBLIGATION: you MUST capture..."), captures were repeatedly skipped across a whole session on a long fix→chase→revert→re-verify task. The user asked: should the wording in contextus change?
 
 ## Analysis
-Wording is not the bottleneck — the instruction is already about as strong as text gets. The failure is structural:
-
-- The capture reminder is injected via **UserPromptSubmit**, which fires at the *start* of every turn, competing for attention against whatever the live task is. A live task always wins against a soft reminder.
-- Nothing blocks the turn from ending without a capture call — there is no equivalent of this repo's own pre-commit hook, which does not *ask* the agent to run `npm run build`, it *runs it and fails the commit* if skipped. The capture nudge had no equivalent teeth.
+Wording is not the bottleneck. The failure is structural: the capture reminder fires via UserPromptSubmit, competing with the live task, and nothing blocks the turn from ending without a capture call.
 
 ## Decision — three changes, in order of leverage
+1. Move the check to a Stop hook, not UserPromptSubmit.
+2. Make it a hard gate for cheaply-detectable cases (git commit + no capture logged since).
+3. Track the miss rate as a metric, the way retrieval usage is already tracked.
 
-1. **Move the check to a Stop hook, not UserPromptSubmit.** A Stop hook fires at the natural end of a turn, when there's no competing task left. Scope it to: did this turn touch files / run shell commands / surface a decision, with no matching `/capture` call for that turn? If so, force a nudge or hold turn completion.
-2. **Make it a hard gate for cheaply-detectable cases, not just a suggestion.** A heuristic ("git commit made this turn + no capture logged since") is enough to force a checkpoint, no LLM judgment call needed.
-3. **Track the miss rate as a metric**, the way retrieval usage is already tracked.
+## Status: fully prototyped (2026-09-11)
+All three items implemented on branch `feat/capture-stop-hook-gate`:
 
-## Why not just reword
-The failure mode isn't ambiguity in the instruction — it's that a competing live task always wins when nothing *enforces* the alternative.
+- **Items 1+2** (commit 19d2d5b): `scripts/lib/capture-gate.js` (pure detection logic) + `scripts/capture-gate-hook.js` (Stop-hook wrapper, off by default via `contextCapture.stopGate`, honors `stop_hook_active` loop guard).
+- **Item 3 — miss-rate metric** (commit follows 9610e3d): the hook now logs on BOTH invocations — the initial block (`outcome: nudged`) and the retry after Claude's response to the nudge (`outcome: captured_after_nudge` or `outcome: missed`). `extractCommitSummary()` pulls a human-readable commit subject (handles `-m "..."`, `-m '...'`, and this repo's own heredoc commit convention). `logCaptureNudge()` writes a structured record to `~/.contextus/logs/capture-nudges.jsonl` (for aggregate miss-rate analysis later) AND a human-readable line to `~/.contextus/logs/daemon.log` — e.g. `Nudged Claude to capture context for "fix: x" but it did not` — so it surfaces in `contextus watch` immediately instead of only being discoverable by asking after the fact.
+- Config: `contextCapture.stopGate` documented in both `plugin.jsonc` and the annotated `examples/contextus.jsonc`, plus a feature note in `docs/FEATURES.md`.
+- Tests: `tests/capture-gate.test.ts` covers `extractCommitSummary` (all message-format cases) and `logCaptureNudge` (JSONL + human-log content, best-effort failure handling). Full suite (452 tests) + `tsc --noEmit` + prettier all green.
 
-## Status: prototyped (2026-09-11)
-Implemented item 1 (Stop hook) + item 2 (hard gate, narrow heuristic) on branch `feat/capture-stop-hook-gate`, commit `19d2d5b`:
-
-- `scripts/lib/capture-gate.js` — pure detection logic: `hasGitCommit`, `hasExplicitSkip` (`Context: capture-skip: <why>`), `hasCaptureFooter` (`Context: captured:`/`propose:`), `lastCaptureTimestamp` (reads `~/.contextus/captures.log`), `shouldBlockForCapture` (combines all of the above against the turn's start timestamp).
-- `scripts/capture-gate-hook.js` — thin Stop-hook wrapper. Honors Claude Code's `stop_hook_active` field as a loop guard (nudges once per stop cycle, never traps the session). Gate is **off by default**, opt in via `config.contextCapture.stopGate: true` (plugin.jsonc / `.claude/contextus.jsonc`) — this is a prototype, not yet a default.
-- Registered as a second entry under the existing `Stop` hook slot in `hooks/hooks.json`, alongside `stop-evaluation.js`.
-- Tests: `tests/capture-gate.test.ts` (pure-logic unit tests) + two smoke-test cases added to `tests/hooks-smoke.test.ts` (gate-disabled-by-default no-op, and stop_hook_active loop guard). Full suite (443 tests) + `tsc --noEmit` + prettier all green.
-
-Item 3 (miss-rate metric) not yet implemented — natural follow-up once the gate has been dogfooded and logs real block events.
-
-Not yet merged to main; needs real dogfooding with `stopGate: true` before considering it a default.
+Not yet merged to main; needs real dogfooding with `stopGate: true` before considering it a default. Natural next step once dogfooded: a `/context-stats`-style rollup of `capture-nudges.jsonl` (nudge rate, miss rate over time) rather than raw log-tailing.
 

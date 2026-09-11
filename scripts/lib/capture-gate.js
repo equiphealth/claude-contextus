@@ -16,10 +16,13 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 const GIT_COMMIT_RE = /\bgit\b[^\n]*\bcommit\b/i;
 const CAPTURE_SKIP_RE = /Context:\s*capture-skip:/i;
 const CAPTURE_ACK_RE = /Context:\s*(captured|propose):/i;
+const DEFAULT_LOG_DIR = path.join(os.homedir(), '.contextus', 'logs');
 
 /**
  * Read a transcript JSONL file and pull out the last turn: the assistant
@@ -124,4 +127,83 @@ export function shouldBlockForCapture({ toolUses, responseText, turnStartTs, las
     return false; // a capture was logged after this turn started
   }
   return true;
+}
+
+/**
+ * Best-effort extraction of a human-readable summary of the commit that
+ * triggered the gate, for the nudge log. Tries `-m "..."`/`-m '...'` first,
+ * then this repo's heredoc commit convention (`-m "$(cat <<'EOF' ...`),
+ * falling back to a generic label.
+ * @param {Array<{name: string, input: unknown}>} toolUses
+ */
+export function extractCommitSummary(toolUses) {
+  const commitCall = toolUses.find(
+    (t) => t.name === 'Bash' && typeof t?.input?.command === 'string' && GIT_COMMIT_RE.test(t.input.command)
+  );
+  if (!commitCall) return null;
+  const cmd = commitCall.input.command;
+  // Heredoc convention (this repo's own commit style) first — it nests a
+  // double-quoted `-m "$(cat <<'EOF' ...)"` that would otherwise falsely
+  // match the plain -m "..." pattern below on its opening quote.
+  let m = cmd.match(/<<['"]?EOF['"]?\s*\n([^\n]+)/);
+  if (m) return m[1].trim();
+  m = cmd.match(/-m\s+"([^"]+)"/) || cmd.match(/-m\s+'([^']+)'/);
+  if (m) return m[1].split('\n')[0].trim();
+  return 'recent commit';
+}
+
+function humanLine(level, message, kv) {
+  const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
+  const pairs = kv
+    ? Object.entries(kv)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(', ')
+    : '';
+  return `[${ts}] ${level} ${message}${pairs ? ` (${pairs})` : ''}\n`;
+}
+
+const NUDGE_MESSAGES = {
+  nudged: (summary) => `Nudged Claude to capture context for "${summary}" — waiting for response`,
+  captured_after_nudge: (summary) => `Claude captured context for "${summary}" after being nudged`,
+  missed: (summary) => `Nudged Claude to capture context for "${summary}" but it did not`,
+};
+
+/**
+ * Log a capture-nudge outcome: structured JSONL (for the miss-rate metric)
+ * plus a human-readable line in daemon.log (so it shows up in `contextus
+ * watch`, per the existing running-log preference — the miss-rate metric
+ * this repeats is otherwise invisible until someone asks "why didn't you
+ * capture that?" after the fact).
+ *
+ * @param {object} args
+ * @param {'nudged'|'captured_after_nudge'|'missed'} args.outcome
+ * @param {string} args.project
+ * @param {string} args.commitSummary
+ * @param {string} [args.logDir]
+ */
+export function logCaptureNudge({ outcome, project, commitSummary, logDir = DEFAULT_LOG_DIR }) {
+  const record = {
+    type: 'capture_nudge',
+    timestamp: new Date().toISOString(),
+    project,
+    outcome,
+    commitSummary,
+  };
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(path.join(logDir, 'capture-nudges.jsonl'), JSON.stringify(record) + '\n');
+  } catch {
+    // best-effort — never block the gate on a log failure
+  }
+  const level = outcome === 'missed' ? 'WARN' : 'INFO';
+  const messageFn = NUDGE_MESSAGES[outcome];
+  if (!messageFn) return;
+  try {
+    fs.appendFileSync(
+      path.join(logDir, 'daemon.log'),
+      humanLine(level, messageFn(commitSummary), { project })
+    );
+  } catch {
+    // best-effort
+  }
 }

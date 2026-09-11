@@ -16,7 +16,9 @@
  *     the noisiest, most false-positive-prone heuristic is not this one.
  *   - Honors Claude Code's `stop_hook_active` loop guard: if this hook already
  *     blocked once for this stop cycle, it does not block again. One nudge,
- *     not an infinite loop.
+ *     not an infinite loop. On that retry invocation it logs the outcome —
+ *     "captured after nudge" or "nudged but it did not" — as the miss-rate
+ *     metric this prototype exists to surface (see the decision doc).
  *   - Respects an explicit "Context: capture-skip: <reason>" acknowledgment —
  *     Claude can say "nothing durable here" and proceed.
  *
@@ -26,12 +28,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { stripJsonComments } from './lib/parse-jsonc.js';
 import {
   extractLastTurn,
   lastCaptureTimestamp,
   shouldBlockForCapture,
+  extractCommitSummary,
+  logCaptureNudge,
 } from './lib/capture-gate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +76,11 @@ function stopGateEnabled(cwd) {
   return enabled;
 }
 
+function projectLabel(cwd) {
+  const abs = path.resolve(cwd || process.cwd());
+  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
+}
+
 async function main() {
   let payload = {};
   try {
@@ -80,18 +90,30 @@ async function main() {
     return; // malformed stdin — never block on a parse error
   }
 
-  // Loop guard: Claude Code sets this true when re-invoking Stop hooks after a
-  // previous block. Nudge once per cycle, never trap the session.
-  if (payload.stop_hook_active) return;
-
   if (!stopGateEnabled(payload.cwd)) return;
-
   if (!payload.transcript_path) return;
 
   const { toolUses, responseText, turnStartTs } = extractLastTurn(payload.transcript_path);
   const lastCaptureTs = lastCaptureTimestamp(CAPTURES_LOG);
+  const stillMissing = shouldBlockForCapture({ toolUses, responseText, turnStartTs, lastCaptureTs });
 
-  if (shouldBlockForCapture({ toolUses, responseText, turnStartTs, lastCaptureTs })) {
+  // Loop guard: Claude Code sets stop_hook_active true when re-invoking Stop
+  // hooks after a previous block. Never block twice — but this is exactly the
+  // moment to check whether the nudge worked and log the outcome.
+  if (payload.stop_hook_active) {
+    const commitSummary = extractCommitSummary(toolUses);
+    if (!commitSummary) return; // nothing to report — the original commit call is out of view
+    logCaptureNudge({
+      outcome: stillMissing ? 'missed' : 'captured_after_nudge',
+      project: projectLabel(payload.cwd),
+      commitSummary,
+    });
+    return;
+  }
+
+  if (stillMissing) {
+    const commitSummary = extractCommitSummary(toolUses) || 'recent commit';
+    logCaptureNudge({ outcome: 'nudged', project: projectLabel(payload.cwd), commitSummary });
     process.stdout.write(
       JSON.stringify({
         decision: 'block',
