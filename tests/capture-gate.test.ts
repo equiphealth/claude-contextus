@@ -84,6 +84,7 @@ describe('hasExplicitSkip / hasCaptureFooter', () => {
 
   it('recognizes captured/propose footers', () => {
     assert.equal(hasCaptureFooter('Context: captured: gotchas/gotcha-foo.md'), true);
+    assert.equal(hasCaptureFooter('Context: captured [project]: gotchas/gotcha-foo.md'), true);
     assert.equal(hasCaptureFooter('Context: propose: some-topic'), true);
     assert.equal(hasCaptureFooter('Context: used: foo.md (0.8)'), false);
   });

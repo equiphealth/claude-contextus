@@ -179,9 +179,9 @@ quality gate instead:
 
 After writing a user-level capture, Claude emits:
 ```
-Context: captured: ~/.contextus/context/reference/reference-foo.md
+Context: captured [user]: ~/.contextus/context/reference/reference-foo.md
 ```
-This ensures the user sees what was written even though there's no `git status` to surface it.
+The `[scope]` tag (`user` or `project`) disambiguates where the file landed — the path alone doesn't always make that obvious (e.g. a relative project-scope path like `gotchas/gotcha-foo.md` looks identical in shape to a user-scope one). This ensures the user sees both what was written and where, even though there's no `git status` to surface it for user-scope captures.
 
 ### 2. Captures log
 

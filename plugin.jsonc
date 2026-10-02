@@ -112,7 +112,7 @@
     "contextCapture": {
       "enabled": true,
       "mode": "staging",
-      // "always" = emit "Context: captured:" for every capture
+      // "always" = emit "Context: captured [scope]:" for every capture
       // "off" = no capture confirmation in response
       "captureFooter": "always",
       // PROTOTYPE (default off): Stop-hook enforcement gate. When true, a

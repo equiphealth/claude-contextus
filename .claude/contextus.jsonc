@@ -32,7 +32,7 @@
   "retrieval": {
     "topK": 5,
     "similarityThreshold": 0.7,
-    "injectionFloor": 0.725,
+    "injectionFloor": 0.7,
     "maxTokens": 3000,
     "mergeStrategy": "interleaved",
     "provenanceFooter": true

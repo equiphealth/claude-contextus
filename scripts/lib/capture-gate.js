@@ -21,7 +21,7 @@ import os from 'node:os';
 
 const GIT_COMMIT_RE = /\bgit\b[^\n]*\bcommit\b/i;
 const CAPTURE_SKIP_RE = /Context:\s*capture-skip:/i;
-const CAPTURE_ACK_RE = /Context:\s*(captured|propose):/i;
+const CAPTURE_ACK_RE = /Context:\s*(captured|propose)(\s*\[[^\]]+\])?:/i;
 const DEFAULT_LOG_DIR = path.join(os.homedir(), '.contextus', 'logs');
 
 /**

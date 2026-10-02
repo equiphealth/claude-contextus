@@ -1,45 +1,15 @@
-Context capture (staging mode active): Capture reusable patterns by calling the daemon — ONE Bash call handles file creation, index update, and embedding.
+Context capture (staging mode active): call the daemon's /capture endpoint directly — do NOT use the Write tool (skips embedding) and do NOT output "Context: propose: <topic>" or ask permission first.
 
-When a reusable pattern, decision, domain knowledge, or workflow surfaces: call the daemon's /capture endpoint. Do not use the Write tool for context files — it's noisy and skips embedding.
-
-IMPORTANT: Do NOT output "Context: propose: <topic>" — that is a different mode. Do NOT ask "should I capture this?" — just capture silently alongside your response.
-
-HOW TO CAPTURE (single Bash call — daemon writes, indexes, and embeds):
 ```bash
 curl -s -X POST http://127.0.0.1:37800/capture \
   -H 'content-type: application/json' \
   -d '{"slug":"<kebab-slug>","description":"<one-line topical signal>","category":"<type>","tags":["optional","tags"],"body":"<full markdown body>","cwd":"'"$(pwd)"'"}'
 ```
 
-The daemon derives the project hash from `cwd`. Use `$(pwd)` for the current project.
+Categories: `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`. Scope: `cwd` alone = project; add `"scope":"user"` for cross-project/personal patterns. Same `slug`+`category` **overwrites** the existing file — read it first if preserving content.
 
-**IMPORTANT — Updates vs Creates**: The `/capture` endpoint **OVERWRITES** existing files with the same slug. To update an existing context file, call `/capture` with the same `slug` and `category` — the daemon will replace the entire file. Read the existing file first if you need to preserve parts of it.
+After capturing, end your response with one line per capture: `Context: captured [<scope>]: <relPath>` (e.g. `Context: captured [project]: decisions/decision-foo.md`).
 
-VALID CATEGORIES (= `metadata.type`): `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`.
+MUST capture when: implementation surfaces new architecture/gotchas/workflows, the user shares domain knowledge or reusable patterns, or discussion reveals a decision/tradeoff worth keeping. Skip ephemeral/PM-only chatter. Bias toward capturing — a false positive just costs a `git checkout`. Expand terse input into a full reasoned body (context, why, example) — the user seeds, you cultivate.
 
-ROUTING:
-- Project-specific insights → use `cwd` pointing to the project root (default scope: "project")
-- Cross-project/personal patterns → add `"scope": "user"` to the payload
-
-The daemon will:
-1. Write the file to `.claude/context/<category>/<type>-<slug>.md` with proper frontmatter
-2. Append to CONTEXT.md index
-3. Embed the file into the vector DB
-
-AFTER CAPTURING:
-At the END of your response, emit one line per capture: "Context: captured: <relPath>"
-  Examples: "Context: captured: decisions/decision-foo.md"
-
-OBLIGATION: You MUST capture when ANY of these occur:
-- Implementation work surfaces new subsystems, architectural patterns, non-obvious failure modes, or workflow knowledge
-- The user shares domain knowledge, project context, test strategies, data sources, or reusable patterns — even without implementation
-- Discussion reveals decisions, tradeoffs, or constraints that would inform future development
-- Information emerges that would be useful for linked projects or future sessions
-
-Failing to capture means the insight dies with this session. Bias toward capturing — false positives cost one `git checkout`.
-
-QUALITY BAR: Expand brief inputs into complete files. A 5-word tip from the user should become a full context body with reasoning, examples, and "why". The user seeds; you cultivate.
-
-SELF-TEST: If your response contains bullets explaining something useful, those bullets belong in the capture body, not just in chat. NOVELTY CHECK — contextus already has patterns on: {noveltyContext}. Only propose if your insight is genuinely not covered by those.
-
-EDGE CASES: For "should I capture this?" questions, refer to docs/CAPTURE_PHILOSOPHY.md (durability, surprise factor, recurrence tests). Skip temporary PM decisions and already-tracked work.
+NOVELTY CHECK — skip if already covered by: {noveltyContext}. Edge cases: see docs/CAPTURE_PHILOSOPHY.md.

@@ -107,7 +107,7 @@ Example — exclude `docs/prompts/` and `docs/archive/` from embedding:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `mode` | `"propose"` \| `"staging"` \| `"silent"` | `"staging"` | Capture mode (permanent tradeoff) — `"staging"` writes patterns directly via `/capture`, using `git status` as the review gate; `"propose"` suggests via footer instead, you confirm with `/create-context` |
-| `captureFooter` | `"always"` \| `"off"` | `"always"` | Whether a successful capture emits a "Context: captured: ..." confirmation line |
+| `captureFooter` | `"always"` \| `"off"` | `"always"` | Whether a successful capture emits a "Context: captured [scope]: ..." confirmation line (scope is `user` or `project`) |
 
 ### `calibration` — Quality measurement
 
