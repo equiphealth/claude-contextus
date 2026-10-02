@@ -12,6 +12,8 @@ Quick impact dashboard — shows what contextus is doing for you.
 ```
 Contextus Status
 
+Version: v0.19.7
+
 Knowledge Base:
   📁 Context patterns: 68 files
   📄 Documentation: 22 files  
@@ -46,6 +48,8 @@ Includes technical metrics for power users:
 
 ```
 Contextus Status (Detailed)
+
+Version: v0.19.7
 
 Knowledge Base:
   📁 Context patterns: 68 files
@@ -96,6 +100,13 @@ Measure quality: /context-calibrate
 ```
 
 ## What It Shows
+
+### Version
+Daemon's running code version (`data.version` from `/introspect`), compared against
+this machine's data schema version (`~/.contextus/version.json`). They normally
+match. A gap means an upgrade notice fired (session-start reported "updated to X")
+but the breaking-change migration hasn't been run yet — surfaced here as
+`run /contextus-upgrade` rather than silently showing a stale version.
 
 ### Knowledge Base
 - **Context patterns**: Files in `.claude/context/`

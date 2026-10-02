@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readVersionState, compareSemver } from '../../lib/version.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -210,6 +211,17 @@ function getProjectPath(projectId: string): string | null {
 function printDashboard(data: IntrospectResponse, project: string) {
   const display = friendlyName(project);
   console.log(`\nContextus Status — ${display}${display !== project ? ` (${project})` : ''}\n`);
+
+  // Version — daemon's running version (data.version) vs this machine's data
+  // schema version (~/.contextus/version.json). The two usually match; a gap
+  // means session-start reported an upgrade but /contextus-upgrade hasn't run
+  // yet for the breaking-change path (non-breaking bumps self-stamp on report).
+  const dataVersion = readVersionState().version;
+  const versionLine =
+    compareSemver(dataVersion, data.version) < 0
+      ? `v${data.version} (data schema v${dataVersion} — run /contextus-upgrade)`
+      : `v${data.version}`;
+  console.log(`Version: ${versionLine}\n`);
 
   // Knowledge Base
   console.log('Knowledge Base:');

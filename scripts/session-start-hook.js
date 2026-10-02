@@ -46,6 +46,7 @@ import {
   hasContextusStanza,
   hasPopulatedContextDir,
   checkUpgradeNeeded,
+  stampVersion,
 } from './lib/daemon-control.js';
 import { resolveDaemonStatus } from './lib/daemon-status.js';
 
@@ -235,12 +236,14 @@ async function main() {
     // the installed code version. Never blocks, never auto-migrates.
     const upgrade = checkUpgradeNeeded();
     if (upgrade && upgrade.needed) {
-      const action = upgrade.hasBreakingChanges
-        ? `run /contextus-upgrade to migrate (breaking changes)`
-        : `updated to ${upgrade.installedVersion}`;
-      lines.push(
-        `contextus: ${action}`
-      );
+      if (upgrade.hasBreakingChanges) {
+        lines.push(`contextus: run /contextus-upgrade to migrate (breaking changes)`);
+      } else {
+        // No migration needed — stamp immediately so this notice fires once,
+        // right after the real version bump, not on every session start.
+        stampVersion(upgrade.installedVersion);
+        lines.push(`contextus: updated to ${upgrade.installedVersion}`);
+      }
     }
 
     // One-time nudge: only when the project lacks the CLAUDE.md stanza. Content-aware

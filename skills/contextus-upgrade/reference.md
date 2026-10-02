@@ -174,26 +174,21 @@ the third requires `jq` and exits non-zero (non-fatal to the rest of the upgrade
 
 ### Step 4: Stamp Version
 
-After all migrations succeed, stamp the data version.
-
-**Note on file paths:** Contextus uses `lib/` for TypeScript source (not `src/`).
-Scripts run via `tsx` can import `.ts` files directly; built output goes to `dist/`.
-
-Use this Node.js one-liner (simpler than tsx + imports):
+After all migrations succeed, stamp the data version:
 
 ```bash
-cd ~/src/claude-contextus && node -e "
-const fs = require('fs');
-const path = require('path');
-const versionPath = path.join(process.env.HOME, '.contextus', 'version.json');
-const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-fs.writeFileSync(versionPath, JSON.stringify({ version: pkg.version }, null, 2));
-console.log('Stamped version:', pkg.version);
-"
+cd ~/src/claude-contextus && npx tsx scripts/stamp-version.ts
 ```
 
 This reads the installed version from `package.json` and writes it to
-`~/.contextus/version.json`.
+`~/.contextus/version.json` via `lib/version.ts`'s `writeVersionState`.
+
+**Why a dedicated script, not an inline one-liner**: some environments block
+inline interpreter execution (`node -e`, `python -c`, etc.) at the shell-allowlist
+level (e.g. lean-ctx). An inline one-liner there forces a Write-temp-file → run →
+delete dance — 2+ permission prompts for what should be a single Bash call.
+`stamp-version.ts` is a permanent script committed to the repo, so it's just one
+command regardless of shell policy.
 
 ### Step 5: Verify
 
