@@ -211,6 +211,47 @@ test('/reconcile {check:true} reflects a project-level transcriptMining override
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
+test('/reconcile (non-check) busy-guard agrees across project-name and cwd-only representations of the same project', async () => {
+  // Regression for GH issue #56, as redesigned after PR #67 review: the guard
+  // is keyed by the source's absolute directory path (reconcilingSources), not
+  // by any caller-supplied project label — so two /reconcile calls for the
+  // SAME cwd must report 'busy' regardless of how `project` is (or isn't)
+  // specified, since the path is derived purely from cwd + the source's
+  // configured relative path. Seeds the guard directly (see
+  // __test_seedReconcilingSource's doc comment) since the real busy path only
+  // populates it after a modelLoaded check this suite can't satisfy without a
+  // live embedding provider.
+  const { __test_seedReconcilingSource, __test_clearReconcilingSources } =
+    await import('../../daemon/server.js');
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  fs.mkdirSync(path.join(projectDir, '.claude', 'context'), { recursive: true });
+
+  const sourcePath = path.join(projectDir, '.claude', 'context');
+  __test_seedReconcilingSource(sourcePath);
+
+  try {
+    const byFriendlyName = await post(
+      '/reconcile',
+      JSON.stringify({ cwd: projectDir, project: path.basename(projectDir) })
+    );
+    const byCwdOnly = await post('/reconcile', JSON.stringify({ cwd: projectDir }));
+
+    assert.equal(
+      byFriendlyName.json.state,
+      'busy',
+      'a friendly-name call must see the in-flight guard'
+    );
+    assert.equal(
+      byCwdOnly.json.state,
+      'busy',
+      'a cwd-only call for the same project must see it too'
+    );
+  } finally {
+    __test_clearReconcilingSources();
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
 test('determineSource routes a docs/ file to the projectDocs source, not just .claude/context/', async () => {
   const { determineSource } = await import('../../daemon/server.js');
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
@@ -226,6 +267,53 @@ test('determineSource routes a docs/ file to the projectDocs source, not just .c
   assert.ok(result, 'docs/ must resolve to a real source, not null');
   assert.equal(result!.sourceName, 'projectDocs');
   assert.equal(result!.sourceDir, docsDir);
+
+  fs.rmSync(projectDir, { recursive: true, force: true });
+});
+
+test('determineSource resolves a friendly project name to the canonical hash, not the raw label', async () => {
+  // Regression for GH issue #56: determineSource used to return
+  // `project ?? projectHash(cwd)` verbatim as `projectId` for project-scoped
+  // sources — so calling with a friendly name returned that NAME as the
+  // "projectId", not its canonical hash. Since projectId feeds both storage
+  // scoping (embedSingleFile/getContentHashes) and the reconcilingProjects
+  // dedup guard (via the reconcileKey threaded through watchContextDir), two
+  // calls for the same project — one by name, one by hash or cwd alone —
+  // would disagree on identity and let concurrent reconciles race past the
+  // guard.
+  const { determineSource } = await import('../../daemon/server.js');
+  const { registerProject, resolveProjectId } = await import('../../lib/workspace.js');
+  const { projectHash } = await import('../../lib/config.js');
+
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  fs.mkdirSync(path.join(projectDir, '.claude', 'context'), { recursive: true });
+  const canonicalId = projectHash(projectDir);
+  registerProject(canonicalId, projectDir);
+  const friendlyName = path.basename(projectDir);
+  assert.equal(
+    resolveProjectId(friendlyName),
+    canonicalId,
+    'sanity: name must resolve to the hash'
+  );
+
+  const absFile = path.join(projectDir, '.claude', 'context', 'decisions', 'decision-foo.md');
+  fs.mkdirSync(path.dirname(absFile), { recursive: true });
+  fs.writeFileSync(absFile, '---\nname: foo\nmetadata:\n  type: decision\n---\nbody');
+
+  const byName = determineSource(absFile, projectDir, friendlyName);
+  const byNothing = determineSource(absFile, projectDir, undefined);
+
+  assert.ok(byName && byNothing);
+  assert.equal(
+    byName!.projectId,
+    canonicalId,
+    'a friendly-name call must resolve to the canonical hash'
+  );
+  assert.equal(
+    byName!.projectId,
+    byNothing!.projectId,
+    'name-based and cwd-only calls for the same project must agree on projectId'
+  );
 
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
