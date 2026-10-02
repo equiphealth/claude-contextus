@@ -631,6 +631,28 @@ export async function waitForModel({ attempts, intervalMs } = {}) {
 }
 
 /**
+ * Stamp ~/.contextus/version.json with the given version. Mirrors lib/version.ts's
+ * writeVersionState (duplicated here, not imported — this file is plain JS, see
+ * header comment: hooks can't import .ts libs without a build step).
+ *
+ * Called after a non-breaking "updated to X" notice so the message fires once,
+ * right after the real version bump, instead of repeating every session (the
+ * breaking-change path already gets stamped by /contextus-upgrade Step 4).
+ */
+export function stampVersion(version) {
+  try {
+    const versionPath = path.join(os.homedir(), '.contextus', 'version.json');
+    fs.mkdirSync(path.dirname(versionPath), { recursive: true });
+    fs.writeFileSync(
+      versionPath,
+      JSON.stringify({ version, migratedAt: new Date().toISOString() }, null, 2) + '\n'
+    );
+  } catch {
+    // Best-effort — if this fails, the notice just repeats next session. Non-fatal.
+  }
+}
+
+/**
  * Lightweight upgrade check — compares data schema version against installed code.
  * Returns { needed, dataVersion, installedVersion, hasBreakingChanges } or null on error.
  * Pure filesystem reads (~1ms), no network, safe to call on every session start.
