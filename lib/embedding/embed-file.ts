@@ -10,7 +10,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadContext, categoryPrefix, quarantineMismatches } from './context-loader.js';
+import {
+  loadContextSafe,
+  isLoadFailure,
+  categoryPrefix,
+  quarantineMismatches
+} from './context-loader.js';
 import { embedDocument } from './embedder.js';
 import { upsertRows, deleteByFilename, getContentHashes } from '../storage/lance-client.js';
 import { isStale } from '../storage/staleness.js';
@@ -74,7 +79,11 @@ export async function embedSingleFile(
     return { embedded: false, reason: 'index_or_readme' };
   }
 
-  const ctx = loadContext(normFile, normDir);
+  const loaded = loadContextSafe(normFile, normDir);
+  if (isLoadFailure(loaded)) {
+    return { embedded: false, reason: `yaml_parse_error: ${loaded.error}` };
+  }
+  const ctx = loaded;
   // Honor the same prefix↔type hygiene gate as the full build -- via the one
   // shared quarantineMismatches() every embed/reconcile path now calls, so a
   // doc source is exempt here exactly the same way it is everywhere else (this

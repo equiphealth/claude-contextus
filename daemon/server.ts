@@ -30,6 +30,7 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import matter from 'gray-matter';
 import { loadConfig, loadProjectConfig, expandHome, projectHash } from '../lib/config.js';
 
 // ESM equivalent of __dirname
@@ -976,18 +977,28 @@ async function executeCaptureRequest(
     return;
   }
 
-  // Build the frontmatter + body
-  const tagsLine =
-    tags.length > 0 ? `\n  tags: [${tags.map((t: string) => `"${t}"`).join(', ')}]` : '';
-  const fileContent = `---
-name: ${slug}
-description: ${description}
-metadata:
-  type: ${category}${tagsLine}
----
+  // Build frontmatter via gray-matter's serializer so scalars get quoted
+  // automatically (a free-text description with an embedded ": " used to
+  // break plain-scalar YAML silently).
+  const metadata: Record<string, unknown> = { type: category };
+  if (tags.length > 0) metadata.tags = tags;
+  const fileContent = matter.stringify(`\n${content}\n`, { name: slug, description, metadata });
 
-${content}
-`;
+  // Re-parse before writing — reject loudly here instead of failing silently
+  // at embed time. Second arg disables gray-matter's own cache (it caches
+  // the file object BEFORE parsing succeeds, so a throw still leaves a
+  // stale entry that silently "succeeds" on the next identical-content
+  // call within this daemon's lifetime — the exact failure mode this check
+  // exists to catch, so bypassing it here is non-negotiable).
+  try {
+    matter(fileContent, {});
+  } catch (err) {
+    sendJson(res, 400, {
+      ok: false,
+      error: `generated frontmatter failed to parse as YAML: ${err instanceof Error ? err.message : String(err)}`
+    });
+    return;
+  }
 
   // Resolve target path — folder names follow existing conventions
   const CATEGORY_DIRS: Record<string, string> = {
@@ -1051,13 +1062,19 @@ ${content}
     scope
   });
 
-  // Embed async (fire-and-forget) — reconcile catches failures
+  // Embed async (fire-and-forget) — the frontmatter is already YAML-validated
+  // above, so this shouldn't hit a parse error, but log the reason either way
+  // if it doesn't embed rather than only logging the boolean.
   const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
   const source = scope === 'user' ? 'userContext' : 'projectContext';
   embedSingleFile(absFile, contextDir, project, source, projectId, 'context')
     .then((result) => {
       if (result.embedded) invalidateCorpusCache(project);
-      logInfo('Capture embedded', { file: relPath, embedded: result.embedded });
+      logInfo('Capture embedded', {
+        file: relPath,
+        embedded: result.embedded,
+        reason: result.reason
+      });
     })
     .catch((err) => {
       logError('warn', 'capture', 'async embed failed (reconcile will retry)', {
@@ -1300,6 +1317,16 @@ function watchContextDir(
                   ? 'user'
                   : `project:${projectLabel}`;
               logCapture(scope, result.id ?? filename, 'auto-captured via watcher');
+            } else if (result.reason?.startsWith('yaml_parse_error')) {
+              // A hand-edit (or anything outside /capture) can write invalid
+              // frontmatter directly to disk — the live watcher is often the
+              // first thing to see it, so don't let this fail silently here.
+              logError('warn', 'watcher', 'file skipped: invalid frontmatter YAML', {
+                file: filename,
+                project: projectLabel,
+                source,
+                reason: result.reason
+              });
             }
           })
           .catch(() => {});
@@ -1410,13 +1437,22 @@ async function handleReconcile(
     let changedCount = 0;
     let removeCount = 0;
     const quarantined: string[] = [];
+    const failed: string[] = [];
 
     for (const [sourceName, s] of Object.entries(sources)) {
       if (s.enabled === false) continue;
       const sourcePath = s.scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
       const sourceProjectId = s.scope === 'project' ? projectId : '';
 
-      const allContexts = await loadContexts(sourcePath, s.exclude);
+      const { contexts: allContexts, failed: loadFailed } = await loadContexts(
+        sourcePath,
+        s.exclude
+      );
+      // Qualify with sourceName: two sources could otherwise report the same
+      // relPath (e.g. a stray `gotcha-x.md` under both .claude/context/ and docs/).
+      // Distinct from `quarantined` below — this is invalid YAML, not a prefix/type
+      // mismatch, and isn't fixed by renaming the file.
+      failed.push(...loadFailed.map((f) => `${sourceName}/${f.relPath}`));
       // Quarantine prefix/type-mismatch files — MUST match runReconcile (both call
       // the shared quarantineMismatches(), so this can only drift out of sync with
       // itself in one place now), or they'd show as perpetual "new" here (the
@@ -1436,8 +1472,6 @@ async function handleReconcile(
       newCount += plan.toEmbedNew.length;
       changedCount += plan.toEmbedChanged.length;
       removeCount += plan.toRemove.length;
-      // Qualify with sourceName: two sources could otherwise report the same
-      // relPath (e.g. a stray `gotcha-x.md` under both .claude/context/ and docs/).
       quarantined.push(...mismatches.map((p) => `${sourceName}/${p}`));
       if (statePriority[plan.state] > statePriority[aggState]) aggState = plan.state;
     }
@@ -1448,6 +1482,7 @@ async function handleReconcile(
       changedCount,
       removeCount,
       quarantined, // relPaths of files that can't embed (bad prefix/type) — surface these
+      failed, // relPaths of files that can't embed (invalid YAML frontmatter) — distinct from quarantined
       // Piggybacked here rather than a separate endpoint: `cfg` above is
       // already the correctly MERGED (3-tier) config, and session-start-hook.js
       // already calls this exact check every session — no extra round trip

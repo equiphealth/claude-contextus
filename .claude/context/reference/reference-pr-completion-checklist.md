@@ -1,6 +1,6 @@
 ---
 name: pr-completion-checklist
-description: Standard PR completion workflow: changelog, version bump (all 3 manifests), then merge
+description: "Standard PR completion workflow: changelog, version bump (all 3 manifests), then merge"
 metadata:
   type: reference
   tags: ["workflow", "release"]

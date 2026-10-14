@@ -41,9 +41,13 @@ export interface TagResult {
  * top-level `tags` key. Existing tags are preserved; duplicates are folded.
  */
 export function addTags(rawFile: string, newTags: string[]): TagResult {
-  const parsed = matter(rawFile);
-  // gray-matter memoizes parse results by content string and returns the SAME
-  // `data` object on repeat calls — mutating it in place would leak across calls
+  // Second arg disables gray-matter's own content-keyed cache — it caches the
+  // file object BEFORE parsing succeeds, so invalid frontmatter YAML throws
+  // on the first call but silently returns a stale empty-data object on every
+  // later call with the same content. Even setting that aside, the cache
+  // returns the SAME `data` object on repeat calls of valid content —
+  // mutating it in place would leak across calls
+  const parsed = matter(rawFile, {});
   // (and corrupt other callers/tests). Deep-clone before touching it.
   const data = structuredClone(parsed.data) as Record<string, unknown>;
   const clean = newTags.map((t) => t.trim()).filter(Boolean);

@@ -87,10 +87,17 @@ export function categoryPrefix(relPath: string): string | null {
   return (KNOWN_CATEGORY_PREFIXES as readonly string[]).includes(head) ? head : null;
 }
 
-/** Load and parse a single context file. */
+/** Load and parse a single context file. Throws on invalid frontmatter YAML. */
 export function loadContext(absPath: string, contextDir: string): LoadedContext {
   const raw = fs.readFileSync(absPath, 'utf8');
-  const { data, content } = matter(raw);
+  // Second arg disables gray-matter's own content-keyed cache (gray-matter
+  // caches the file object BEFORE parsing succeeds — see index.js — so a
+  // parse that throws still leaves a half-populated entry cached under that
+  // exact content string; every later call with the same broken content
+  // silently returns the stale empty-data object instead of re-throwing).
+  // We read fresh from disk every call anyway, so the cache buys nothing and
+  // actively hides repeat failures.
+  const { data, content } = matter(raw, {});
   const relPath = path.relative(contextDir, absPath);
   const { type, tags } = resolveTypeAndTags(data as Record<string, unknown>);
   return {
@@ -104,6 +111,36 @@ export function loadContext(absPath: string, contextDir: string): LoadedContext 
     content: content.trim(),
     mtime: fs.statSync(absPath).mtimeMs
   };
+}
+
+/** A file that couldn't be loaded — bad frontmatter YAML, not a prefix/type mismatch. */
+export interface LoadFailure {
+  relPath: string;
+  error: string;
+}
+
+/** Narrows a `loadContextSafe` result to the failure branch. */
+export function isLoadFailure(x: LoadedContext | LoadFailure): x is LoadFailure {
+  return 'error' in x;
+}
+
+/**
+ * `loadContext`, but catches an invalid-YAML frontmatter parse instead of
+ * throwing — the only distinction between a context file and arbitrary
+ * markdown is its frontmatter, and that frontmatter can be hand-edited (or
+ * come from anywhere else that isn't `/capture`'s own validated write path),
+ * so every loader that walks a directory full of files needs to isolate one
+ * bad file from the rest, not let it take down the whole batch.
+ */
+export function loadContextSafe(absPath: string, contextDir: string): LoadedContext | LoadFailure {
+  try {
+    return loadContext(absPath, contextDir);
+  } catch (err) {
+    return {
+      relPath: path.relative(contextDir, absPath).replace(/\\/g, '/'),
+      error: err instanceof Error ? err.message : String(err)
+    };
+  }
 }
 
 /** Fallback exclude list for callers that don't have a source-specific config
@@ -124,11 +161,17 @@ const DEFAULT_LOAD_EXCLUDE = ['**/CONTEXT.md', '**/README.md'];
  *   doc source's DOCS.md gets excluded the same way a context source's
  *   CONTEXT.md does — one list per source, not one hardcoded list for all.
  */
+export interface LoadContextsResult {
+  contexts: LoadedContext[];
+  /** files whose frontmatter YAML failed to parse — not prefix/type mismatches */
+  failed: LoadFailure[];
+}
+
 export async function loadContexts(
   contextDir: string,
   exclude: string[] = DEFAULT_LOAD_EXCLUDE
-): Promise<LoadedContext[]> {
-  if (!fs.existsSync(contextDir)) return [];
+): Promise<LoadContextsResult> {
+  if (!fs.existsSync(contextDir)) return { contexts: [], failed: [] };
   // Glob relative to `contextDir` (cwd), NOT an absolute pattern: with an absolute
   // pattern, glob matches `ignore` against absolute result paths and a globstar
   // pattern like `**/CONTEXT.md` FAILS to exclude `<dir>/CONTEXT.md` at the root
@@ -138,7 +181,14 @@ export async function loadContexts(
   // depth — same fix as lib/embedding/sources.ts's loadSource.
   const ignore = exclude.flatMap((g) => (g.startsWith('**/') ? [g, g.slice(3)] : [g]));
   const rel = await glob('**/*.md', { cwd: contextDir, ignore });
-  return rel.sort().map((f) => loadContext(path.join(contextDir, f), contextDir));
+  const contexts: LoadedContext[] = [];
+  const failed: LoadFailure[] = [];
+  for (const f of rel.sort()) {
+    const result = loadContextSafe(path.join(contextDir, f), contextDir);
+    if (isLoadFailure(result)) failed.push(result);
+    else contexts.push(result);
+  }
+  return { contexts, failed };
 }
 
 /** Result of a prefix↔type consistency check. */
