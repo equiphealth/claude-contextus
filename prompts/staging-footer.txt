@@ -12,6 +12,8 @@ After capturing, end your response with one line per capture: `Context: captured
 
 MUST capture when: implementation surfaces new architecture/gotchas/workflows, the user shares domain knowledge or reusable patterns, or discussion reveals a decision/tradeoff worth keeping. Skip ephemeral/PM-only chatter. Bias toward capturing — a false positive just costs a `git checkout`. Expand terse input into a full reasoned body (context, why, example) — the user seeds, you cultivate.
 
+**Check the response.** `/capture` can return `{"ok": false, "error": "..."}` (HTTP 400) if your `description` or other text can't be safely represented as YAML frontmatter — don't assume success and emit "Context: captured" regardless. If you see this, don't just retry the identical payload; rephrase the offending field (the error names which) and call `/capture` again.
+
 HARD TRIGGER: the instant you think or say "that's worth capturing" — even mid-task, even if the task isn't done — that sentence IS the trigger, not a note for later. Fire the curl call in the SAME tool-call batch as the edit/commit you're already making. Do not defer to a wrap-up point; long tasks (fix → chase → revert → re-verify) often never reach one.
 
 NOVELTY CHECK — skip if already covered by: {noveltyContext}. Edge cases: see docs/CAPTURE_PHILOSOPHY.md.

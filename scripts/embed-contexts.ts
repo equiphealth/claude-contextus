@@ -54,10 +54,23 @@ async function main(): Promise<void> {
   console.log(`  provider: ${provider} (${modelId}, ${cfg.embedding.dimensions}d)`);
   console.log(`  target:   ${resolveDBPath()}`);
 
-  const sourced = await loadAllSources(sources);
+  const { items: sourced, failed: loadFailed } = await loadAllSources(sources);
   if (sourced.length === 0) {
     console.error(`\n✗ No markdown files found across enabled sources`);
     process.exit(1);
+  }
+
+  // Corpus hygiene: invalid frontmatter YAML can't be parsed at all (a different
+  // failure stage than a prefix/type mismatch below — this file never even became
+  // a LoadedContext). Report loudly and move on; the rest of the corpus still embeds.
+  if (loadFailed.length > 0) {
+    console.error(
+      `\n⚠ Skipping ${loadFailed.length} file(s) with invalid frontmatter YAML (fix the YAML, usually an unquoted ": " in a scalar):`
+    );
+    for (const f of loadFailed) {
+      console.error(`    ${f.source}/${f.relPath}: ${f.error.split('\n')[0]}`);
+    }
+    console.error(`  → embedding the rest; these won't inject until fixed.\n`);
   }
 
   // Corpus hygiene: prefix↔type disagreements can't embed (the gate would store a

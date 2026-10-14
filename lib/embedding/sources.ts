@@ -20,7 +20,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { glob } from 'glob';
 import { expandHome } from '../config.js';
-import { loadContext, type LoadedContext } from './context-loader.js';
+import {
+  loadContextSafe,
+  isLoadFailure,
+  type LoadedContext,
+  type LoadFailure
+} from './context-loader.js';
 
 /** One resolved, enabled source ready to load. */
 export interface ResolvedSource {
@@ -77,27 +82,43 @@ export function resolveSources(sources: Record<string, RawSource>): ResolvedSour
   return out;
 }
 
+/** Result of loading one source: successfully-parsed files, plus any that failed. */
+export interface SourceLoadResult {
+  items: SourcedContext[];
+  /** files whose frontmatter YAML failed to parse, qualified with this source's name */
+  failed: (LoadFailure & { source: string })[];
+}
+
 /** Load every markdown file in a source dir, tagged with the source name. */
-export async function loadSource(src: ResolvedSource): Promise<SourcedContext[]> {
+export async function loadSource(src: ResolvedSource): Promise<SourceLoadResult> {
   // cwd-relative glob, not an absolute pattern: an absolute pattern matches the
   // `ignore` globs against absolute paths, so `**/CONTEXT.md` fails to exclude a
   // root-level index file (same bug that gave reconcile a phantom "new" file).
   // Anchor each exclude with a bare-basename variant so root-level indexes drop.
   const ignore = src.exclude.flatMap((g) => (g.startsWith('**/') ? [g, g.slice(3)] : [g]));
   const rel = await glob('**/*.md', { cwd: src.dir, ignore });
-  return rel
-    .sort()
-    .map((f) => ({ context: loadContext(path.join(src.dir, f), src.dir), source: src.name }));
+  const items: SourcedContext[] = [];
+  const failed: (LoadFailure & { source: string })[] = [];
+  for (const f of rel.sort()) {
+    const result = loadContextSafe(path.join(src.dir, f), src.dir);
+    if (isLoadFailure(result)) failed.push({ ...result, source: src.name });
+    else items.push({ context: result, source: src.name });
+  }
+  return { items, failed };
 }
 
 /**
  * Load all enabled sources. Dedups by source-qualified id (a file can't appear
- * twice within one source). Returns the sourced contexts in source order.
+ * twice within one source). Returns the sourced contexts in source order, plus
+ * every source's parse failures combined.
  */
-export async function loadAllSources(sources: ResolvedSource[]): Promise<SourcedContext[]> {
-  const out: SourcedContext[] = [];
+export async function loadAllSources(sources: ResolvedSource[]): Promise<SourceLoadResult> {
+  const items: SourcedContext[] = [];
+  const failed: (LoadFailure & { source: string })[] = [];
   for (const src of sources) {
-    out.push(...(await loadSource(src)));
+    const result = await loadSource(src);
+    items.push(...result.items);
+    failed.push(...result.failed);
   }
-  return out;
+  return { items, failed };
 }

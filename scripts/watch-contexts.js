@@ -88,12 +88,27 @@ async function main() {
   if (!isMarkdownFile(file)) return emit({ continue: true });
 
   try {
-    await fetch(`${getBaseURL()}/notify`, {
+    const res = await fetch(`${getBaseURL()}/notify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ file, cwd, project: projectId(cwd) }),
       signal: AbortSignal.timeout(5000),
     });
+    const result = await res.json().catch(() => null);
+    // Invalid frontmatter YAML is the one failure mode worth surfacing back to
+    // whoever/whatever just wrote this file — everything else (unchanged,
+    // outside any source, deleted, etc.) is routine and silent on purpose.
+    // Still never blocks: `continue: true` either way, same contract as before.
+    if (result && result.reason && String(result.reason).startsWith('yaml_parse_error')) {
+      return emit({
+        continue: true,
+        systemMessage: `contextus: ${file} has invalid frontmatter YAML — it won't embed until fixed.`,
+        hookSpecificOutput: {
+          hookEventName: 'PostToolUse',
+          additionalContext: `[contextus] The file you just wrote (${file}) has invalid frontmatter YAML and will not be searchable until fixed: ${result.reason}`,
+        },
+      });
+    }
   } catch {
     // Daemon down/slow — re-embed is best-effort; restart it for next time.
     ensureDaemonRunning().catch(() => {});

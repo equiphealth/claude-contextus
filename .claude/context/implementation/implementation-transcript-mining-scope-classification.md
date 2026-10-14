@@ -1,6 +1,6 @@
 ---
 name: transcript-mining-scope-classification
-description: FIXED: transcript mining now classifies each extracted pattern as scope:project or scope:user instead of hardcoding project scope
+description: "FIXED: transcript mining now classifies each extracted pattern as scope:project or scope:user instead of hardcoding project scope"
 metadata:
   type: implementation
   tags: ["transcript-mining", "scope"]

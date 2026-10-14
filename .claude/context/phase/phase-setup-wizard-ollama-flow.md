@@ -1,6 +1,6 @@
 ---
 name: setup-wizard-ollama-flow
-description: Setup wizard Ollama install flow: detect failure, link to download, wait for install, pull model from menu, start server
+description: "Setup wizard Ollama install flow: detect failure, link to download, wait for install, pull model from menu, start server"
 metadata:
   type: phase
 ---

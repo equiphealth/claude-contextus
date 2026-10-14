@@ -37,8 +37,9 @@ function mkContextDir(): string {
 test('loadContexts: excludes root AND nested CONTEXT.md / README.md', async () => {
   const ctx = mkContextDir();
   try {
-    const loaded = await loadContexts(ctx);
-    const ids = loaded.map((c) => c.id).sort();
+    const { contexts, failed } = await loadContexts(ctx);
+    assert.deepEqual(failed, []);
+    const ids = contexts.map((c) => c.id).sort();
     // only the two real files survive
     assert.deepEqual(ids, ['decisions/decision-foo.md', 'reference-bar.md']);
     // explicit: no index/readme leaked in at any depth
@@ -51,7 +52,7 @@ test('loadContexts: excludes root AND nested CONTEXT.md / README.md', async () =
 
 test('loadContexts: missing dir → empty array', async () => {
   const loaded = await loadContexts('/nonexistent/path/.claude/context');
-  assert.deepEqual(loaded, []);
+  assert.deepEqual(loaded, { contexts: [], failed: [] });
 });
 
 test('loadContexts: custom exclude excludes DOCS.md, not the default CONTEXT.md/README.md', async () => {
@@ -62,10 +63,35 @@ test('loadContexts: custom exclude excludes DOCS.md, not the default CONTEXT.md/
   try {
     fs.writeFileSync(path.join(dir, 'DOCS.md'), '# Docs Index\n- GUIDE.md');
     fs.writeFileSync(path.join(dir, 'GUIDE.md'), '# A real doc\nsome content');
-    const loaded = await loadContexts(dir, ['**/DOCS.md', '**/README.md']);
-    const ids = loaded.map((c) => c.id).sort();
+    const { contexts, failed } = await loadContexts(dir, ['**/DOCS.md', '**/README.md']);
+    assert.deepEqual(failed, []);
+    const ids = contexts.map((c) => c.id).sort();
     assert.deepEqual(ids, ['GUIDE.md']);
     assert.ok(!ids.some((id) => id.endsWith('DOCS.md')), 'DOCS.md must be excluded');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('loadContexts: a file with invalid frontmatter YAML is isolated to `failed`, not thrown', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bad-yaml-loader-'));
+  try {
+    fs.writeFileSync(
+      path.join(dir, 'decision-good.md'),
+      '---\nname: good\nmetadata:\n  type: decision\n---\nbody'
+    );
+    fs.writeFileSync(
+      path.join(dir, 'decision-bad.md'),
+      '---\nname: bad\ndescription: unquoted: colon breaks this\nmetadata:\n  type: decision\n---\nbody'
+    );
+    const { contexts, failed } = await loadContexts(dir);
+    assert.deepEqual(
+      contexts.map((c) => c.id),
+      ['decision-good.md']
+    );
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0].relPath, 'decision-bad.md');
+    assert.match(failed[0].error, /mapping/i);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
