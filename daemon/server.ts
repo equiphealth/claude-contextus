@@ -977,23 +977,15 @@ async function executeCaptureRequest(
     return;
   }
 
-  // Build the frontmatter + body via gray-matter's own serializer, not hand-
-  // interpolated template strings — matter.stringify runs scalars through a
-  // real YAML dumper, which quotes anything that needs it (an embedded ": ",
-  // a leading special char, etc.) by construction. A free-text `description`
-  // containing a colon used to silently break plain-scalar YAML parsing at
-  // embed time with no error in the /capture response itself — see
-  // gotcha-capture-description-colon-breaks-yaml-frontmatter.md and
-  // https://github.com/equiphealth/claude-contextus/issues/70.
+  // Build frontmatter via gray-matter's serializer so scalars get quoted
+  // automatically (a free-text description with an embedded ": " used to
+  // break plain-scalar YAML silently).
   const metadata: Record<string, unknown> = { type: category };
   if (tags.length > 0) metadata.tags = tags;
   const fileContent = matter.stringify(`\n${content}\n`, { name: slug, description, metadata });
 
-  // Defense in depth: re-parse what we just built before writing it anywhere.
-  // Should never actually fail — matter.stringify's own output is self-
-  // consistent — but if it somehow does, reject loudly now rather than write
-  // a file that will fail silently at embed time (reconcile does not
-  // reliably catch or retry this class of failure; see issue #70).
+  // Re-parse before writing — reject loudly here instead of failing silently
+  // at embed time.
   try {
     matter(fileContent);
   } catch (err) {

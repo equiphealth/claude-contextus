@@ -393,17 +393,13 @@ Writes free-form markdown (no frontmatter) to `docs/<slug>.md`, appends to `DOCS
   "error": "generated frontmatter failed to parse as YAML: <parser message>"
 }
 ```
-Frontmatter is built via `gray-matter`'s own YAML serializer, not hand-interpolated
-strings, so a `description` containing a colon or other YAML-special character gets
-quoted automatically — this error should essentially never fire in practice. It's a
-defense-in-depth check (re-parses the generated frontmatter before writing anything to
-disk) for a case that previously failed **silently**: a free-text `description` with an
-unquoted `": "` used to break plain-scalar YAML parsing at embed time, with the
-`/capture` response itself still reporting `ok: true`. See
-`gotcha-capture-description-colon-breaks-yaml-frontmatter.md` and
-[#70](https://github.com/equiphealth/claude-contextus/issues/70). If you see this
-error, don't retry with the exact same payload — something is wrong with one of the
-input values in a way quoting alone can't fix; inspect the parser message.
+Frontmatter is built via `gray-matter`'s own YAML serializer, so a `description`
+containing a colon or other YAML-special character gets quoted automatically —
+this error should essentially never fire in practice. It's a defense-in-depth
+check (re-parses the generated frontmatter before writing anything to disk). If
+you see it, don't retry with the exact same payload — something is wrong with
+one of the input values in a way quoting alone can't fix; inspect the parser
+message.
 
 **Behavior:**
 - Builds frontmatter from structured params via `gray-matter`'s serializer, then

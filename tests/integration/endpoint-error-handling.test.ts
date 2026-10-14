@@ -95,12 +95,9 @@ test('/capture with a well-formed context payload succeeds and writes the file',
 });
 
 test('/capture with a colon mid-sentence in description still succeeds and writes valid, quoted YAML', async () => {
-  // Regression for a real bug (2026-10-14, issue #70): the frontmatter used to
-  // be hand-interpolated (`description: ${description}`), so a free-text value
-  // containing an unquoted ": " broke plain-scalar YAML parsing — silently, at
-  // embed time, with the /capture response itself still reporting success.
-  // Fixed by building frontmatter via gray-matter's own serializer instead,
-  // which quotes any scalar that needs it.
+  // Regression: hand-interpolated frontmatter let a free-text value with an
+  // unquoted ": " silently break YAML parsing. gray-matter's serializer
+  // quotes any scalar that needs it.
   const description = 'Testing: this description has a colon mid-sentence, same shape as the bug';
   const { status, json } = await post(
     '/capture',
