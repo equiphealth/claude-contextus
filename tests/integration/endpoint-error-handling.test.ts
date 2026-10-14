@@ -94,6 +94,43 @@ test('/capture with a well-formed context payload succeeds and writes the file',
   assert.match(fs.readFileSync(json.file, 'utf-8'), /name: itest-endpoint-check/);
 });
 
+test('/capture with a colon mid-sentence in description still succeeds and writes valid, quoted YAML', async () => {
+  // Regression for a real bug (2026-10-14, issue #70): the frontmatter used to
+  // be hand-interpolated (`description: ${description}`), so a free-text value
+  // containing an unquoted ": " broke plain-scalar YAML parsing — silently, at
+  // embed time, with the /capture response itself still reporting success.
+  // Fixed by building frontmatter via gray-matter's own serializer instead,
+  // which quotes any scalar that needs it.
+  const description = 'Testing: this description has a colon mid-sentence, same shape as the bug';
+  const { status, json } = await post(
+    '/capture',
+    JSON.stringify({
+      slug: 'itest-colon-in-description',
+      description,
+      category: 'gotcha',
+      body: 'test content',
+      cwd: projectDir
+    })
+  );
+  assert.equal(status, 200);
+  assert.equal(json.ok, true);
+
+  // Exact string match, not just "parses OK" — pins the quote style
+  // (single-quoted, since gray-matter's YAML dumper picks that for a scalar
+  // containing ": ") so a future change to how frontmatter gets built can't
+  // silently drift without this test noticing.
+  const expected =
+    '---\n' +
+    'name: itest-colon-in-description\n' +
+    "description: 'Testing: this description has a colon mid-sentence, same shape as the bug'\n" +
+    'metadata:\n' +
+    '  type: gotcha\n' +
+    '---\n' +
+    '\n' +
+    'test content\n';
+  assert.equal(fs.readFileSync(json.file, 'utf-8'), expected);
+});
+
 test('/capture with missing required fields returns 400 with a real error, not {continue: true}', async () => {
   const { status, json } = await post('/capture', JSON.stringify({ cwd: projectDir }));
   assert.equal(json.continue, undefined);

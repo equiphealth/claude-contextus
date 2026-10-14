@@ -30,6 +30,7 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import matter from 'gray-matter';
 import { loadConfig, loadProjectConfig, expandHome, projectHash } from '../lib/config.js';
 
 // ESM equivalent of __dirname
@@ -976,18 +977,32 @@ async function executeCaptureRequest(
     return;
   }
 
-  // Build the frontmatter + body
-  const tagsLine =
-    tags.length > 0 ? `\n  tags: [${tags.map((t: string) => `"${t}"`).join(', ')}]` : '';
-  const fileContent = `---
-name: ${slug}
-description: ${description}
-metadata:
-  type: ${category}${tagsLine}
----
+  // Build the frontmatter + body via gray-matter's own serializer, not hand-
+  // interpolated template strings — matter.stringify runs scalars through a
+  // real YAML dumper, which quotes anything that needs it (an embedded ": ",
+  // a leading special char, etc.) by construction. A free-text `description`
+  // containing a colon used to silently break plain-scalar YAML parsing at
+  // embed time with no error in the /capture response itself — see
+  // gotcha-capture-description-colon-breaks-yaml-frontmatter.md and
+  // https://github.com/equiphealth/claude-contextus/issues/70.
+  const metadata: Record<string, unknown> = { type: category };
+  if (tags.length > 0) metadata.tags = tags;
+  const fileContent = matter.stringify(`\n${content}\n`, { name: slug, description, metadata });
 
-${content}
-`;
+  // Defense in depth: re-parse what we just built before writing it anywhere.
+  // Should never actually fail — matter.stringify's own output is self-
+  // consistent — but if it somehow does, reject loudly now rather than write
+  // a file that will fail silently at embed time (reconcile does not
+  // reliably catch or retry this class of failure; see issue #70).
+  try {
+    matter(fileContent);
+  } catch (err) {
+    sendJson(res, 400, {
+      ok: false,
+      error: `generated frontmatter failed to parse as YAML: ${err instanceof Error ? err.message : String(err)}`
+    });
+    return;
+  }
 
   // Resolve target path — folder names follow existing conventions
   const CATEGORY_DIRS: Record<string, string> = {
