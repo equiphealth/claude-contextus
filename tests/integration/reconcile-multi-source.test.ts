@@ -171,6 +171,41 @@ test('/reconcile {check:true} DOES quarantine a projectContext file with a real 
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
+test('/reconcile {check:true} isolates a file with invalid frontmatter YAML instead of failing the whole batch', async () => {
+  // Regression (2026-10-14): loadContexts() used a bare .map(loadContext),
+  // so one file with unparseable frontmatter (an unquoted ": " in a scalar)
+  // threw and killed the ENTIRE reconcile for every source, not just that
+  // file — observed live. A good file sitting right next to the bad one
+  // must still be counted and embeddable; the bad one surfaces in `failed`,
+  // distinct from `quarantined` (that's a different failure stage — this
+  // file never even parses into a LoadedContext).
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  const contextDir = path.join(projectDir, '.claude', 'context');
+  fs.mkdirSync(path.join(contextDir, 'decisions'), { recursive: true });
+
+  fs.writeFileSync(
+    path.join(contextDir, 'decisions', 'decision-good.md'),
+    '---\nname: good\nmetadata:\n  type: decision\n---\nbody'
+  );
+  fs.writeFileSync(
+    path.join(contextDir, 'decisions', 'decision-bad.md'),
+    '---\nname: bad\ndescription: unquoted: colon breaks this\nmetadata:\n  type: decision\n---\nbody'
+  );
+
+  const { status, json } = await post(
+    '/reconcile',
+    JSON.stringify({ cwd: projectDir, check: true })
+  );
+
+  assert.equal(status, 200);
+  assert.equal(json.newCount, 1, 'the good file must still be counted as embeddable');
+  assert.equal(json.quarantined.length, 0, 'not a prefix/type mismatch');
+  assert.equal(json.failed.length, 1);
+  assert.match(json.failed[0], /decision-bad\.md$/);
+
+  fs.rmSync(projectDir, { recursive: true, force: true });
+});
+
 test('/reconcile {check:true} reports state:fresh when nothing changed across any source', async () => {
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
   const contextDir = path.join(projectDir, '.claude', 'context');

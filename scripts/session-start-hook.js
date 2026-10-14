@@ -232,6 +232,18 @@ async function main() {
       );
     }
 
+    // Surface files with invalid frontmatter YAML — a different failure stage
+    // than the prefix/type mismatch above (the file never even parsed), so it
+    // gets its own message rather than being silently absent or lumped in.
+    const failed = plan && Array.isArray(plan.failed) ? plan.failed : [];
+    if (failed.length > 0) {
+      const shown = failed.slice(0, 3).join(', ');
+      const more = failed.length > 3 ? ` (+${failed.length - 3} more)` : '';
+      lines.push(
+        `contextus: ${failed.length} context file(s) can't embed — invalid frontmatter YAML: ${shown}${more}. Usually an unquoted ": " in a scalar value; they won't inject until fixed.`
+      );
+    }
+
     // Upgrade check: cheap (~1ms, two file reads). Notifies if data schema is behind
     // the installed code version. Never blocks, never auto-migrates.
     const upgrade = checkUpgradeNeeded();
