@@ -146,6 +146,25 @@ test('embedSingleFile: returns index_or_readme for nested CONTEXT.md', async () 
   }
 });
 
+test('embedSingleFile: returns yaml_parse_error (not a throw) for invalid frontmatter', async () => {
+  // A file with bad frontmatter YAML can reach this path from the live fs.watch
+  // watcher or a full reconcile, not just /capture (which validates before
+  // writing) — a hand-edit, or anything else that touches the file directly.
+  const contextDir = makeTempContextDir();
+  try {
+    const badFile = path.join(contextDir, 'decision-bad.md');
+    fs.writeFileSync(
+      badFile,
+      '---\nname: bad\ndescription: unquoted: colon breaks this\nmetadata:\n  type: decision\n---\nbody'
+    );
+    const result = await embedSingleFile(badFile, contextDir);
+    assert.equal(result.embedded, false);
+    assert.match(result.reason ?? '', /^yaml_parse_error:/);
+  } finally {
+    fs.rmSync(contextDir, { recursive: true, force: true });
+  }
+});
+
 test('embedSingleFile: normalizes paths (trailing slash, relative segments)', async () => {
   const contextDir = makeTempContextDir();
   try {

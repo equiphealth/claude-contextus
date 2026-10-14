@@ -16,6 +16,7 @@
  * automatically every session).
  */
 
+import path from 'node:path';
 import { loadContexts, quarantineMismatches } from './context-loader.js';
 import { embedDocuments } from './embedder.js';
 import { embedSingleFile } from './embed-file.js';
@@ -35,6 +36,8 @@ export interface ReconcileResult {
   embedded: number;
   removed: number;
   unchanged: number;
+  /** relPaths of files whose frontmatter YAML failed to parse this pass */
+  failed: string[];
 }
 
 /**
@@ -57,7 +60,7 @@ export async function runReconcile(
   exclude?: string[],
   sourceType?: string
 ): Promise<ReconcileResult> {
-  const allContexts = await loadContexts(contextDir, exclude);
+  const { contexts: allContexts, failed: loadFailed } = await loadContexts(contextDir, exclude);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
   // so if reconcile kept them in the disk set planReconcile would mark them "new"
   // EVERY session — the "re-embedding 1 forever" phantom (observed 2026-06-15 with a
@@ -78,8 +81,10 @@ export async function runReconcile(
   }));
   const plan = planReconcile(diskFiles, hashes, exists);
 
+  const failed = loadFailed.map((f) => f.relPath);
+
   if (plan.state === 'empty' || plan.state === 'fresh') {
-    return { state: plan.state, embedded: 0, removed: 0, unchanged: plan.unchanged.length };
+    return { state: plan.state, embedded: 0, removed: 0, unchanged: plan.unchanged.length, failed };
   }
 
   // Cold start: no table yet → chunk + build it from every file in one shot.
@@ -92,9 +97,10 @@ export async function runReconcile(
       const vectors = await embedDocuments(pending.map((p) => p.embedText));
       rows.push(...buildRows(c, pending, vectors, source, now, projectId));
     }
-    if (rows.length === 0) return { state: plan.state, embedded: 0, removed: 0, unchanged: 0 };
+    if (rows.length === 0)
+      return { state: plan.state, embedded: 0, removed: 0, unchanged: 0, failed };
     await createTable(rows, { projectName, replace: true });
-    return { state: plan.state, embedded: contexts.length, removed: 0, unchanged: 0 };
+    return { state: plan.state, embedded: contexts.length, removed: 0, unchanged: 0, failed };
   }
 
   // Stale: incremental re-embed of new/changed files + orphan removal. embedSingleFile
@@ -110,6 +116,9 @@ export async function runReconcile(
       sourceType
     );
     if (r.embedded) embedded++;
+    else if (r.reason?.startsWith('yaml_parse_error')) {
+      failed.push(path.relative(contextDir, absPath).replace(/\\/g, '/'));
+    }
   }
   for (const filename of plan.toRemove)
     await deleteByFilename(filename, projectName, projectId || undefined);
@@ -117,6 +126,7 @@ export async function runReconcile(
     state: plan.state,
     embedded,
     removed: plan.toRemove.length,
-    unchanged: plan.unchanged.length
+    unchanged: plan.unchanged.length,
+    failed
   };
 }

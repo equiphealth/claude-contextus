@@ -1,6 +1,6 @@
 ---
 name: propose-footer-instruction-leakage-across-modes
-description: The old Context: propose footer pattern is hardcoded as canonical example in 12+ repo files, competing with mode-aware staging-footer instructions and causing footer drift
+description: "The old Context: propose footer pattern is hardcoded as canonical example in 12+ repo files, competing with mode-aware staging-footer instructions and causing footer drift"
 metadata:
   type: gotcha
   tags: ["capture-modes", "prompt-engineering", "staging", "instruction-hygiene"]

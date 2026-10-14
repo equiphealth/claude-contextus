@@ -1,6 +1,6 @@
 ---
 name: node-protocol-imports
-description: Always use node: protocol prefix for built-in module imports (fs → node:fs, path → node:path)
+description: "Always use node: protocol prefix for built-in module imports (fs → node:fs, path → node:path)"
 metadata:
   type: decision
   tags: ["imports", "style", "sonarlint"]

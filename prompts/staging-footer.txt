@@ -15,6 +15,8 @@ The daemon derives the project hash from `cwd`. Use `$(pwd)` for the current pro
 
 **IMPORTANT — Updates vs Creates**: The `/capture` endpoint **OVERWRITES** existing files with the same slug. To update an existing context file, call `/capture` with the same `slug` and `category` — the daemon will replace the entire file. Read the existing file first if you need to preserve parts of it.
 
+**Check the response.** `/capture` can return `{"ok": false, "error": "..."}` (HTTP 400) if your `description` or other text can't be safely represented as YAML frontmatter — don't assume success and emit "Context: captured" regardless. If you see this, don't just retry the identical payload; rephrase the offending field (the error names which) and call `/capture` again.
+
 VALID CATEGORIES (= `metadata.type`): `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`.
 
 ROUTING:

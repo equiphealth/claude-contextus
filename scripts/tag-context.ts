@@ -47,7 +47,10 @@ async function listTagless(): Promise<void> {
   });
   const tagless: Array<{ relpath: string; name: string; description: string }> = [];
   for (const abs of files.sort()) {
-    const { data } = matter(fs.readFileSync(abs, 'utf8'));
+    // Second arg disables gray-matter's own cache — see context-loader.ts's
+    // loadContext for why (it caches pre-parse, so a throw on invalid YAML
+    // still leaves a stale entry masking the error on every later call).
+    const { data } = matter(fs.readFileSync(abs, 'utf8'), {});
     const d = data as Record<string, unknown>;
     if (fileTags(d).length === 0) {
       tagless.push({

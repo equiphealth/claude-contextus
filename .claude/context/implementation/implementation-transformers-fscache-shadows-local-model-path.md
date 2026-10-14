@@ -1,6 +1,6 @@
 ---
 name: transformers-fscache-shadows-local-model-path
-description: FIXED: configureTransformersEnv() disables useFSCache/useBrowserCache when localModelPath is set, so a stale bad cached response can no longer shadow a correctly-bundled local model
+description: "FIXED: configureTransformersEnv() disables useFSCache/useBrowserCache when localModelPath is set, so a stale bad cached response can no longer shadow a correctly-bundled local model"
 metadata:
   type: implementation
   tags: ["transformers", "embedding", "offline"]

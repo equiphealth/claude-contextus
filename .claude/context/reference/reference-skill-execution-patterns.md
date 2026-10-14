@@ -1,6 +1,6 @@
 ---
 name: skill-execution-patterns
-description: Two skill execution patterns: silent system commands vs conversational wizards
+description: "Two skill execution patterns: silent system commands vs conversational wizards"
 metadata:
   type: reference
   tags: ["skills", "ux", "patterns"]
