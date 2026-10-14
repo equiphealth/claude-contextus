@@ -1,6 +1,6 @@
 ---
 name: claude-code-hook-surface-limitations
-description: Two architectural workarounds contextus needs specifically because Claude Code's hook surface doesn't expose these directly: context-window usage, and mid-task injection
+description: "Two architectural workarounds contextus needs specifically because Claude Code's hook surface doesn't expose these directly: context-window usage, and mid-task injection"
 metadata:
   type: tradeoff
   tags: ["claude-code", "hooks", "architecture", "limitation", "statusline", "injection"]

@@ -1,6 +1,6 @@
 ---
 name: context-delete-archive-endpoint
-description: Design for /delete endpoint: move to .archive, remove from index/embeddings
+description: "Design for /delete endpoint: move to .archive, remove from index/embeddings"
 metadata:
   type: phase
   tags: ["daemon", "api", "corpus-management"]

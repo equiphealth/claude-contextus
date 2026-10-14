@@ -1,6 +1,6 @@
 ---
 name: thinking-blocks-as-independent-usage-verification
-description: Visible thinking blocks were an independent cross-check on the self-reported 'Context: used:' footer calibration relies on -- losing them (if Sonnet 5's adaptive reasoning removes visible blocks) weakens usage-signal quality, not just debugging convenience
+description: "Visible thinking blocks were an independent cross-check on the self-reported 'Context: used:' footer calibration relies on -- losing them (if Sonnet 5's adaptive reasoning removes visible blocks) weakens usage-signal quality, not just debugging convenience"
 metadata:
   type: tradeoff
   tags: ["calibration", "usage-signal", "thinking-blocks", "sonnet-5", "self-report-bias"]

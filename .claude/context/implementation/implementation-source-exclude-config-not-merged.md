@@ -1,6 +1,6 @@
 ---
 name: source-exclude-config-not-merged
-description: FIXED 2026-07-20: sources.*.exclude patterns now properly merge from project config (was: resolveSources used raw plugin.json)
+description: "FIXED 2026-07-20: sources.*.exclude patterns now properly merge from project config (was: resolveSources used raw plugin.json)"
 metadata:
   type: implementation
   tags: ["config", "sources", "embedding", "fixed"]
