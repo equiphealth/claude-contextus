@@ -206,6 +206,50 @@ test('/reconcile {check:true} isolates a file with invalid frontmatter YAML inst
   fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
+test('/reconcile {check:true} reports BOTH a prefix/type mismatch AND invalid YAML in the same batch, independently', async () => {
+  // The two failure classes are detected at different stages (quarantine
+  // happens AFTER a file successfully parses into a LoadedContext; a YAML
+  // parse failure means it never gets that far) and surface in separate
+  // fields. Neither should mask, suppress, or get confused with the other —
+  // a project can have one of each at the same time and both must show up,
+  // each correctly attributed to its own field.
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
+  const contextDir = path.join(projectDir, '.claude', 'context');
+  fs.mkdirSync(path.join(contextDir, 'decisions'), { recursive: true });
+
+  fs.writeFileSync(
+    path.join(contextDir, 'decisions', 'decision-good.md'),
+    '---\nname: good\nmetadata:\n  type: decision\n---\nbody'
+  );
+  // Wrong category: filename prefix says "decision", frontmatter says "gotcha".
+  fs.writeFileSync(
+    path.join(contextDir, 'decisions', 'decision-mismatched.md'),
+    '---\nname: mismatched\nmetadata:\n  type: gotcha\n---\nbody'
+  );
+  // Bad YAML: unquoted ": " mid-scalar breaks frontmatter parsing entirely.
+  fs.writeFileSync(
+    path.join(contextDir, 'decisions', 'decision-bad-yaml.md'),
+    '---\nname: bad-yaml\ndescription: unquoted: colon breaks this\nmetadata:\n  type: decision\n---\nbody'
+  );
+
+  const { status, json } = await post(
+    '/reconcile',
+    JSON.stringify({ cwd: projectDir, check: true })
+  );
+
+  assert.equal(status, 200);
+  assert.equal(json.newCount, 1, 'only the good file is embeddable');
+  assert.equal(json.quarantined.length, 1, 'the prefix/type mismatch must still be caught');
+  assert.match(json.quarantined[0], /decision-mismatched\.md$/);
+  assert.equal(json.failed.length, 1, 'the invalid-YAML file must still be caught');
+  assert.match(json.failed[0], /decision-bad-yaml\.md$/);
+  // Cross-check: neither list leaked the other's file.
+  assert.ok(!json.quarantined[0].includes('bad-yaml'));
+  assert.ok(!json.failed[0].includes('mismatched'));
+
+  fs.rmSync(projectDir, { recursive: true, force: true });
+});
+
 test('/reconcile {check:true} reports state:fresh when nothing changed across any source', async () => {
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-itest-project-'));
   const contextDir = path.join(projectDir, '.claude', 'context');

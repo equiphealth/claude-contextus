@@ -76,7 +76,10 @@ async function loadMemoryFiles(): Promise<MemoryFile[]> {
   const files = await glob(path.join(MEMORY_DIR, '**', '*.md'), { ignore: ['**/MEMORY.md'] });
   return files.sort().map((abs) => {
     const raw = fs.readFileSync(abs, 'utf8');
-    const { data, content } = matter(raw);
+    // Second arg disables gray-matter's own cache — see context-loader.ts's
+    // loadContext for why (it caches pre-parse, so a throw on invalid YAML
+    // still leaves a stale entry masking the error on every later call).
+    const { data, content } = matter(raw, {});
     return {
       filename: path.basename(abs),
       data: data as Record<string, unknown>,

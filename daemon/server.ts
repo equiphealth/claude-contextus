@@ -985,9 +985,13 @@ async function executeCaptureRequest(
   const fileContent = matter.stringify(`\n${content}\n`, { name: slug, description, metadata });
 
   // Re-parse before writing — reject loudly here instead of failing silently
-  // at embed time.
+  // at embed time. Second arg disables gray-matter's own cache (it caches
+  // the file object BEFORE parsing succeeds, so a throw still leaves a
+  // stale entry that silently "succeeds" on the next identical-content
+  // call within this daemon's lifetime — the exact failure mode this check
+  // exists to catch, so bypassing it here is non-negotiable).
   try {
-    matter(fileContent);
+    matter(fileContent, {});
   } catch (err) {
     sendJson(res, 400, {
       ok: false,

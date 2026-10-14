@@ -116,6 +116,10 @@ async function main() {
 
   const lines = [];
   let warmOk = false;
+  // Hoisted out of the `if (warmOk)` block below so the final additionalContext
+  // check (after that block closes) can still see them.
+  let quarantined = [];
+  let failed = [];
 
   try {
     // Packaged install only: a marketplace clone has no node_modules. Kick off a
@@ -223,7 +227,7 @@ async function main() {
   if (warmOk) {
     // Surface quarantined files (bad prefix/type — can't embed). Honest + actionable:
     // these used to either abort the whole embed or loop as a phantom "new" forever.
-    const quarantined = plan && Array.isArray(plan.quarantined) ? plan.quarantined : [];
+    quarantined = plan && Array.isArray(plan.quarantined) ? plan.quarantined : [];
     if (quarantined.length > 0) {
       const shown = quarantined.slice(0, 3).join(', ');
       const more = quarantined.length > 3 ? ` (+${quarantined.length - 3} more)` : '';
@@ -235,7 +239,7 @@ async function main() {
     // Surface files with invalid frontmatter YAML — a different failure stage
     // than the prefix/type mismatch above (the file never even parsed), so it
     // gets its own message rather than being silently absent or lumped in.
-    const failed = plan && Array.isArray(plan.failed) ? plan.failed : [];
+    failed = plan && Array.isArray(plan.failed) ? plan.failed : [];
     if (failed.length > 0) {
       const shown = failed.slice(0, 3).join(', ');
       const more = failed.length > 3 ? ` (+${failed.length - 3} more)` : '';
@@ -274,6 +278,36 @@ async function main() {
   // 'silent' suppresses everything, including failures.
   const out = { continue: true };
   if (lines.length && verbosity !== 'silent') out.systemMessage = lines.join('\n');
+
+  // Unlike the rest of `lines` above, quarantined/failed context files are
+  // worth putting in Claude's own context (not just the human-facing
+  // systemMessage) — they're rare, bounded, and directly actionable by an
+  // agent that can go fix the file right now, rather than only visible to a
+  // human who happens to be reading the terminal. Deliberately NOT doing
+  // this for the rest of `lines` (daemon-spawned, upgrade notices, setup
+  // nudges) — those are routine status, not something worth spending every
+  // session's context budget on (see the no-additionalContext-for-routine-
+  // status note above).
+  if (verbosity !== 'silent') {
+    const contextIssues = [];
+    if (quarantined.length > 0) {
+      contextIssues.push(
+        `${quarantined.length} file(s) with filename prefix disagreeing with metadata.type (fix the prefix or the type): ${quarantined.join(', ')}`
+      );
+    }
+    if (failed.length > 0) {
+      contextIssues.push(
+        `${failed.length} file(s) with invalid frontmatter YAML, usually an unquoted ": " in a scalar value: ${failed.join(', ')}`
+      );
+    }
+    if (contextIssues.length > 0) {
+      out.hookSpecificOutput = {
+        hookEventName: 'SessionStart',
+        additionalContext: `[contextus] This project's context corpus has files that can't embed and won't be searchable until fixed:\n${contextIssues.map((i) => `- ${i}`).join('\n')}`
+      };
+    }
+  }
+
   process.stdout.write(JSON.stringify(out));
 }
 

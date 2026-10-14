@@ -90,7 +90,14 @@ export function categoryPrefix(relPath: string): string | null {
 /** Load and parse a single context file. Throws on invalid frontmatter YAML. */
 export function loadContext(absPath: string, contextDir: string): LoadedContext {
   const raw = fs.readFileSync(absPath, 'utf8');
-  const { data, content } = matter(raw);
+  // Second arg disables gray-matter's own content-keyed cache (gray-matter
+  // caches the file object BEFORE parsing succeeds — see index.js — so a
+  // parse that throws still leaves a half-populated entry cached under that
+  // exact content string; every later call with the same broken content
+  // silently returns the stale empty-data object instead of re-throwing).
+  // We read fresh from disk every call anyway, so the cache buys nothing and
+  // actively hides repeat failures.
+  const { data, content } = matter(raw, {});
   const relPath = path.relative(contextDir, absPath);
   const { type, tags } = resolveTypeAndTags(data as Record<string, unknown>);
   return {
