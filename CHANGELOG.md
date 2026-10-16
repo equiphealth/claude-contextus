@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-15
+
+### Added
+- **Stop-hook capture-enforcement gate (prototype, opt-in)**: `scripts/capture-gate-hook.js` blocks turn completion once if a `git commit` ran this turn with no `/capture` logged since the turn began, nudging Claude to either call `/capture` or explicitly acknowledge `Context: capture-skip: <reason>`. Off by default (`contextCapture.stopGate`), opt-in per project — the existing UserPromptSubmit capture nudge is a soft reminder a live task can always out-compete; this adds the missing teeth for the one cheaply-detectable case. Honors Claude Code's `stop_hook_active` loop guard (one nudge, not a loop) and logs the outcome (captured-after-nudge vs. missed) as a miss-rate signal.
+- **`/capture` validates generated frontmatter YAML before writing it** (GH issue #70). Builds frontmatter via `gray-matter.stringify()` instead of hand-interpolated template strings, and re-parses the result before writing — rejects with `{"ok":false,"error":...}` (HTTP 400) instead of silently writing a file that fails to parse at embed time (root cause: an unquoted `": "` inside a `description` value breaks plain-scalar YAML).
+- **Invalid frontmatter YAML is now isolated everywhere a context file loads**, not just `/capture` — bulk reconcile, the full-rebuild CLI, and the live file watcher each skip just the broken file and report it, instead of one bad file aborting the whole batch. `/reconcile {check:true}` response gains a `failed` field alongside the existing `quarantined`.
+- **SessionStart surfaces quarantined/failed context files into Claude's own context** (`additionalContext`), not just a human-facing `systemMessage` — a future session can now proactively flag bad context files instead of that information being UI-only.
+- **The PostToolUse hook (`watch-contexts.js`) warns back to whoever just wrote a file** with invalid frontmatter YAML, instead of discarding `/notify`'s response and always returning a bare `{continue:true}`.
+
+### Fixed
+- **Worked around a gray-matter upstream caching bug** (confirmed, long-open: jonschlinkert/gray-matter#121/#124/#129/#159/#166/#174/#196) that was silently corrupting repeat-parse reliability of the new YAML validation above: `gray-matter` caches the parsed file object *before* parsing succeeds, so a thrown YAML error on invalid frontmatter still leaves a stale, empty-data entry cached under that exact content string — every later call with identical broken content silently returned the stale object instead of re-throwing. Fixed by passing a truthy second argument to every `matter()` call in the codebase, which bypasses the cache per its own `if (!options)` gate.
+
 ## [0.19.7] - 2026-09-06
 
 ### Fixed
