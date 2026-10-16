@@ -25,9 +25,33 @@ const CAPTURE_ACK_RE = /Context:\s*(captured|propose)(\s*\[[^\]]+\])?:/i;
 const DEFAULT_LOG_DIR = path.join(os.homedir(), '.contextus', 'logs');
 
 /**
+ * Is this transcript entry a genuine human-authored prompt (the real turn
+ * boundary), as opposed to a tool_result — which Claude Code also records as
+ * a `type: 'user'` entry (same shape the Messages API uses to return tool
+ * results). Scanning backward for `type === 'user'` without this check stops
+ * at the tool_result immediately following the LAST tool call of the turn
+ * (e.g. the git commit's own result) instead of the actual prompt that
+ * started it — silently losing every tool_use before that point, including
+ * the commit itself. A real user message is either a plain string, an empty
+ * content array, or an array containing at least one non-tool_result block.
+ *
+ * @param {{type?: string, message?: {content?: unknown}}} entry
+ */
+function isGenuineUserTurnStart(entry) {
+  if (entry.type !== 'user') return false;
+  const content = entry.message?.content;
+  if (typeof content === 'string') return true;
+  if (!Array.isArray(content) || content.length === 0) return true;
+  return !content.every((block) => block && block.type === 'tool_result');
+}
+
+/**
  * Read a transcript JSONL file and pull out the last turn: the assistant
- * tool_use blocks and visible text emitted after the most recent `user`
- * message, plus that user message's timestamp (the turn's start).
+ * tool_use blocks and visible text emitted after the most recent genuine
+ * user message, plus that message's timestamp (the turn's start). Skips
+ * over tool_result entries (also `type: 'user'`) and other non-assistant
+ * bookkeeping entries (attachment, api-request, etc.) that aren't the real
+ * boundary — see isGenuineUserTurnStart.
  *
  * @param {string} transcriptPath
  * @returns {{ toolUses: Array<{name: string, input: unknown}>, responseText: string, turnStartTs: string|null }}
@@ -52,6 +76,7 @@ export function extractLastTurn(transcriptPath) {
       continue;
     }
     if (entry.type === 'user') {
+      if (!isGenuineUserTurnStart(entry)) continue; // a tool_result, not the real boundary
       turnStartTs = entry.timestamp || turnStartTs;
       break;
     }

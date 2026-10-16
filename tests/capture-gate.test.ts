@@ -60,6 +60,46 @@ describe('extractLastTurn', () => {
     assert.equal(toolUses.length, 1);
     assert.equal(toolUses[0].name, 'Edit');
   });
+
+  it('does not mistake a tool_result (also type: "user") for the turn boundary', () => {
+    // Real Claude Code transcript shape: every tool_use is immediately
+    // followed by its own tool_result, which is ALSO a `type: 'user'` entry
+    // (same as the Messages API). A commit that isn't the very last tool
+    // call of the turn must still be found, not hidden behind its own result.
+    const file = writeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-09-11T10:00:00.000Z',
+        message: { content: [{ type: 'text', text: 'fix the bug and commit' }] }
+      },
+      { type: 'assistant', message: { content: [bashCommit] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] } },
+      { type: 'assistant', message: { content: [bashLs] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', content: 'file list' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Done.' }] } }
+    ]);
+    const { toolUses, responseText, turnStartTs } = extractLastTurn(file);
+    assert.equal(toolUses.length, 2);
+    assert.equal(toolUses[0].name, 'Bash');
+    assert.equal((toolUses[0].input as { command: string }).command, bashCommit.input.command);
+    assert.equal(responseText, 'Done.');
+    assert.equal(turnStartTs, '2026-09-11T10:00:00.000Z');
+  });
+
+  it('still stops at a genuine prior user message even past several tool_results', () => {
+    const file = writeTranscript([
+      { type: 'assistant', message: { content: [bashCommit] } }, // stale turn, before boundary
+      { type: 'user', message: { content: [{ type: 'tool_result', content: 'stale result' }] } },
+      { type: 'user', timestamp: '2026-09-11T10:05:00.000Z', message: { content: [] } },
+      { type: 'assistant', message: { content: [editBlock] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Edited.' }] } }
+    ]);
+    const { toolUses, turnStartTs } = extractLastTurn(file);
+    assert.equal(toolUses.length, 1);
+    assert.equal(toolUses[0].name, 'Edit');
+    assert.equal(turnStartTs, '2026-09-11T10:05:00.000Z');
+  });
 });
 
 describe('hasGitCommit', () => {
