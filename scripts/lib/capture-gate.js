@@ -19,12 +19,44 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-// Requires "git commit" to appear as the START of its own command invocation
-// (start of string, or right after a separator: ;, &, &&, |, or newline) —
-// not merely co-occurring anywhere in the command string. A bare `\bgit\b.*
-// \bcommit\b` also matches `grep -rn "git commit" CONTRIBUTING.md` or
-// `git log --grep=commit`, neither of which runs a commit.
-const GIT_COMMIT_RE = /(?:^|[;&|\n])\s*git\s+(?:-\S+\s+)*commit\b/i;
+// Looks for "git" ... "commit" anywhere on the line — deliberately NOT
+// anchored to the start of a command segment (e.g. requiring it right after
+// `;`/`&&`/`|`). Real-world git invocations are routinely wrapped — a shell
+// alias/function, a PreToolUse hook rewrite, or simply typing `rtk git
+// commit ...` (this very repo's own ~/.claude/settings.json permission
+// allowlist has `Bash(rtk git *)`) — so "git" is often NOT the first token
+// of its own segment. Anchoring to segment-start was tried and reverted: it
+// stopped matching exactly those wrapped invocations, trading one cheap
+// false positive for a silent false negative (the gate never firing at all),
+// which is worse for a feature whose entire point is not missing a commit.
+const GIT_COMMIT_RE = /\bgit\b[^\n]*(?<!=)\bcommit\b/i;
+
+/**
+ * Is the GIT_COMMIT_RE match at `matchIndex` a REAL git-commit invocation,
+ * or a false positive the regex alone can't rule out? Excludes exactly the
+ * two concrete cases found in review: "commit" as a flag VALUE (already
+ * excluded by the regex's own `(?<!=)`, e.g. `git log --grep=commit`), and
+ * "git commit" appearing as a quoted string literal rather than code (e.g.
+ * `grep -rn "git commit" file.md`) — detected by an odd quote count before
+ * the match, i.e. the match sits inside an unclosed quote.
+ * @param {string} cmd
+ * @param {number} matchIndex
+ */
+function isRealGitCommitMatch(cmd, matchIndex) {
+  const before = cmd.slice(0, matchIndex);
+  const doubleQuotes = (before.match(/"/g) || []).length;
+  const singleQuotes = (before.match(/'/g) || []).length;
+  return doubleQuotes % 2 === 0 && singleQuotes % 2 === 0;
+}
+
+/** Find the Bash tool_use (if any) whose command runs a real `git commit`. */
+function findGitCommitCall(toolUses) {
+  return toolUses.find((t) => {
+    if (t.name !== 'Bash' || typeof t?.input?.command !== 'string') return false;
+    const match = GIT_COMMIT_RE.exec(t.input.command);
+    return match ? isRealGitCommitMatch(t.input.command, match.index) : false;
+  });
+}
 const CAPTURE_SKIP_RE = /Context:\s*capture-skip:/i;
 // Only "captured" counts as proof a file was actually written. "propose"
 // (contextCapture.mode: "propose") only SUGGESTS a capture — nothing is
@@ -106,9 +138,7 @@ export function extractLastTurn(transcriptPath) {
 
 /** Did this turn run a `git commit` (any Bash tool_use containing it)? */
 export function hasGitCommit(toolUses) {
-  return toolUses.some(
-    (t) => t.name === 'Bash' && typeof t?.input?.command === 'string' && GIT_COMMIT_RE.test(t.input.command)
-  );
+  return findGitCommitCall(toolUses) !== undefined;
 }
 
 /** Did the response explicitly acknowledge skipping capture on purpose? */
@@ -196,9 +226,7 @@ export function shouldBlockForCapture({ toolUses, responseText, turnStartTs, las
  * @param {Array<{name: string, input: unknown}>} toolUses
  */
 export function extractCommitSummary(toolUses) {
-  const commitCall = toolUses.find(
-    (t) => t.name === 'Bash' && typeof t?.input?.command === 'string' && GIT_COMMIT_RE.test(t.input.command)
-  );
+  const commitCall = findGitCommitCall(toolUses);
   if (!commitCall) return null;
   const cmd = commitCall.input.command;
   // Heredoc convention (this repo's own commit style) first — it nests a

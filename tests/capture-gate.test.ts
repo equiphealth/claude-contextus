@@ -136,6 +136,24 @@ describe('hasGitCommit', () => {
       true
     );
   });
+
+  it('still detects a commit run through a wrapper/alias — "git" is not the first token', () => {
+    // Real environments routinely wrap git: a shell alias, a PreToolUse hook
+    // rewrite, or just typing `rtk git commit` directly (this repo's own
+    // ~/.claude/settings.json permission allowlist has `Bash(rtk git *)`).
+    // The false-positive fix must not regress this into a false negative —
+    // a silently-dead gate is worse than one extra round trip.
+    assert.equal(
+      hasGitCommit([{ name: 'Bash', input: { command: 'rtk git commit -m "fix: x"' } }]),
+      true
+    );
+    assert.equal(
+      hasGitCommit([
+        { name: 'Bash', input: { command: 'lean-ctx hook claude -- git commit -m "fix: x"' } }
+      ]),
+      true
+    );
+  });
 });
 
 describe('hasExplicitSkip / hasCaptureFooter', () => {

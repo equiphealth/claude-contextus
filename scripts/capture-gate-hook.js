@@ -28,9 +28,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { stripJsonComments } from './lib/parse-jsonc.js';
+import { projectHash } from './lib/project-hash.js';
 import {
   extractLastTurn,
   lastCaptureTimestamp,
@@ -87,15 +87,8 @@ function stopGateEnabled(cwd) {
   return enabled;
 }
 
-// Must match lib/config.ts's projectHash() exactly — this is a plain-JS hook
-// script (no build step), so it can't import the canonical TS implementation
-// directly; scripts/stop-evaluation.js carries the identical duplicate with
-// the same warning. If the canonical formula ever changes, this (and that)
-// must change too, or capture-nudge project labels silently desync from the
-// IDs used everywhere else (daemon, usage logs, captures.log's project tag).
 function projectLabel(cwd) {
-  const abs = path.resolve(cwd || process.cwd());
-  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
+  return projectHash(cwd || process.cwd());
 }
 
 /** Best-effort — a failure here must never block the Stop decision itself. */

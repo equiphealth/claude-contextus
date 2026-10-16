@@ -16,10 +16,10 @@
  * don't need to return JSON.
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { projectHash } from './lib/project-hash.js';
 
 const HOME = os.homedir();
 const CONTEXTUS = path.join(HOME, '.contextus');
@@ -30,14 +30,6 @@ const CALIBRATION_STATE = path.join(CONTEXTUS, 'calibration-state.json');
 const SESSION_STATE = path.join(CONTEXTUS, '.session-state.json');
 const EVAL_QUEUE = path.join(CONTEXTUS, '.eval-queue.jsonl');
 
-/**
- * Compute the opaque project identifier: sha256(absolutePath).slice(0, 12).
- * Must match lib/config.ts projectHash() exactly.
- */
-function projectHash(absolutePath) {
-  const normalized = path.resolve(absolutePath);
-  return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 12);
-}
 
 /**
  * Find plugin.jsonc (walk up from CLAUDE_PLUGIN_ROOT or cwd). Returns null if not found.
@@ -215,11 +207,6 @@ function lastTurnFromTranscript(transcriptPath, maxRetries = 5) {
   return { thinking: '', response: '' };
 }
 
-function projectFromCwd(cwd) {
-  const abs = path.resolve(cwd || process.cwd());
-  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
-}
-
 async function main() {
   let payload = {};
   try {
@@ -230,8 +217,8 @@ async function main() {
   }
 
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
-  const project = projectFromCwd(cwd); // sha256 hash for session-state key
-  const projectId = cwd ? projectHash(cwd) : project; // same hash for file paths
+  const project = projectHash(cwd); // sha256 hash for session-state key
+  const projectId = project; // same hash, used for file paths
 
   // What did /query inject for this project's most recent prompt?
   const sessionState = readJson(SESSION_STATE, {});
