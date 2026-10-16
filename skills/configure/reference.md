@@ -108,6 +108,7 @@ Example — exclude `docs/prompts/` and `docs/archive/` from embedding:
 |---|---|---|---|
 | `mode` | `"propose"` \| `"staging"` \| `"silent"` | `"staging"` | Capture mode (permanent tradeoff) — `"staging"` writes patterns directly via `/capture`, using `git status` as the review gate; `"propose"` suggests via footer instead, you confirm with `/create-context` |
 | `captureFooter` | `"always"` \| `"off"` | `"always"` | Whether a successful capture emits a "Context: captured [scope]: ..." confirmation line (scope is `user` or `project`) |
+| `stopGate` | boolean | `false` | **Prototype.** When `true`, a `Stop` hook blocks turn completion once if a `git commit` ran this turn with no `/capture` logged since — asks for a `/capture` call or an explicit `Context: capture-skip: <why>` acknowledgment. The block reason is visible to the user too (Claude Code shows all Stop-hook block messages, not just to the model) — this is loud by design, not a bug. Toggle with `/configure set contextCapture.stopGate true` (or `false` to turn it back off). See `decisions/decision-capture-enforcement-needs-a-stop-hook-not-wording.md`. |
 
 ### `calibration` — Quality measurement
 
