@@ -55,7 +55,10 @@
   "contextCapture": {
     "enabled": true,
     "mode": "staging",
-    "captureFooter": "always"
+    "captureFooter": "always",
+    // Dogfooding the prototype (decision-capture-enforcement-needs-a-stop-hook-not-wording.md):
+    // blocks turn completion once if a git commit ran with no /capture logged since.
+    "stopGate": true
   },
   "calibration": {
     "targetSamples": 100,
