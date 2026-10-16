@@ -51,3 +51,7 @@ assets/model/
 
 # Pre-PR review output (scripts/review/pre-pr-review.sh)
 .pre-pr-review.md
+
+# Local LanceDB scratch/POC data — never commit real embedded data to the repo
+.lancedb-poc/
+*.lance/
