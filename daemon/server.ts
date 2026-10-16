@@ -814,6 +814,17 @@ async function handleNotify(
   if (result.embedded) {
     invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
+    // Mirrors the live fs.watch watcher's own logCapture call below (same
+    // source-type → scope mapping) — this is the OTHER path a context file
+    // gets captured through: Claude editing it directly via Write/Edit,
+    // picked up by the PostToolUse hook's /notify call, not /capture. Before
+    // this, only /capture, /delete's archive, and the external-edit watcher
+    // wrote to captures.log — a capture made through this path was invisible
+    // to anything reading that log (e.g. the Stop-hook capture-enforcement
+    // gate), even though it genuinely embedded successfully.
+    const notifyTag =
+      sourceType === 'userContext' || sourceType === 'userDocs' ? 'user' : `project:${projectId}`;
+    logCapture(notifyTag, result.id ?? file, 'captured via edit (PostToolUse /notify)');
   } else if (result.reason === 'deleted') {
     invalidateCorpusCache(project);
     logInfo('Context file deleted — rows removed', {
