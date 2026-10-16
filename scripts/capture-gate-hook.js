@@ -36,6 +36,8 @@ import {
   lastCaptureTimestamp,
   shouldBlockForCapture,
   extractCommitSummary,
+  hasExplicitSkip,
+  hasCaptureFooter,
   logCaptureNudge,
 } from './lib/capture-gate.js';
 
@@ -44,6 +46,15 @@ const PLUGIN_JSONC = path.resolve(__dirname, '..', 'plugin.jsonc');
 const PLUGIN_JSON_FALLBACK = path.resolve(__dirname, '..', 'plugin.json');
 const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC) ? PLUGIN_JSONC : PLUGIN_JSON_FALLBACK;
 const CAPTURES_LOG = path.resolve(os.homedir(), '.contextus', 'captures.log');
+// One-shot marker written when we block, read (and deleted) on the
+// stop_hook_active retry — see the comment at that call site for why we
+// can't just re-derive the commit from the transcript on retry. Scoped per
+// project (same reason as captureLogTag in daemon/server.ts) so two
+// concurrent sessions blocking around the same moment in different projects
+// can't clobber each other's pending marker.
+function pendingMarkerPath(project) {
+  return path.resolve(os.homedir(), '.contextus', `.capture-gate-pending-${project}.json`);
+}
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -76,9 +87,42 @@ function stopGateEnabled(cwd) {
   return enabled;
 }
 
+// Must match lib/config.ts's projectHash() exactly — this is a plain-JS hook
+// script (no build step), so it can't import the canonical TS implementation
+// directly; scripts/stop-evaluation.js carries the identical duplicate with
+// the same warning. If the canonical formula ever changes, this (and that)
+// must change too, or capture-nudge project labels silently desync from the
+// IDs used everywhere else (daemon, usage logs, captures.log's project tag).
 function projectLabel(cwd) {
   const abs = path.resolve(cwd || process.cwd());
   return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
+}
+
+/** Best-effort — a failure here must never block the Stop decision itself. */
+function writePendingMarker(project, data) {
+  try {
+    const markerPath = pendingMarkerPath(project);
+    fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+    fs.writeFileSync(markerPath, JSON.stringify(data));
+  } catch {
+    // best-effort
+  }
+}
+
+function readPendingMarker(project) {
+  try {
+    return JSON.parse(fs.readFileSync(pendingMarkerPath(project), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingMarker(project) {
+  try {
+    fs.unlinkSync(pendingMarkerPath(project));
+  } catch {
+    // best-effort
+  }
 }
 
 async function main() {
@@ -93,27 +137,49 @@ async function main() {
   if (!stopGateEnabled(payload.cwd)) return;
   if (!payload.transcript_path) return;
 
+  const project = projectLabel(payload.cwd);
   const { toolUses, responseText, turnStartTs } = extractLastTurn(payload.transcript_path);
-  const lastCaptureTs = lastCaptureTimestamp(CAPTURES_LOG);
-  const stillMissing = shouldBlockForCapture({ toolUses, responseText, turnStartTs, lastCaptureTs });
 
   // Loop guard: Claude Code sets stop_hook_active true when re-invoking Stop
   // hooks after a previous block. Never block twice — but this is exactly the
   // moment to check whether the nudge worked and log the outcome.
   if (payload.stop_hook_active) {
-    const commitSummary = extractCommitSummary(toolUses);
-    if (!commitSummary) return; // nothing to report — the original commit call is out of view
+    const pending = readPendingMarker(project);
+    if (!pending) return; // nothing to report — we never actually blocked this cycle
+    clearPendingMarker(project);
+    // Deliberately NOT shouldBlockForCapture() here: its first gate is
+    // hasGitCommit(toolUses), and toolUses on THIS invocation is scoped to
+    // whatever happened after our own injected block reason got written back
+    // into the transcript — the original `git commit` tool_use is out of
+    // view (same bug class as extractLastTurn's tool_result-is-type-'user'
+    // fix, one layer up: see gotcha-transcript-tool-result-is-also-type-user.md).
+    // hasGitCommit would always be false here regardless of outcome, which
+    // would misreport "resolved" as "missed" unconditionally. We already
+    // KNOW a commit happened — that's why a pending marker exists — so just
+    // check directly whether it's been resolved since: an explicit skip, a
+    // capture footer, or a captures.log entry at/after the ORIGINAL turn
+    // start (saved in the marker, not re-derived from this invocation).
+    const lastCaptureTs = lastCaptureTimestamp(CAPTURES_LOG, project);
+    const resolved =
+      hasExplicitSkip(responseText) ||
+      hasCaptureFooter(responseText) ||
+      (pending.turnStartTs &&
+        lastCaptureTs &&
+        Date.parse(lastCaptureTs) >= Date.parse(pending.turnStartTs));
     logCaptureNudge({
-      outcome: stillMissing ? 'missed' : 'captured_after_nudge',
-      project: projectLabel(payload.cwd),
-      commitSummary,
+      outcome: resolved ? 'captured_after_nudge' : 'missed',
+      project,
+      commitSummary: pending.commitSummary,
     });
     return;
   }
 
+  const lastCaptureTs = lastCaptureTimestamp(CAPTURES_LOG, project);
+  const stillMissing = shouldBlockForCapture({ toolUses, responseText, turnStartTs, lastCaptureTs });
   if (stillMissing) {
     const commitSummary = extractCommitSummary(toolUses) || 'recent commit';
-    logCaptureNudge({ outcome: 'nudged', project: projectLabel(payload.cwd), commitSummary });
+    writePendingMarker(project, { commitSummary, turnStartTs });
+    logCaptureNudge({ outcome: 'nudged', project, commitSummary });
     process.stdout.write(
       JSON.stringify({
         decision: 'block',

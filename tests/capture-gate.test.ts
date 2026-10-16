@@ -114,6 +114,28 @@ describe('hasGitCommit', () => {
   it('is false for an empty tool list', () => {
     assert.equal(hasGitCommit([]), false);
   });
+
+  it('is false for a command that merely MENTIONS "git commit" without running one', () => {
+    assert.equal(
+      hasGitCommit([{ name: 'Bash', input: { command: 'grep -rn "git commit" CONTRIBUTING.md' } }]),
+      false
+    );
+    assert.equal(
+      hasGitCommit([{ name: 'Bash', input: { command: 'git log --grep=commit' } }]),
+      false
+    );
+  });
+
+  it('still detects a real commit chained after another command', () => {
+    assert.equal(
+      hasGitCommit([{ name: 'Bash', input: { command: 'git add -A && git commit -m "fix: x"' } }]),
+      true
+    );
+    assert.equal(
+      hasGitCommit([{ name: 'Bash', input: { command: 'cd /repo; git commit -m "fix: x"' } }]),
+      true
+    );
+  });
 });
 
 describe('hasExplicitSkip / hasCaptureFooter', () => {
@@ -122,11 +144,14 @@ describe('hasExplicitSkip / hasCaptureFooter', () => {
     assert.equal(hasExplicitSkip('All done, no footer.'), false);
   });
 
-  it('recognizes captured/propose footers', () => {
+  it('recognizes a captured footer as proof a file was written', () => {
     assert.equal(hasCaptureFooter('Context: captured: gotchas/gotcha-foo.md'), true);
     assert.equal(hasCaptureFooter('Context: captured [project]: gotchas/gotcha-foo.md'), true);
-    assert.equal(hasCaptureFooter('Context: propose: some-topic'), true);
     assert.equal(hasCaptureFooter('Context: used: foo.md (0.8)'), false);
+  });
+
+  it('does NOT treat a propose footer as proof — propose only suggests, nothing is written yet', () => {
+    assert.equal(hasCaptureFooter('Context: propose: some-topic'), false);
   });
 });
 
@@ -152,6 +177,39 @@ describe('lastCaptureTimestamp', () => {
     );
     fs.writeFileSync(file, '');
     assert.equal(lastCaptureTimestamp(file), null);
+  });
+
+  it('with a projectId, ignores a more-recent capture from a DIFFERENT project', () => {
+    // The shared, global log this reads from is a known risk (concurrent
+    // sessions on different projects can share the same cwd — see
+    // CLAUDE.md). An unrelated project's capture must not satisfy this
+    // project's gate just because it's the last line in the file.
+    const file = path.join(
+      os.tmpdir(),
+      `captures-multi-${Math.random().toString(36).slice(2)}.log`
+    );
+    fs.writeFileSync(
+      file,
+      '2026-09-11T09:00:00.000Z | project:aaa111 | gotchas/a.md | "mine"\n' +
+        '2026-09-11T10:30:00.000Z | project:bbb222 | gotchas/b.md | "someone else\'s project"\n'
+    );
+    assert.equal(lastCaptureTimestamp(file, 'aaa111'), '2026-09-11T09:00:00.000Z');
+  });
+
+  it('with a projectId, a "user"-scope capture still counts (legitimately cross-project)', () => {
+    const file = path.join(os.tmpdir(), `captures-user-${Math.random().toString(36).slice(2)}.log`);
+    fs.writeFileSync(
+      file,
+      '2026-09-11T09:00:00.000Z | project:bbb222 | gotchas/a.md | "someone else\'s project"\n' +
+        '2026-09-11T10:30:00.000Z | user | gotchas/b.md | "cross-project pattern"\n'
+    );
+    assert.equal(lastCaptureTimestamp(file, 'aaa111'), '2026-09-11T10:30:00.000Z');
+  });
+
+  it('with a projectId, returns null when nothing matches this project or user scope', () => {
+    const file = path.join(os.tmpdir(), `captures-none-${Math.random().toString(36).slice(2)}.log`);
+    fs.writeFileSync(file, '2026-09-11T09:00:00.000Z | project:bbb222 | gotchas/a.md | "other"\n');
+    assert.equal(lastCaptureTimestamp(file, 'aaa111'), null);
   });
 });
 
@@ -192,7 +250,7 @@ describe('shouldBlockForCapture', () => {
     );
   });
 
-  it('does not block when the response already has a captured/propose footer', () => {
+  it('does not block when the response already has a captured footer', () => {
     assert.equal(
       shouldBlockForCapture({
         toolUses: [bashCommit],
@@ -201,6 +259,18 @@ describe('shouldBlockForCapture', () => {
         lastCaptureTs: null
       }),
       false
+    );
+  });
+
+  it('STILL blocks on a propose-only footer — propose does not guarantee anything was written', () => {
+    assert.equal(
+      shouldBlockForCapture({
+        toolUses: [bashCommit],
+        responseText: 'Fixed it.\n\nContext: propose: some-topic',
+        turnStartTs: '2026-09-11T10:00:00.000Z',
+        lastCaptureTs: null
+      }),
+      true
     );
   });
 

@@ -19,9 +19,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const GIT_COMMIT_RE = /\bgit\b[^\n]*\bcommit\b/i;
+// Requires "git commit" to appear as the START of its own command invocation
+// (start of string, or right after a separator: ;, &, &&, |, or newline) —
+// not merely co-occurring anywhere in the command string. A bare `\bgit\b.*
+// \bcommit\b` also matches `grep -rn "git commit" CONTRIBUTING.md` or
+// `git log --grep=commit`, neither of which runs a commit.
+const GIT_COMMIT_RE = /(?:^|[;&|\n])\s*git\s+(?:-\S+\s+)*commit\b/i;
 const CAPTURE_SKIP_RE = /Context:\s*capture-skip:/i;
-const CAPTURE_ACK_RE = /Context:\s*(captured|propose)(\s*\[[^\]]+\])?:/i;
+// Only "captured" counts as proof a file was actually written. "propose"
+// (contextCapture.mode: "propose") only SUGGESTS a capture — nothing is
+// written until the user accepts and /create-context runs — so it must not
+// satisfy this gate on its own.
+const CAPTURE_ACK_RE = /Context:\s*captured(\s*\[[^\]]+\])?:/i;
 const DEFAULT_LOG_DIR = path.join(os.homedir(), '.contextus', 'logs');
 
 /**
@@ -113,11 +122,23 @@ export function hasCaptureFooter(responseText) {
 }
 
 /**
- * Read the last line of the captures.log audit trail and return its ISO
- * timestamp, or null if the log is missing/empty/unparseable.
+ * Read captures.log (a single file shared by every project on the machine —
+ * `daemon/server.ts`'s CAPTURES_LOG) and return the timestamp of the most
+ * recent entry that's actually relevant to THIS project, or null if none.
+ *
+ * Without the `projectId` filter, a concurrent session capturing something
+ * in an unrelated project would satisfy this project's gate check too — this
+ * repo's own CLAUDE.md flags shared-cwd concurrent sessions as a known,
+ * confirmed risk, and the global log has no per-session identity to
+ * disambiguate otherwise. `user`-scope lines always count (legitimately
+ * cross-project by design); `project`-scope lines only count when tagged
+ * `project:<projectId>` (see `captureLogTag` in daemon/server.ts).
+ *
  * @param {string} logPath
+ * @param {string} [projectId] — when omitted, falls back to the old
+ *   last-line-wins behavior (used by existing callers/tests that don't scope).
  */
-export function lastCaptureTimestamp(logPath) {
+export function lastCaptureTimestamp(logPath, projectId) {
   let text;
   try {
     text = fs.readFileSync(logPath, 'utf-8');
@@ -126,9 +147,22 @@ export function lastCaptureTimestamp(logPath) {
   }
   const lines = text.split('\n').filter(Boolean);
   if (lines.length === 0) return null;
-  const last = lines[lines.length - 1];
-  const ts = last.split(' | ')[0];
-  return ts && !Number.isNaN(Date.parse(ts)) ? ts : null;
+
+  if (!projectId) {
+    const last = lines[lines.length - 1];
+    const ts = last.split(' | ')[0];
+    return ts && !Number.isNaN(Date.parse(ts)) ? ts : null;
+  }
+
+  const projectTag = `project:${projectId}`;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const parts = lines[i].split(' | ');
+    const [ts, scope] = parts;
+    if (scope === 'user' || scope === projectTag) {
+      return ts && !Number.isNaN(Date.parse(ts)) ? ts : null;
+    }
+  }
+  return null;
 }
 
 /**
