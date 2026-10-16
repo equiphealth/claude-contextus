@@ -6,7 +6,7 @@
 #   2. what Claude actually returned, incl. any "Context: used:" footer — the outcome
 #
 # Usage:  test-retrieval.sh <project-dir> "<query>"
-# Example: test-retrieval.sh ~/src/my-equip-mobile/automation "logging patterns?"
+# Example: test-retrieval.sh ~/src/my-project "logging patterns?"
 set -euo pipefail
 PROJ="${1:?need project dir}"; QUERY="${2:?need query}"
 CTX="$HOME/src/claude-contextus"
