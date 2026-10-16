@@ -7,7 +7,7 @@ category: tooling
 
 # ESLint Configuration
 
-Adopted production-tested rules from `~/src/my-equip-mobile/automation/` before bulk implementation.
+Adopted production-tested rules from another project's automation suite before bulk implementation.
 
 ## Promise Handling (Critical)
 
