@@ -60,7 +60,17 @@ async function waitForDaemon(timeoutMs = 20_000): Promise<void> {
 
 before(async () => {
   daemonProc = spawn('node', ['--import', 'tsx', DAEMON_TS], {
-    env: { ...process.env, HOME: homeDir, CONTEXTUS_DAEMON_PORT: String(DAEMON_PORT) },
+    // CI has neither Ollama (no service started) nor a reliable Transformers.js
+    // download (see reconcile-multi-source.test.ts's header) — CONTEXTUS_TEST_FAKE_EMBED
+    // bypasses only the model call (lib/embedding/embedder.ts), so chunking,
+    // staleness detection, and the real LanceDB upsert this test actually cares
+    // about still run for real.
+    env: {
+      ...process.env,
+      HOME: homeDir,
+      CONTEXTUS_DAEMON_PORT: String(DAEMON_PORT),
+      CONTEXTUS_TEST_FAKE_EMBED: '1'
+    },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   await waitForDaemon();

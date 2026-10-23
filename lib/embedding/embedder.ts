@@ -49,6 +49,46 @@ function l2normalize(v: number[]): number[] {
   return v;
 }
 
+/* ── Test-only fake provider ──────────────────────────────────────────────── */
+
+/**
+ * Deterministic, L2-normalized pseudo-vector derived from the input text's
+ * hash — same shape as a real embedding (so downstream dimension checks and
+ * cosine-similarity math don't need to know the difference), but with no
+ * semantic meaning whatsoever. ONLY for CONTEXTUS_TEST_FAKE_EMBED=1.
+ */
+function fakeDeterministicVector(text: string, dims: number): number[] {
+  // Simple string hash (FNV-1a-ish) seeds a linear congruential generator —
+  // just needs to be deterministic and spread out, not cryptographically
+  // anything.
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  let seed = h >>> 0;
+  const next = () => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed / 0xffffffff;
+  };
+  const v = Array.from({ length: dims }, () => next() * 2 - 1);
+  return l2normalize(v);
+}
+
+/**
+ * CI has neither Ollama (no service started) nor a reliable Transformers.js
+ * download available (see tests/integration/reconcile-multi-source.test.ts's
+ * header) — so integration tests that need embedSingleFile's REAL
+ * chunking/staleness/LanceDB wiring to run (not just a pure function in
+ * isolation) set this to bypass only the actual model call, keeping
+ * everything else genuine. NEVER set outside tests — every embedded file
+ * would get an unrelated random vector, silently destroying retrieval
+ * quality with no error.
+ */
+function fakeEmbedEnabled(): boolean {
+  return process.env.CONTEXTUS_TEST_FAKE_EMBED === '1';
+}
+
 /* ── Transformers.js provider ─────────────────────────────────────────────── */
 
 let _pipe: Promise<FeatureExtractionPipeline> | null = null;
@@ -109,7 +149,8 @@ async function embedOllama(text: string): Promise<number[]> {
 
 /** Embed text exactly as given (no prefix). Mean-pooled + L2-normalized. */
 async function embedRaw(text: string): Promise<number[]> {
-  const { provider } = loadConfig().embedding;
+  const { provider, dimensions } = loadConfig().embedding;
+  if (fakeEmbedEnabled()) return fakeDeterministicVector(text, dimensions);
   return provider === 'ollama' ? embedOllama(text) : embedTransformers(text);
 }
 
@@ -122,7 +163,8 @@ export async function warmup(): Promise<void> {
   const { dimensions, provider, model, ollamaModel } = loadConfig().embedding;
   // Transformers.js: fail fast with an actionable message if the model is
   // neither bundled nor reachable, instead of a slow opaque pipeline() error.
-  if (provider === 'transformers') await preflightTransformers(model);
+  // Skipped under the fake-embed test seam — there's no real model to preflight.
+  if (provider === 'transformers' && !fakeEmbedEnabled()) await preflightTransformers(model);
   const vec = await embedRaw('warmup');
   if (vec.length !== dimensions) {
     const id = provider === 'ollama' ? ollamaModel : model;
