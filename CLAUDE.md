@@ -97,7 +97,15 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 
 **Documentation standards**:
 - Use generic placeholders (`my-project`, `example-app`) or contextus self-references only
-- Never reference other real project names from this machine in docs/contexts/examples
+- Never reference other real project names from this machine, anywhere: docs, context
+  files, code comments, commit/PR/issue text, test fixtures, or committed data files
+  (including binary ones — a POC script that ingests another repo's real content as
+  sample data is the same violation as naming it in a doc, just harder to notice later).
+- Before committing anything built from a proof-of-concept, dogfooding run, or "real
+  example" pass: check what you're about to commit for the above, not just the file
+  you meant to add. A quick `strings <file> | less` on anything binary/generated takes
+  seconds and is the difference between catching this now versus finding it in history
+  five months later.
 
 ## Core Principles (do not re-litigate)
 
