@@ -8,7 +8,7 @@ metadata:
 
 # Gotcha: context-status skill bypasses the daemon, breaks on consumer repos
 
-**Symptom**: `/context-status` was unreliable when run against a linked/consumer repo (`my-equip-mobile/automation`). Working around it required manually computing the project hash in a Node one-liner (`crypto.createHash("sha256").update(absPath).digest("hex").slice(0,12)`) to pass to `/introspect` by hand.
+**Symptom**: `/context-status` was unreliable when run against a linked/consumer repo. Working around it required manually computing the project hash in a Node one-liner (`crypto.createHash("sha256").update(absPath).digest("hex").slice(0,12)`) to pass to `/introspect` by hand.
 
 **Root cause**: the skill's documented implementation (`skills/context-status/reference.md:217-228`) does not call the daemon HTTP API — it shells out to `npx tsx scripts/cli/status.ts` directly. That script depends on contextus's own dev toolchain (`tsx`, its `node_modules`) being resolvable from the invoking cwd/plugin-root, which isn't guaranteed for a consumer project. It also reimplements the project-hash formula inline (`scripts/cli/status.ts:320`) instead of importing the canonical `projectHash()` export from `lib/config.ts:686-695`.
 
