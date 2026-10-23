@@ -19,7 +19,7 @@ A lazy-populated JSON file at `~/.contextus/data/projects.json`:
 
 ```json
 {
-  "a1b2c3d4e5f6": { "path": "/Users/.../my-equip-mobile", "name": "my-equip-mobile", "lastSeen": "2026-06-24T..." }
+  "a1b2c3d4e5f6": { "path": "/Users/.../my-project", "name": "my-project", "lastSeen": "2026-06-24T..." }
 }
 ```
 

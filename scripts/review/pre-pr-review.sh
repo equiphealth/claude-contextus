@@ -7,7 +7,7 @@
 #
 # Runs a coding-standards review (Claude Code, headless), streams the report
 # to terminal, and saves it to a git-ignored file. Standalone for now — not
-# wired into any git hook. Ported from my-equip-mobile's
+# wired into any git hook. Ported from another project's
 # scripts/review/pre-pr-review.sh, with two deliberate changes:
 #
 # 1. Default scope is "what am I about to push right now" — local HEAD vs the
@@ -23,7 +23,7 @@
 #    no staged — a PR view should reflect committed state.
 #
 # Both modes deliberately exclude arbitrary unstaged working-tree edits (the
-# original my-equip-mobile script computed `git diff HEAD`, which pulls in
+# original script computed `git diff HEAD`, which pulls in
 # EVERY unstaged file regardless of relevance — harmless in a single-purpose
 # working tree, but this repo's working tree routinely carries long-lived
 # unrelated dirty state, e.g. a floor-calibration tweak or scratch output
@@ -140,7 +140,7 @@ printf '   Skip:   \033[2mSKIP_AI_REVIEW=1 ./scripts/review/pre-pr-review.sh\033
 printf '\n   \033[2mWaiting for Claude...\033[0m\n\n'
 
 # No separate slash-command/instructions files exist in this repo yet (unlike
-# my-equip-mobile's .claude/commands/pre-pr-review.md +
+# the original project's .claude/commands/pre-pr-review.md +
 # .github/instructions/*.md) — CLAUDE.md already documents this project's
 # conventions, so the prompt points straight at it instead of a second file
 # that would need to stay in sync.
