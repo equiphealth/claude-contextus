@@ -1,6 +1,6 @@
 # Migration Lessons: Automation Repo → Contextus
 
-Real-time friction log from migrating `~/src/my-equip-mobile/automation` from custom
+Real-time friction log from migrating `~/src/my-project/automation` from custom
 hooks + `.claude/memory/` to contextus, driven from the contextus-repo session on
 2026-06-15. This is the dogfood + docs/skills validation pass.
 

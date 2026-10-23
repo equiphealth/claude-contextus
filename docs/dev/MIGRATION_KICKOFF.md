@@ -27,7 +27,7 @@ The migration is inherently split, so the prompt assigns both:
 ## Paste this
 
 > Lead me through a complete migration of the **automation** project
-> (`~/src/my-equip-mobile/automation`) from its custom hooks + `.claude/memory/`
+> (`~/src/my-project/automation`) from its custom hooks + `.claude/memory/`
 > setup to contextus. We're driving from **this contextus-repo session**.
 >
 > First load context: read the global memory `project_automation_contextus_migration`
