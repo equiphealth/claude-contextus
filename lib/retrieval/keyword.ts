@@ -1,12 +1,24 @@
 /**
  * Keyword search — BM25-inspired text scan over stored document content.
  *
- * Fires as a FALLBACK when the embedding provider is unreachable (not when it's
- * slow — that path already degrades gracefully). Gives SOME retrieval when Ollama
- * is down instead of complete silence.
+ * This module's `keywordSearch` has TWO distinct callers, not one:
+ *
+ * 1. `hybrid.ts`'s `hybridKeywordSearch` — ALWAYS-ON. Runs in parallel with
+ *    vector search on every query and feeds RRF fusion (see hybrid.ts's own
+ *    header). This is what catches exact-symbol queries ("getLogger") that
+ *    dilute in semantic embedding space.
+ * 2. This module's own standalone use as a FALLBACK when the embedding
+ *    provider is unreachable (not when it's slow — that path already degrades
+ *    gracefully). Gives SOME retrieval when Ollama is down instead of
+ *    complete silence.
+ *
+ * Both callers hit the same `tokenize`/`scoreBM25` logic below, which only
+ * ever scores `row.document` (raw chunk text) — see
+ * gotchas/gotcha-tags-inert-in-both-semantic-and-keyword-scoring.md for why
+ * that means tags are untouched by BOTH roles, not just the fallback one.
  *
  * Not a full BM25 implementation (no IDF precomputation across the corpus), but
- * close enough for a fallback: term frequency with length normalization and
+ * close enough for either role: term frequency with length normalization and
  * diminishing returns on repeated terms.
  *
  * Results are tagged `source: 'keyword'` so provenance is transparent.

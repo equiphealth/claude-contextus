@@ -128,8 +128,22 @@ export async function createTable(
   const conn = await getConnection(opts.projectName);
   const names = await conn.tableNames();
   if (names.includes(TABLE_NAME)) {
-    if (!opts.replace) return conn.openTable(TABLE_NAME);
-    await conn.dropTable(TABLE_NAME);
+    if (opts.replace) {
+      await conn.dropTable(TABLE_NAME);
+    } else {
+      // Same cold-start race as upsertRows/getContentHashes, one layer
+      // deeper: tableNames() can report the table before conn.openTable()
+      // can actually see a committed version for it yet (observed directly
+      // — see getContentHashes's comment for the full repro). Treat a throw
+      // here as "it doesn't really exist yet" and fall through to create it
+      // for real, rather than propagating a transient error for a table
+      // that functionally never existed from the caller's point of view.
+      try {
+        return await conn.openTable(TABLE_NAME);
+      } catch {
+        // fall through to createTable below
+      }
+    }
   }
   const table = await conn.createTable(TABLE_NAME, rows as unknown as Record<string, unknown>[]);
 
@@ -173,21 +187,64 @@ export async function tableExists(projectName?: string): Promise<boolean> {
  * runReconcile, means /notify works correctly the very first time it's ever
  * called for a project, not only after reconcile has already run once.
  */
+/** True for the specific "dataset/table not found" error class this whole
+ * file self-heals around — a transient LanceDB consistency gap on a cold
+ * start, not a real failure. Narrow on purpose: only retry THIS, never mask
+ * an unrelated error. */
+function isColdStartNotFoundError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /was not found|not found:/i.test(msg);
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function upsertRows(rows: ContextRow[], projectName?: string): Promise<void> {
   if (rows.length === 0) return;
-  if (!(await tableExists(projectName))) {
-    // createTable bootstraps the table WITH these rows. If another caller
-    // raced us and created it first, createTable() just opens it without
-    // inserting (see its `replace` contract) — fall through to the
-    // mergeInsert below regardless, so the rows land either way.
-    await createTable(rows, { projectName });
+  // Reuse the Table handle createTable() already returns when it just
+  // created the table — do NOT discard it and immediately re-open via a
+  // separate openTable() call. That re-open raced against the table it had
+  // just created becoming visible (observed directly: tableExists() true,
+  // openTable() still throwing "Table ... was not found" moments later) —
+  // on a cold start, createTable's own handle is always valid immediately,
+  // openTable() right after is not guaranteed to be. If another caller
+  // raced us and created it first, createTable() just opens it without
+  // inserting (see its `replace` contract) — its returned handle is still
+  // correct either way.
+  //
+  // Even with that fix, a brand-new table's FIRST mergeInsert().execute()
+  // can still throw the identical "not found" error — observed directly,
+  // ~20% of first-ever /notify calls against a truly fresh DB. This is a
+  // deeper async-consistency gap inside @lancedb/lancedb itself: the
+  // just-created table's committed version isn't always durable/visible by
+  // the time a dataset-level operation like mergeInsert needs to see it,
+  // even using the exact Table handle createTable() just returned. It's
+  // provably transient (the identical operation succeeds moments later,
+  // every time) — a short retry-with-backoff is the correct fix for this
+  // class of gap, not another single-shot catch.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const table = (await tableExists(projectName))
+        ? await openTable(projectName)
+        : await createTable(rows, { projectName });
+      await table
+        .mergeInsert('id')
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute(rows as unknown as Record<string, unknown>[]);
+      return;
+    } catch (err) {
+      if (!isColdStartNotFoundError(err)) throw err;
+      lastErr = err;
+      // 150, 300, 600, 1200, 2400ms — cheap for a background embed; the gap
+      // this retries is transient but under real system load (contending
+      // disk/CPU) can outlast a tighter budget than this.
+      await sleep(150 * 2 ** attempt);
+    }
   }
-  const table = await openTable(projectName);
-  await table
-    .mergeInsert('id')
-    .whenMatchedUpdateAll()
-    .whenNotMatchedInsertAll()
-    .execute(rows as unknown as Record<string, unknown>[]);
+  throw lastErr;
 }
 
 /**
@@ -299,7 +356,32 @@ export async function getContentHashes(
   projectFilter?: string
 ): Promise<Map<string, string>> {
   if (!(await tableExists(projectName))) return new Map();
-  const table = await openTable(projectName);
+  // Same cold-start race upsertRows retries around (GH issue #22 and its
+  // sibling gaps — see that function's comment), one call earlier in the
+  // chain: tableExists() can say true (e.g. the directory exists) a moment
+  // before openTable() can actually see a committed version yet.
+  //
+  // Deliberately a RETRY here, not a catch-and-return-empty-Map: an earlier
+  // version of this fix did exactly that, and it was WORSE than the bug it
+  // fixed — on a table that already has real data (not just a brand-new
+  // one), hitting this same race made the staleness check think a known
+  // file had NEVER been seen before, triggering a genuine duplicate
+  // re-embed instead of correctly detecting "unchanged" (observed directly:
+  // a second /notify for identical content wrote a SECOND captures.log
+  // line instead of none). Silently returning empty data to paper over a
+  // transient error changes real behavior, not just error-handling — only
+  // acceptable here because retrying resolves the race in practice.
+  let table: Table | undefined;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      table = await openTable(projectName);
+      break;
+    } catch (err) {
+      if (!isColdStartNotFoundError(err) || attempt === 5) return new Map();
+      await sleep(150 * 2 ** attempt);
+    }
+  }
+  if (!table) return new Map();
   let query = table.query().select(['filename', 'content_hash', 'source', 'project']);
   if (projectFilter) {
     query = query.where(`project = '${projectFilter.replace(/'/g, "''")}'`);

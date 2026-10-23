@@ -32,7 +32,7 @@
   "retrieval": {
     "topK": 5,
     "similarityThreshold": 0.7,
-    "injectionFloor": 0.725,
+    "injectionFloor": 0.7,
     "maxTokens": 3000,
     "mergeStrategy": "interleaved",
     "provenanceFooter": true
@@ -46,7 +46,7 @@
     "fallbackProvider": "bedrock",
     "fallbackModel": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     // Fallback fires only on fast failures (connection refused) with remaining time budget
-    "expansionThreshold": 0.775, // Adaptive mode fires when best initial score < this
+    "expansionThreshold": 0.7, // Adaptive mode fires when best initial score < this — must be >= retrieval.injectionFloor (0.7) to avoid a dead zone; was 0.775 (fired on queries that already cleared the floor, pure waste with no rescue possible)
     "maxVariants": 3, // Alternative phrasings (2-5 recommended)
     "temperature": 0.7, // Higher = more diverse rephrasings
     "timeoutMs": 5000 // Total expansion budget in ms (shared primary + fallback)
@@ -55,7 +55,10 @@
   "contextCapture": {
     "enabled": true,
     "mode": "staging",
-    "captureFooter": "always"
+    "captureFooter": "always",
+    // Dogfooding the prototype (decision-capture-enforcement-needs-a-stop-hook-not-wording.md):
+    // blocks turn completion once if a git commit ran with no /capture logged since.
+    "stopGate": true
   },
   "calibration": {
     "targetSamples": 100,

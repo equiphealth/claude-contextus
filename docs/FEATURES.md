@@ -37,6 +37,7 @@
 - **`propose`** — Claude ends its response with `Context: propose: <topic>`; accepting it invokes `/create-context`, which runs a similarity check before creating or routing to `/update-context`
 - **`silent`** — capture prompting suppressed entirely; manual `/create-context` only
 - **Novelty-gated** — the `UserPromptSubmit` awareness hook calls `GET /novelty` so Claude is told what's already covered and skips redundant proposals
+- **Stop-hook enforcement gate (`contextCapture.stopGate`, prototype, default `false`)** — the modes above are all soft nudges read at the *start* of a turn, competing with whatever task is live; a `git commit` with no matching capture can slip through unnoticed. When enabled, a Stop hook blocks turn completion once if a commit happened this turn with no capture logged since (checked against `~/.contextus/captures.log`), asking for a `/capture` call or an explicit `Context: capture-skip: <why>` acknowledgment. Logs the outcome — nudged, captured-after-nudge, or missed — to `~/.contextus/logs/capture-nudges.jsonl` and `daemon.log` either way, surfacing the miss rate instead of leaving it invisible until someone asks. See `decisions/decision-capture-enforcement-needs-a-stop-hook-not-wording.md` in the corpus.
 
 #### Keyword Fallback (Degradation)
 - **Provider-down safety** — When embedding fails (Ollama unreachable), falls back to BM25 text search
