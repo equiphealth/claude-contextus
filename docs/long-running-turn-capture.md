@@ -15,7 +15,7 @@ During extended implementation sessions, multiple capture-worthy patterns emerge
 - Claude writes context files directly *as discoveries surface* — capture FIRST, respond SECOND
 - The `/capture` endpoint (v0.8.1) handles file writes via a single HTTP call — minimal UI noise
 - User reviews via `git diff` / `git status` before committing
-- Git workflow IS the quality gate — false positives cost one `git checkout`
+- Git workflow IS the quality gate — a false positive on a net-new file costs one `rm` (not `git checkout`, which is a no-op on something never committed — see `tradeoffs/tradeoff-context-index-cant-be-partially-staged.md` for the related `CONTEXT.md` index wrinkle once more than one capture is involved)
 
 This solves the **workflow** problem. What remains is the **detection** problem.
 

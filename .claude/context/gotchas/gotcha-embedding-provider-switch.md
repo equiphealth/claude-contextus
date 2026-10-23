@@ -1,6 +1,9 @@
 ---
 name: embedding-provider-switch
-description: Switching embedding provider/model (e.g. ollama→transformers) is a full re-embed, not a config flip — the daemon refuses to inject on a corpus/config mismatch
+description: >-
+  Switching embedding provider/model is a full re-embed, not a config flip --
+  AND re-embedding alone does not fix the hardcoded nomic task-prefix
+  assumption, which silently degrades quality on non-nomic models with no error
 metadata:
   type: gotcha
   tags:
@@ -9,6 +12,7 @@ metadata:
     - transformers
     - corpus
     - reembed
+    - prefixes
 ---
 
 **Switching embedding provider or model is a RE-EMBED, not a config flip.** Each project
@@ -41,3 +45,22 @@ kill $(cat ~/.contextus/runtime/daemon.pid)   # respawns next session
 Multi-project: each `~/.contextus/data/<project>/` is independent — repeat per corpus.
 Nothing automates this yet (DEFERRED.md: a `/contextus-reembed --provider` would do
 config-write + rebuild + restart in one step).
+
+**Re-embedding does NOT fix the nomic task-prefix problem, and nothing will warn you.**
+`embedder.ts:37-40` (`prefixesEnabled()`) unconditionally prepends `search_document: ` /
+`search_query: ` to every embedded string, regardless of which model is configured — it's
+hardcoded for nomic's instruction-tuned retrieval scheme, not model-aware. If you switch
+`embedding.model` to a *different* model family (e.g.
+`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, which wasn't trained with
+those prefixes) and do a correct re-embed per the steps above: dimensions will be
+consistent (once you also update `embedding.dimensions` to match the new model),
+model-id will match, the daemon's mismatch checks both pass, injection proceeds
+normally — and every vector is quietly polluted with prefix text the model doesn't know
+how to use. This degrades retrieval quality silently; there is no error, log line, or
+mismatch check that catches it, because from the daemon's point of view everything is
+consistent. The only escape hatch is the undocumented env var
+`CONTEXTUS_NOMIC_PREFIXES=0`, which is global/all-or-nothing (not per-model) and isn't a
+config.json field. Treat "same embedding provenance checks pass" as necessary but NOT
+sufficient evidence that a model swap is safe — also check whether the new model expects
+the same instruction-prefix convention nomic does.
+
