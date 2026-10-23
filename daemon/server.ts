@@ -115,6 +115,24 @@ function logCapture(scope: string, file: string, description: string): void {
   }
 }
 
+/**
+ * Build the project-qualified tag written to captures.log in place of a bare
+ * "project" scope — e.g. "project:8fa4d8ac62c3", matching the watcher's own
+ * existing convention (see watchContextDir below). Without this, every
+ * project-scoped capture across the whole machine lands under the identical
+ * literal string "project" in one shared, global log file — so a consumer
+ * like the Stop-hook capture-enforcement gate scanning "was anything
+ * captured since this commit" can be satisfied by an UNRELATED capture in a
+ * different concurrent project (this repo's own CLAUDE.md flags shared-cwd
+ * concurrent sessions as a known, confirmed risk). User-scope captures stay
+ * the bare "user" tag — they're legitimately cross-project by design.
+ */
+function captureLogTag(scope: string, cwd?: string, project?: string): string {
+  if (scope !== 'project') return scope;
+  const id = project ? resolveProjectId(project) : cwd ? projectHash(cwd) : 'unknown';
+  return `project:${id}`;
+}
+
 /** Set true once the embedding model has warm-loaded; /health gates on it. */
 let modelLoaded = false;
 /** In-memory query stats (reset on daemon restart). */
@@ -796,6 +814,17 @@ async function handleNotify(
   if (result.embedded) {
     invalidateCorpusCache(project);
     logInfo('Incremental re-embed', { file: result.id, project: project ?? 'default' });
+    // Mirrors the live fs.watch watcher's own logCapture call below (same
+    // source-type → scope mapping) — this is the OTHER path a context file
+    // gets captured through: Claude editing it directly via Write/Edit,
+    // picked up by the PostToolUse hook's /notify call, not /capture. Before
+    // this, only /capture, /delete's archive, and the external-edit watcher
+    // wrote to captures.log — a capture made through this path was invisible
+    // to anything reading that log (e.g. the Stop-hook capture-enforcement
+    // gate), even though it genuinely embedded successfully.
+    const notifyTag =
+      sourceType === 'userContext' || sourceType === 'userDocs' ? 'user' : `project:${projectId}`;
+    logCapture(notifyTag, result.id ?? file, 'captured via edit (PostToolUse /notify)');
   } else if (result.reason === 'deleted') {
     invalidateCorpusCache(project);
     logInfo('Context file deleted — rows removed', {
@@ -937,7 +966,7 @@ async function executeCaptureRequest(
       // Non-fatal
     }
 
-    logCapture(scope, filename, description || slug);
+    logCapture(captureLogTag(scope, cwd, project), filename, description || slug);
     logInfo('Doc captured', { scope, file: filename });
 
     sendJson(res, 200, {
@@ -1049,7 +1078,7 @@ async function executeCaptureRequest(
   }
 
   // Log to captures audit trail (sync — fast)
-  logCapture(scope, relPath, description);
+  logCapture(captureLogTag(scope, cwd, project), relPath, description);
   logInfo('Context captured', { scope, file: relPath });
 
   // Respond immediately — file is on disk, git can see it
@@ -1219,7 +1248,7 @@ async function handleDelete(
     return;
   }
 
-  logCapture(scope, relPath, `archived → ${archivedRelPath}`);
+  logCapture(captureLogTag(scope, cwd, project), relPath, `archived → ${archivedRelPath}`);
   logInfo('Context archived', { file: relPath, removedFromIndex, embeddingsRemoved });
 
   sendJson(res, 200, {

@@ -231,6 +231,8 @@ Only include the keys you're overriding. The shape (from `plugin.json`):
 - **`propose`** — Claude ends its response with `Context: propose: <topic>`; you approve before `/create-context` runs
 - **`silent`** — capture prompting is suppressed entirely
 
+**`contextCapture.stopGate`** (prototype, default `false`) — the modes above are all soft nudges read at the *start* of a turn, competing with whatever task is live; a `git commit` with no matching capture can slip through unnoticed. When enabled, a `Stop` hook blocks turn completion once if a commit happened this turn with no capture logged since, asking for a `/capture` call or an explicit `Context: capture-skip: <why>` acknowledgment. The block reason is visible to you too — Claude Code surfaces every Stop-hook block message, not just to the model — that's by design, not a bug. Toggle with `/configure set contextCapture.stopGate true` (or `false`).
+
 ## How It Works
 
 1. **Daemon**: Persistent HTTP server keeps embedding model warm (~100-200ms per query)

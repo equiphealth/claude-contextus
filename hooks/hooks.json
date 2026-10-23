@@ -54,6 +54,11 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop-evaluation.js\"",
             "timeout": 5000
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/capture-gate-hook.js\"",
+            "timeout": 5000
           }
         ]
       }

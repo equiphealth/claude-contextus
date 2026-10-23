@@ -132,22 +132,37 @@ but the breaking-change migration hasn't been run yet — surfaced here as
 
 ## Implementation
 
-Two data sources — **live daemon state** (via `/introspect`) and **historical logs**:
+**Run this — there is exactly one command for this skill** (default view, `--details`, and `--cost` are all flags on the same script; see below for the exact invocation and where to run it from).
 
-### 1. Live state — `GET /introspect` (Phase 5)
+The script is a standalone CLI (`scripts/cli/status.ts`) that internally calls the daemon's `GET /introspect` endpoint and parses `~/.contextus/logs/usage.jsonl` — you never call `/introspect` yourself. It is documented below purely as background on what data backs each dashboard field; skip straight to **"Run the CLI"** further down if you just want the command.
+
+### Where to run it from — this is the part that trips people up
+
+`status.ts` resolves which project to report on like this:
+- If you pass `--project <name-or-hash-or-path>`, it uses that (via the projects registry — works from any cwd).
+- **Otherwise it hashes the shell's current `process.cwd()`** (`status.ts:320`) to get the projectId — so if the Bash tool's cwd is NOT the target project's root, you'll silently get the wrong project's dashboard (or an empty one), not an error.
+
+So when checking status for a project other than the one you're currently working in (e.g. checking `automation` while your Bash cwd is still `claude-contextus`), you MUST do one of:
+- `cd /path/to/target-project && npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" ...`, or
+- pass `--project /path/to/target-project` (or `--project <registered-name>`) explicitly and skip the `cd`.
+
+Do not try to compute or pass a project hash by hand — `--project` accepts a plain path or registered name and resolves the hash for you.
+
+### 1. Live state — `GET /introspect` (Phase 5, called internally by the script)
 
 The daemon's introspection endpoint is the source of truth for everything that
-reflects the *current* configuration and corpus. Query it for the project, and if
-the daemon is unreachable, fall back to a "daemon down" line (don't fabricate
-numbers):
+reflects the *current* configuration and corpus. The script queries it for the
+resolved project, and if the daemon is unreachable, falls back to a "daemon down"
+line (don't fabricate numbers). For reference, the equivalent manual call (you
+should not need to run this yourself) is:
 
 ```bash
-# Compute projectId hash (same way daemon does)
-PROJECT_ID=$(echo -n "$(pwd)" | sha256sum | cut -c1-12)
-
-# Query /introspect with project parameter for per-project scoping
-curl -s "http://127.0.0.1:37800/introspect?project=${PROJECT_ID}"
+curl -s "http://127.0.0.1:37800/introspect?project=$(pwd)"
 ```
+
+`/introspect`'s `project` param accepts a hash, a registered name, OR an absolute
+path — the daemon resolves it server-side, so passing `$(pwd)` directly (no manual
+hashing) works as long as the daemon's cwd for that call matches the target project.
 
 Returns (live, not mocked):
 ```json
@@ -221,22 +236,23 @@ Bottom Line:
   89,400 tokens injected (~2,980/day) with strong (72% weighted usage score) value signal.
 ```
 
-### Implementation
+### Run the CLI
 
-The status CLI is a standalone script. When contextus is loaded (via `--plugin-dir` in development, or installed from marketplace), `CLAUDE_PLUGIN_ROOT` is set by the harness and points to the plugin directory.
-
-Run the CLI and redirect to file to bypass Bash output truncation:
+Covered in detail above ("Where to run it from") — the short version:
 
 ```bash
+# From inside the target project's root (recommended — no flag needed):
 npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" > /tmp/status.txt 2>&1 && cat /tmp/status.txt
+
+# From anywhere else — pass the target project explicitly:
+npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" --project /path/to/target-project > /tmp/status.txt 2>&1 && cat /tmp/status.txt
 ```
 
-For cost analysis:
-```bash
-npx tsx "${CLAUDE_PLUGIN_ROOT}/scripts/cli/status.ts" --cost [--days <N>] > /tmp/status.txt 2>&1 && cat /tmp/status.txt
-```
+`CLAUDE_PLUGIN_ROOT` is set by the harness when contextus is loaded (via `--plugin-dir` in development, or installed from marketplace) — it points to the plugin directory regardless of your Bash cwd, so it's safe to use even when checking a different project's status.
 
-**Development workflow**: When working in the contextus source directory itself, use `pnpm exec tsx scripts/cli/status.ts` instead (relative path, no CLAUDE_PLUGIN_ROOT needed).
+For cost analysis, add `--cost [--days <N>]` to either form above.
+
+**Development workflow**: When working in the contextus source directory itself, use `pnpm exec tsx scripts/cli/status.ts [--project ...] [--cost ...]` instead (relative path, no `CLAUDE_PLUGIN_ROOT` needed).
 
 **Why redirect to file**: Bash tool truncates long output with "...(N lines)". The redirect captures everything; cat bypasses the truncation.
 

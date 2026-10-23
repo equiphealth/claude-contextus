@@ -111,7 +111,13 @@
     // Pattern proposal system — how contextus suggests new patterns to capture.
     "enabled": true,
     "mode": "propose", // propose (suggest) | staging (write directly, git is gate) | silent
-    "captureFooter": "always" // "always" = emit "Context: captured:" | "off" = no confirmation
+    "captureFooter": "always", // "always" = emit "Context: captured [scope]:" | "off" = no confirmation
+    // PROTOTYPE, default false: Stop-hook enforcement. When true, a `git commit`
+    // with no capture logged since blocks turn completion once, asking for a
+    // /capture call or an explicit "Context: capture-skip: <why>". Logs the
+    // outcome (nudged / captured-after-nudge / missed) to
+    // ~/.contextus/logs/capture-nudges.jsonl and daemon.log either way.
+    "stopGate": false
   },
 
   "notifications": {
