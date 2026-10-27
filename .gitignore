@@ -38,6 +38,7 @@ logs/
 
 # Temp files
 tmp/
+.tmp/
 temp/
 *.tmp
 
