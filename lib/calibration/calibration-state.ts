@@ -44,7 +44,9 @@ function defaults(): CalibrationState {
         provider: c.provider,
         model: c.model,
         endpoint: cfg.providers.ollama.endpoint,
-        region: cfg.providers.bedrock.region
+        region: cfg.providers.bedrock.region,
+        metaEndpoint: cfg.providers.meta?.endpoint,
+        metaApiKeyEnv: cfg.providers.meta?.apiKeyEnv
       }
     : DEFAULT_EVAL_MODEL;
   return {

@@ -1,6 +1,6 @@
 ---
 name: ctx
-description: Quick dispatcher — /ctx status|stats|create|calibrate|doctor|watch|daemon|setup|link|search|review|rebuild|mine
+description: Quick dispatcher — /ctx status|stats|create|search|calibrate|doctor|review|tag|rebuild|mine|setup|daemon|configure|upgrade|link|watch|migrate|audit|archive|merge
 ---
 
 # ctx — Context Skill Shortcuts

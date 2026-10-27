@@ -8,6 +8,12 @@
  */
 
 import type { ExpansionConfig, LLMProviderType, ProvidersConfig } from '../config.js';
+import {
+  META_API_KEY_ENV_DEFAULT,
+  META_API_KEY_ENV_FALLBACK,
+  META_DEFAULT_MODEL,
+  META_ENDPOINT_DEFAULT
+} from '../config.js';
 
 export interface ExpandedQueries {
   variants: string[];
@@ -21,9 +27,20 @@ interface ProviderContext {
   model: string;
   ollamaEndpoint?: string;
   bedrockRegion?: string;
+  metaEndpoint?: string;
+  metaApiKeyEnv?: string;
   timeoutMs: number;
   temperature: number;
   maxVariants: number;
+}
+
+/** Resolve the Meta API key: configured env var first, MODEL_API_KEY fallback. Never logged. */
+export function resolveMetaApiKey(apiKeyEnv?: string): string | undefined {
+  return (
+    process.env[apiKeyEnv || META_API_KEY_ENV_DEFAULT] ||
+    process.env[META_API_KEY_ENV_FALLBACK] ||
+    undefined
+  );
 }
 
 const EXPANSION_PROMPT = `TASK: Rephrase the query below into {{count}} alternative search queries. Do NOT answer the query. Do NOT explain anything. Output ONLY the rephrased queries, one per line.
@@ -145,6 +162,54 @@ async function expandViaBedrock(query: string, ctx: ProviderContext): Promise<Ex
   return { variants, latencyMs: Date.now() - started, provider: `bedrock/${ctx.model}` };
 }
 
+/**
+ * Meta Model API over raw fetch (OpenAI-compatible chat completions).
+ *
+ * Contract status: third-party client consensus (promptfoo, litellm,
+ * llm-meta-ai — base https://api.meta.ai/v1 with a Bearer key, chat completions
+ * shape); documented by third-party clients only — official reference pages
+ * 404’d during Phase 1 research, so the wire shape stays provisional until a live call promotes it.
+ * Fail-open like every other provider: missing key or API error throws, and
+ * expandQuery degrades to variants: [] (or the configured fallback).
+ */
+async function expandViaMeta(query: string, ctx: ProviderContext): Promise<ExpandedQueries> {
+  const started = Date.now();
+  const apiKey = resolveMetaApiKey(ctx.metaApiKeyEnv);
+  if (!apiKey) {
+    throw new Error(
+      `Meta expansion needs a key: set ${ctx.metaApiKeyEnv || META_API_KEY_ENV_DEFAULT} (or ${META_API_KEY_ENV_FALLBACK})`
+    );
+  }
+  const endpoint = (ctx.metaEndpoint || META_ENDPOINT_DEFAULT).replace(/\/$/, '');
+  const model = ctx.model || META_DEFAULT_MODEL;
+
+  const res = await fetch(`${endpoint}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: buildPrompt(query, ctx.maxVariants) }],
+      temperature: ctx.temperature,
+      // 2000, not 200: Spark Contributor is a reasoning model — it spent ~660
+      // of 2000 tokens on hidden reasoning in a live call, and this API nulls
+      // content on length-finish instead of returning a partial. The cap must
+      // fit reasoning + all variants. Latency follows: allow a generous
+      // timeoutMs when Meta is primary (see plugin.jsonc example).
+      max_tokens: 2000
+    }),
+    signal: AbortSignal.timeout(ctx.timeoutMs)
+  });
+
+  if (!res.ok) throw new Error(`Meta expansion failed: ${res.status}`);
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const text = data.choices?.[0]?.message?.content ?? '';
+  const variants = parseVariants(text, ctx.maxVariants);
+  return { variants, latencyMs: Date.now() - started, provider: `meta/${model}` };
+}
+
 async function callProvider(query: string, ctx: ProviderContext): Promise<ExpandedQueries> {
   switch (ctx.type) {
     case 'ollama':
@@ -153,6 +218,8 @@ async function callProvider(query: string, ctx: ProviderContext): Promise<Expand
       return expandViaAnthropic(query, ctx);
     case 'bedrock':
       return expandViaBedrock(query, ctx);
+    case 'meta':
+      return expandViaMeta(query, ctx);
   }
 }
 
@@ -173,12 +240,16 @@ export async function expandQuery(
   const started = Date.now();
   const ollamaEndpoint = providers?.ollama?.endpoint || 'http://localhost:11434';
   const bedrockRegion = providers?.bedrock?.region || 'us-east-1';
+  const metaEndpoint = providers?.meta?.endpoint || META_ENDPOINT_DEFAULT;
+  const metaApiKeyEnv = providers?.meta?.apiKeyEnv || META_API_KEY_ENV_DEFAULT;
 
   const primaryCtx: ProviderContext = {
     type: cfg.provider,
     model: cfg.model,
     ollamaEndpoint,
     bedrockRegion,
+    metaEndpoint,
+    metaApiKeyEnv,
     timeoutMs: cfg.timeoutMs,
     temperature: cfg.temperature,
     maxVariants: cfg.maxVariants
@@ -198,6 +269,8 @@ export async function expandQuery(
             model: cfg.fallbackModel,
             ollamaEndpoint,
             bedrockRegion,
+            metaEndpoint,
+            metaApiKeyEnv,
             timeoutMs: remaining,
             temperature: cfg.temperature,
             maxVariants: cfg.maxVariants

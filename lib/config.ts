@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // --- Provider registry (shared across all features) ---
 
 /** Provider types that can serve LLM generation (expansion, calibration). */
-export type LLMProviderType = 'ollama' | 'anthropic' | 'bedrock';
+export type LLMProviderType = 'ollama' | 'anthropic' | 'bedrock' | 'meta';
 /** Provider types that can serve embeddings. */
 export type EmbeddingProviderType = 'transformers' | 'ollama';
 
@@ -34,11 +34,35 @@ export interface AnthropicProviderConfig {
   // Uses ANTHROPIC_API_KEY env var — no config needed
 }
 
+export interface MetaProviderConfig {
+  /** Model API base URL. Default: https://api.meta.ai/v1 */
+  endpoint?: string;
+  /**
+   * Env var holding the Model API key. Default: META_API_KEY, with
+   * MODEL_API_KEY as fallback. Never a literal key — config names the
+   * variable, the daemon resolves it at call time.
+   */
+  apiKeyEnv?: string;
+}
+
 export interface ProvidersConfig {
   ollama: OllamaProviderConfig;
   bedrock: BedrockProviderConfig;
   anthropic: AnthropicProviderConfig;
+  /**
+   * Optional because callers (and older configs) may not name it; resolution
+   * always falls back to META_*_DEFAULT below. Present in DEFAULTS.
+   */
+  meta?: MetaProviderConfig;
 }
+
+/** Built-in Meta Model API defaults (no key ever lives here). */
+export const META_ENDPOINT_DEFAULT = 'https://api.meta.ai/v1';
+export const META_API_KEY_ENV_DEFAULT = 'META_API_KEY';
+/** Second env name honored when the configured one is unset. */
+export const META_API_KEY_ENV_FALLBACK = 'MODEL_API_KEY';
+/** Default Meta chat model (Spark 1.3 Contributor — cheap bulk tier). */
+export const META_DEFAULT_MODEL = 'muse-spark-1.3-contributor';
 
 // --- Feature configs ---
 
@@ -312,7 +336,8 @@ const DEFAULTS: ContextusConfig = {
   providers: {
     ollama: { endpoint: 'http://localhost:11434' },
     bedrock: { region: 'us-east-1' },
-    anthropic: {}
+    anthropic: {},
+    meta: { endpoint: 'https://api.meta.ai/v1', apiKeyEnv: 'META_API_KEY' }
   },
   embedding: {
     provider: 'transformers',
@@ -517,6 +542,7 @@ function mergeConfigInto(merged: ContextusConfig, c: Record<string, any>): void 
     if (c.providers.ollama) Object.assign(merged.providers.ollama, c.providers.ollama);
     if (c.providers.bedrock) Object.assign(merged.providers.bedrock, c.providers.bedrock);
     if (c.providers.anthropic) Object.assign(merged.providers.anthropic, c.providers.anthropic);
+    if (c.providers.meta) Object.assign((merged.providers.meta ??= {}), c.providers.meta);
   }
   if (c.embedding) {
     const { transformers: tOverride, ...eRest } = c.embedding;
