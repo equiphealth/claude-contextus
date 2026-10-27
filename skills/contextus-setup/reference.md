@@ -89,9 +89,17 @@ When this skill runs under Muse Code, the host is `muse`:
    then fail loud. If Node itself is missing, fail loudly with a manual step
    (install Node LTS → re-run setup); never auto-install Node or edit PATH
    without explicit user approval.
-5. `dist/` rule: the daemon runs from committed `node dist/daemon/server.js`.
-   If `dist/daemon/server.js` is missing, fail loudly with a restore step —
-   never build `dist/` during setup.
+5. `dist/` rule (verified 2026-10-27: `dist/` is gitignored build output, NOT
+   committed — `git ls-files dist` is empty). The daemon launches `node
+   dist/daemon/server.js` when present, else repo-local `tsx`, else `npx tsx`;
+   on a non-dev install the first start builds via `npx tsc` (`ensureDistBuilt`,
+   locked, 60 s). Setup therefore verifies `dist/daemon/server.js` exists OR
+   that `npx tsc` can produce it; if neither, fail loudly — never hand-build
+   `dist/` into the plugin source or cache. OPEN (needs a decision, not a
+   workaround): a `--omit=dev` runtime has no `tsc`/`tsx`, so first-start
+   build depends on an `npx` network fetch; either the runtime install must
+   include the build tools or the release artifact must ship a prebuilt
+   `dist/`. Do not invent a resolution — escalate to the user.
 6. Start the daemon against the runtime deps, verify `GET /health`
    (`modelLoaded`), and only then declare success. Check Ollama/model
    availability here and report it; keyword fallback is the documented

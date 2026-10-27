@@ -19,7 +19,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { projectHash } from '../../scripts/lib/project-hash.js';
 import {
-  getBaseURL,
   ensureDaemonRunning,
   getHealth,
   getVerbosity,
@@ -27,8 +26,16 @@ import {
   fireReconcile,
   hasAgentsStanza,
   readSetupStamp,
-  STANZA_START
+  sleep
 } from '../../scripts/lib/daemon-control.js';
+
+/**
+ * Hard ceiling for the whole warm sequence (spawn + waits + checks). The
+ * manifest kills this hook at 15 s; a killed hook delivers no nudge, so the
+ * budget is structural, not arithmetic. When the race loses, the checks
+ * below run on best-known state (daemon treated as down → nudge fires).
+ */
+const START_BUDGET_MS = 12000;
 import { emitContext, emitSystemMessage, emitEmpty } from '../shared/emit.js';
 
 const ADAPTER_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -61,23 +68,53 @@ async function main() {
   const cwd = payload.cwd || process.cwd();
   const source = payload.source || 'startup';
 
-  try {
-    const already = await ensureDaemonRunning();
-    if (!already) await waitForModel(15000);
-    else await waitForModel(5000);
-  } catch {
-    // Daemon unreachable: the setup nudge below covers it. Never block start.
-  }
-
-  // Background reconcile check — never hangs session start.
-  const projectId = projectHash(path.resolve(cwd));
-  fireReconcile(projectId, cwd).catch(() => {});
+  const cheap = source === 'clear' || source === 'fork';
+  const warmOnly = source === 'resume' || source === 'compact';
 
   const verbose = getVerbosity() === 'verbose';
-  const corpus = await checkCorpus(projectId, cwd).catch(() => null);
   const hasStanza = hasAgentsStanza(cwd);
-  const health = await getHealth(1000).catch(() => null);
-  const daemonOk = !!(health && health.modelLoaded !== false);
+  const projectId = projectHash(path.resolve(cwd));
+
+  // Background reconcile check — never hangs session start.
+  fireReconcile(projectId, cwd).catch(() => {});
+
+  // Best-known daemon state. Everything networked runs inside the raced
+  // block; file reads above stay outside (instant). If the budget race
+  // loses, daemonOk stays false and the nudge below fires — the safe side.
+  let daemonOk = false;
+  let corpus = null;
+  const warm = (async () => {
+    try {
+      if (cheap) {
+        // Cheap path: no spawn, no wait. The daemonOk check below still
+        // nudges on a down daemon; it just isn't restarted from here.
+      } else if (warmOnly) {
+        // Warm check: no spawn; one short grace wait only if unhealthy now.
+        const probe = await getHealth(1000).catch(() => null);
+        if (!probe || probe.modelLoaded === false) await waitForModel(5000);
+      } else {
+        const already = await ensureDaemonRunning();
+        // Cold-start patience lives inside the race budget, not beyond it:
+        // a spurious nudge this session (quiet next) beats a killed hook.
+        if (!already) await waitForModel(8000);
+        else await waitForModel(5000);
+      }
+    } catch {
+      // Daemon unreachable: the setup nudge below covers it. Never block.
+    }
+    corpus = await checkCorpus(projectId, cwd).catch(() => null);
+    const health = await getHealth(1000).catch(() => null);
+    daemonOk = !!(health && health.modelLoaded !== false);
+  })();
+  warm.catch(() => {}); // stragglers settle silently after we've moved on
+  await Promise.race([warm, sleep(START_BUDGET_MS)]);
+
+  // Bounded exit grace: idle keep-alive sockets must not push total runtime
+  // past the 15 s manifest kill (emit at ≤12 s + this grace ≤14 s worst
+  // case). Unref'd: if the loop drains naturally first, this never fires.
+  // In-flight best-effort work (fireReconcile, warm stragglers) gets whatever
+  // time it gets; the nudge below is already decided and never waits for it.
+  setTimeout(() => process.exit(0), 2000).unref();
 
   // Setup nudge: the one-time "run /setup first" reminder. Fires while the
   // setup stamp is missing (setup never completed here) or the daemon is
