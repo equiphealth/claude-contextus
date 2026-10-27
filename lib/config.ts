@@ -270,6 +270,13 @@ export interface CapacityProtectionConfig {
   minimalAt: number;
   /** Percentage threshold to disable injection entirely. Default: 85. */
   disableAt: number;
+  /**
+   * Optional explicit context-window size in tokens. Hosts that report
+   * cumulative input_tokens without a used_percentage (e.g. the Muse
+   * PostLLMCall accumulator) resolve pct = input_tokens / contextWindowTokens
+   * * 100. Unset = percentage path only; the daemon never guesses a window.
+   */
+  contextWindowTokens?: number;
 }
 
 export interface SourceConfig {

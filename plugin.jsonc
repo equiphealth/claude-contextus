@@ -148,6 +148,11 @@
       "reduceAt": 70, // reduce topK to min(configured, 3)
       "minimalAt": 80, // topK=1, floor*1.2
       "disableAt": 85 // no injection, emit warning
+      // Optional explicit context-window size (tokens). Hosts that report
+      // cumulative input_tokens without a used_percentage (Muse PostLLMCall
+      // accumulator) resolve pct = input_tokens / contextWindowTokens * 100.
+      // Unset = percentage path only; the daemon never guesses a window.
+      // "contextWindowTokens": 200000
     },
     "usageEvaluation": {
       // Evaluate injected context usage after each response. Runs in a background loop

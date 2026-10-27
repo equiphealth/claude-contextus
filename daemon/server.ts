@@ -194,6 +194,111 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(payload);
 }
 
+/**
+ * Host output ceiling for the request/response edge seam (Muse support).
+ * Muse caps hook stdout at 16384 bytes and kills the process past it — so the
+ * daemon truncates one byte inside the cap. Byte-accurate: counts UTF-8 bytes,
+ * never splits a multi-byte sequence. Pure function; see tests.
+ */
+export const HOST_OUTPUT_CEILING = 16383;
+
+export interface CapacityStats {
+  input_tokens?: number;
+  output_tokens?: number;
+  used_percentage?: number;
+}
+
+export interface CapacityThresholds {
+  disableAt?: number;
+  minimalAt?: number;
+  reduceAt?: number;
+  contextWindowTokens?: number;
+}
+
+export type CapacityTier = 'none' | 'reduced' | 'minimal' | 'disabled';
+
+/**
+ * Resolve a capacity percentage from hook-reported stats (Muse support).
+ * Preferred: an explicit `used_percentage` (Claude statusline path).
+ * Fallback: cumulative `input_tokens` against an explicitly configured
+ * `contextWindowTokens` — never a guessed window. Returns undefined when
+ * neither is available, which disables the guard (fail-open).
+ * Pure function, exported for direct unit testing.
+ */
+export function capacityPercent(
+  stats: CapacityStats | undefined,
+  cpCfg: CapacityThresholds | undefined
+): number | undefined {
+  if (stats?.used_percentage && stats.used_percentage > 0) return stats.used_percentage;
+  if (
+    stats?.input_tokens &&
+    stats.input_tokens > 0 &&
+    cpCfg?.contextWindowTokens &&
+    cpCfg.contextWindowTokens > 0
+  ) {
+    return (stats.input_tokens / cpCfg.contextWindowTokens) * 100;
+  }
+  return undefined;
+}
+
+/**
+ * Map a capacity percentage to a guard tier using the configured thresholds
+ * (defaults 85/80/70 — same numbers the inline guard always used).
+ * Pure function, exported for direct unit testing.
+ */
+export function capacityTierFor(
+  pct: number | undefined,
+  cpCfg: CapacityThresholds | undefined,
+  enabled: boolean
+): CapacityTier {
+  if (pct === undefined || !enabled) return 'none';
+  if (pct > (cpCfg?.disableAt ?? 85)) return 'disabled';
+  if (pct > (cpCfg?.minimalAt ?? 80)) return 'minimal';
+  if (pct > (cpCfg?.reduceAt ?? 70)) return 'reduced';
+  return 'none';
+}
+
+export function truncateUtf8Bytes(s: string, maxBytes: number): string {
+  if (Buffer.byteLength(s, 'utf8') <= maxBytes) return s;
+  // Streaming decode holds back a trailing partial sequence instead of
+  // emitting U+FFFD, so the cut lands on a character boundary.
+  return new TextDecoder('utf-8').decode(Buffer.from(s, 'utf8').subarray(0, maxBytes), {
+    stream: true
+  });
+}
+
+/**
+ * Shape a hook output payload for the requesting host (Muse support edge seam).
+ * Pure function, exported for direct unit testing like determineSource: the
+ * branch it encodes (Claude passthrough vs host-shaped + truncated) is only
+ * otherwise reachable through a full warm-model /query.
+ *
+ * No `agent` → today's behavior bit-for-bit: literal UserPromptSubmit shape,
+ * no truncation, even over the host ceiling (Claude hosts have no such cap).
+ * With `agent` → the request's hook event plus ceiling enforcement at the edge.
+ */
+export function shapeHookOutput(
+  additionalContext: string,
+  opts: { agent?: string; hookEvent?: string } = {}
+): {
+  continue: true;
+  hookSpecificOutput: { hookEventName: string; additionalContext: string };
+} {
+  if (!opts.agent) {
+    return {
+      continue: true,
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext }
+    };
+  }
+  return {
+    continue: true,
+    hookSpecificOutput: {
+      hookEventName: opts.hookEvent || 'UserPromptSubmit',
+      additionalContext: truncateUtf8Bytes(additionalContext, HOST_OUTPUT_CEILING)
+    }
+  };
+}
+
 /** GET /health — liveness + readiness (modelLoaded is what session-start polls).
  *  ?probe=true → verify the provider is actually reachable (cheap embed). */
 async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -271,6 +376,14 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const hash = promptHash(prompt);
   const projectLabel = project ?? 'default';
 
+  // Host-neutral edge seam (Muse support): optional per-request host identity.
+  // Claude clients send neither field; absence means today's behavior bit-for-bit.
+  // When `agent` is present, the response carries the request's `hookEvent` and
+  // truncates `additionalContext` to the host output ceiling at the edge.
+  const agent = typeof body.agent === 'string' && body.agent ? body.agent : undefined;
+  const hookEvent =
+    typeof body.hookEvent === 'string' && body.hookEvent ? body.hookEvent : 'UserPromptSubmit';
+
   // Model not warm yet (still loading, or warmup failed) → degrade. Embedding
   // now would throw deep in the provider; the cold first prompt or two missing
   // context is the documented graceful-degradation behavior.
@@ -316,37 +429,27 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   }
 
   // --- Token capacity guard (GitHub #17) ---
-  // The statusline script writes context_window stats to a file; the query hook
-  // reads it and passes it here. When the conversation is near the model limit,
-  // suppress injection to prevent API overflow errors.
-  const contextStats = body.contextStats as
-    | {
-        input_tokens?: number;
-        output_tokens?: number;
-        used_percentage?: number;
-      }
-    | undefined;
+  // The statusline script (Claude) or PostLLMCall accumulator (Muse, cumulative
+  // input_tokens + explicit capacityProtection.contextWindowTokens) writes stats
+  // to a file; the query hook reads it and passes it here. When the conversation
+  // is near the model limit, suppress injection to prevent API overflow errors.
+  const contextStats = body.contextStats as CapacityStats | undefined;
 
   let capacityTopK: number | undefined;
   let capacityFloorMultiplier = 1.0;
-  let capacityTier: LastInjectionDebug['capacityTier'] = 'none';
-
-  if (
-    contextStats?.used_percentage &&
-    contextStats.used_percentage > 0 &&
+  const pct = capacityPercent(contextStats, cfg.capacityProtection);
+  const capacityTier: LastInjectionDebug['capacityTier'] = capacityTierFor(
+    pct,
+    cfg.capacityProtection,
     cfg.capacityProtection.enabled !== false
-  ) {
-    const pct = contextStats.used_percentage;
-    const cpCfg = cfg.capacityProtection;
-    const disableAt = cpCfg?.disableAt ?? 85;
-    const minimalAt = cpCfg?.minimalAt ?? 80;
-    const reduceAt = cpCfg?.reduceAt ?? 70;
+  );
 
-    if (pct > disableAt) {
+  if (pct !== undefined && capacityTier !== 'none') {
+    if (capacityTier === 'disabled') {
       logInfo('Token capacity exceeded — disabling injection', {
         project: projectLabel,
         used_percentage: Math.round(pct),
-        input_tokens: contextStats.input_tokens
+        input_tokens: contextStats?.input_tokens
       });
       writeLastInjectionDebug(sessionId, projectId, {
         project: projectLabel,
@@ -364,26 +467,24 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         sources: {},
         injectedFiles: []
       });
-      return sendJson(res, 200, {
-        continue: true,
-        hookSpecificOutput: {
-          hookEventName: 'UserPromptSubmit',
-          additionalContext: `[contextus: conversation at ${Math.round(pct)}% capacity (${Math.round((contextStats.input_tokens || 0) / 1000)}K tokens), injection disabled to prevent overflow]`
-        }
-      });
-    }
-    if (pct > minimalAt) {
+      return sendJson(
+        res,
+        200,
+        shapeHookOutput(
+          `[contextus: conversation at ${Math.round(pct)}% capacity (${Math.round((contextStats?.input_tokens || 0) / 1000)}K tokens), injection disabled to prevent overflow]`,
+          { agent, hookEvent }
+        )
+      );
+    } else if (capacityTier === 'minimal') {
       capacityTopK = 1;
       capacityFloorMultiplier = 1.2;
-      capacityTier = 'minimal';
       logInfo('Token capacity high — minimal injection', {
         project: projectLabel,
         used_percentage: Math.round(pct),
         adjustedTopK: 1
       });
-    } else if (pct > reduceAt) {
+    } else if (capacityTier === 'reduced') {
       capacityTopK = Math.min(cfg.retrieval.topK, 3);
-      capacityTier = 'reduced';
       logInfo('Token capacity moderate — reducing injection', {
         project: projectLabel,
         used_percentage: Math.round(pct),
@@ -565,7 +666,10 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       topK: capacityTopK ?? cfg.retrieval.topK,
       injectionFloor: cfg.retrieval.injectionFloor * capacityFloorMultiplier,
       maxTokens: cfg.retrieval.maxTokens,
-      provenanceFooter: cfg.retrieval.provenanceFooter
+      provenanceFooter: cfg.retrieval.provenanceFooter,
+      // Intelligent host-ceiling fit only on the Muse path; the Claude path
+      // keeps byte-identical assembly (no cap on that host).
+      byteCeiling: agent ? HOST_OUTPUT_CEILING : undefined
     },
     { cwd, usedKeywordFallback }
   );
@@ -607,13 +711,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       });
     }
     if (outcome.kind === 'near-miss') {
-      return sendJson(res, 200, {
-        continue: true,
-        hookSpecificOutput: {
-          hookEventName: 'UserPromptSubmit',
-          additionalContext: outcome.notice
-        }
-      });
+      return sendJson(res, 200, shapeHookOutput(outcome.notice, { agent, hookEvent }));
     }
     return sendJson(res, 200, { continue: true });
   }
@@ -691,13 +789,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     injectedFiles: injectedNames
   });
 
-  sendJson(res, 200, {
-    continue: true,
-    hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
-      additionalContext: block
-    }
-  });
+  sendJson(res, 200, shapeHookOutput(block, { agent, hookEvent }));
 }
 
 /**
