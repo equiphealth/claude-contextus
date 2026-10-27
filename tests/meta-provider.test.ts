@@ -115,6 +115,37 @@ test('expandQuery meta: posts chat completions, parses variants, names provider'
   });
 });
 
+test('expandQuery meta: null content (length-finish) falls back to ollama', async () => {
+  await withMetaKey('test-meta-key', async () => {
+    const originalFetch = globalThis.fetch;
+    const seen: string[] = [];
+    globalThis.fetch = (async (url: unknown) => {
+      seen.push(String(url));
+      if (String(url).includes('api.meta.ai')) {
+        // Reasoning model spent the budget on thinking: null content.
+        return { ok: true, json: async () => ({ choices: [{ message: { content: null } }] }) };
+      }
+      return {
+        ok: true,
+        json: async () => ({ response: 'fallback one\nfallback two words\nfallback three words' })
+      };
+    }) as unknown as typeof fetch;
+    try {
+      const cfg = { ...BASE_CFG, fallbackProvider: 'ollama' as const, fallbackModel: 'qwen2.5:3b' };
+      const result = await expandQuery('How do I configure embeddings?', cfg, PROVIDERS);
+      assert.ok(seen[0].includes('api.meta.ai'), 'tried Meta first');
+      assert.ok(
+        seen.some((u) => u.includes('11434')),
+        'fell back to ollama'
+      );
+      assert.equal(result.provider, 'ollama/qwen2.5:3b');
+      assert.equal(result.variants.length, 3);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 test('expandQuery meta: missing key fails open to variants: [] without fetch', async () => {
   await withMetaKey(undefined, async () => {
     const originalFetch = globalThis.fetch;

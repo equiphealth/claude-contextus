@@ -204,9 +204,23 @@ async function expandViaMeta(query: string, ctx: ProviderContext): Promise<Expan
   });
 
   if (!res.ok) throw new Error(`Meta expansion failed: ${res.status}`);
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const text = data.choices?.[0]?.message?.content ?? '';
+  const data = (await res.json()) as {
+    choices?: Array<{ finish_reason?: string; message?: { content?: string | null } }>;
+  };
+  const choice = data.choices?.[0];
+  const text = choice?.message?.content ?? '';
   const variants = parseVariants(text, ctx.maxVariants);
+  // Null/empty content means the model spent the budget without answering.
+  // finish_reason separates the two cases: 'length' = token limit hit,
+  // anything else = genuinely no expansion. Both throw so expandQuery falls
+  // back to the configured fallback provider; the message keeps them
+  // distinguishable in logs.
+  if (variants.length === 0) {
+    if (choice?.finish_reason === 'length') {
+      throw new Error('meta expansion truncated by token limit (finish_reason=length)');
+    }
+    throw new Error('meta expansion returned no variants');
+  }
   return { variants, latencyMs: Date.now() - started, provider: `meta/${model}` };
 }
 
