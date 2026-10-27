@@ -80,33 +80,33 @@ When this skill runs under Muse Code, the host is `muse`:
    - `not-installed` → the plugin itself is not installed. Stop with install steps.
    - `cli-missing` → fail loudly (Muse CLI not on PATH in this environment).
    - `unknown` → warn and continue; re-verify approval before finishing.
-4. Runtime deps, npm-first: verify `node` ≥ 22 (`package.json` engines).
-   Install the daemon runtime deps with **npm, first and preferably only** —
-   never `pnpm` inside a tree used as an install source — into a setup-owned
-   runtime location: never the installed plugin cache (approval-hash flip
-   risk) and never the plugin source tree (an installed-deps source becomes
-   uninstallable). Fallback if npm is somehow absent: corepack-provided pnpm,
-   then fail loud. If Node itself is missing, fail loudly with a manual step
-   (install Node LTS → re-run setup); never auto-install Node or edit PATH
-   without explicit user approval.
-5. `dist/` rule (verified 2026-10-27: `dist/` is gitignored build output, NOT
-   committed — `git ls-files dist` is empty). The daemon launches `node
-   dist/daemon/server.js` when present, else repo-local `tsx`, else `npx tsx`;
-   on a non-dev install the first start builds via `npx tsc` (`ensureDistBuilt`,
-   locked, 60 s). Setup therefore verifies `dist/daemon/server.js` exists OR
-   that `npx tsc` can produce it; if neither, fail loudly — never hand-build
-   `dist/` into the plugin source or cache. OPEN (needs a decision, not a
-   workaround): a `--omit=dev` runtime has no `tsc`/`tsx`, so first-start
-   build depends on an `npx` network fetch; either the runtime install must
-   include the build tools or the release artifact must ship a prebuilt
-   `dist/`. Do not invent a resolution — escalate to the user.
-6. Start the daemon against the runtime deps, verify `GET /health`
-   (`modelLoaded`), and only then declare success. Check Ollama/model
-   availability here and report it; keyword fallback is the documented
-   degradation when embeddings are unavailable.
-7. Write the rules stanza to `AGENTS.md` via `contextus-setup --host muse`
-   (setup-owned, never hook-owned) and confirm `.claude/setup.json` exists —
-   the SessionStart nudge reads that stamp. Never write the stamp by hand.
+4. Runtime deps into the neutral home (DECIDED 2026-10-27, O13 option 1):
+   verify `node` ≥ 22 (`package.json` engines), then run the setup engine
+   with bare node (zero deps needed):
+   ```bash
+   node <plugin-dir>/scripts/sync-neutral-daemon.js
+   ```
+   This copies `{daemon,lib,scripts}/` + `package.json` + `tsconfig.json` to
+   `~/.contextus/daemon/`, runs a FULL `npm install` (`--no-audit --no-fund
+   --ignore-scripts`, setup-owned cache — never `pnpm` in an install source,
+   never the plugin cache or source tree), builds `dist/` with the LOCAL
+   `tsc`, and writes the version stamp. Full install is deliberate: npm's
+   `--omit=dev` + explicit-package interaction mis-resolves when the explicit
+   packages are also dev-listed (observed: exit 0, dev-populated tree MISSING
+   tsc/tsx). Measured cost: ~470 MB runtime + ~360 MB cache, per machine,
+   never shipped. Any failure exits non-zero — stop, report, do not proceed.
+5. Run setup from the neutral copy (it has the deps the lean plugin lacks):
+   ```bash
+   ~/.contextus/daemon/node_modules/.bin/tsx ~/.contextus/daemon/scripts/contextus-setup.ts --host muse --dir /path/to/project
+   ```
+   Setup reuses a healthy daemon wherever it runs (never restarts/upgrades
+   one), else starts the neutral `dist` build detached and polls `/health`
+   until `modelLoaded` (90 s budget, then fail loudly). Declare success only
+   on `modelLoaded: true`; check Ollama/model availability here and report
+   it. Hooks never build; the 15 s hook budget is never spent here.
+6. Write the rules stanza to `AGENTS.md` (setup-owned, never hook-owned) and
+   confirm `.claude/setup.json` exists — the SessionStart nudge reads that
+   stamp. Never write the stamp by hand.
 
 ### Step 1: Route Based on State
 

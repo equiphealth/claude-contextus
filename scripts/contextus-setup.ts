@@ -13,9 +13,11 @@
  *   2. Upsert a marked, idempotent contextus stanza into the project rules file
  *      (<!-- contextus:start --> … <!-- contextus:end -->) — re-running updates
  *      in place, never duplicates.
- *   3. Run the initial embed (reconcile the corpus from the context files).
- *   4. Confirm the daemon is reachable; print status.
- *   5. Write the setup-completion stamp the Muse SessionStart hook reads.
+ *   3. Ensure the daemon: reuse a healthy one, else sync the neutral home
+ *      (~/.contextus/daemon), start it, verify /health + model warm.
+ *      Throws on failure — no stamp, non-zero exit.
+ *   4. Run the initial embed (reconcile the corpus from the context files).
+ *   5. Write the setup-completion stamp the SessionStart hook reads.
  *
  * Usage:
  *   pnpm contextus-setup                 # set up the current project (cwd)
@@ -30,13 +32,20 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import {
   upsertStanza,
   hasStanza,
   HOST_STANZA,
   type SetupHost
 } from '../lib/capture/claude-md-stanza.js';
-import { writeSetupStamp } from './lib/daemon-control.js';
+import {
+  writeSetupStamp,
+  syncNeutralDaemon,
+  noteDaemonVersion,
+  NEUTRAL_DIST_SERVER
+} from './lib/daemon-control.js';
+import { getDaemonURL } from '../lib/daemon-url.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { tableExists, countRows } from '../lib/storage/lance-client.js';
 import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js';
@@ -44,6 +53,68 @@ import { printFloorReport } from '../lib/calibration/floor-report.js';
 import { buildChanges, renderDiff, hasRealChanges } from '../lib/calibration/config-write.js';
 import { loadConfig, projectLocalConfigPath } from '../lib/config.js';
 import { mineProject } from './mine-transcripts.js';
+
+/** GET /health, parsed or null. Never throws (down-ness is data here). */
+async function readDaemonHealth(
+  timeoutMs = 10000
+): Promise<{ modelLoaded?: unknown; version?: unknown } | null> {
+  try {
+    const res = await fetch(`${getDaemonURL()}/health`, {
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { modelLoaded?: unknown; version?: unknown };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Setup-time daemon guarantee: reuse a healthy daemon wherever it runs,
+ * else sync the neutral home, start it detached, and poll /health until the
+ * model is warm. Throws with the exact recovery step on any failure — the
+ * caller exits non-zero and no completion stamp is written.
+ */
+async function ensureDaemonReady(): Promise<void> {
+  const running = await readDaemonHealth();
+  if (running) {
+    // Reuse wins over code path (condition 1): never restart, never upgrade
+    // under a live session. Drift only warns (inside noteDaemonVersion).
+    noteDaemonVersion(running);
+    console.log('  daemon           already running (reused — not restarted)');
+    return;
+  }
+  console.log('  daemon           syncing neutral home…');
+  const sync = syncNeutralDaemon({ log: (m) => console.log(`  neutral daemon  ${m}`) });
+  console.log(
+    `  neutral daemon   ${sync.synced ? 'synced' : 'already in sync'} (${sync.found || sync.expected})`
+  );
+  if (!fs.existsSync(NEUTRAL_DIST_SERVER)) {
+    throw new Error(`neutral dist entry missing after sync: ${NEUTRAL_DIST_SERVER}`);
+  }
+  const child = spawn(process.execPath, [NEUTRAL_DIST_SERVER], {
+    detached: true,
+    stdio: 'ignore'
+  });
+  child.unref();
+  console.log('  daemon           spawned, waiting for model warm…');
+  const deadline = Date.now() + 90000;
+  for (;;) {
+    const health = await readDaemonHealth(5000);
+    if (health && health.modelLoaded) {
+      noteDaemonVersion(health);
+      console.log('  daemon           reachable and model warm');
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        'daemon started but /health never reported modelLoaded within 90 s. ' +
+          'Check the embedding provider (Ollama) and rerun setup — setup re-verifies from scratch.'
+      );
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
 
 interface Args {
   dir: string;
@@ -152,7 +223,14 @@ async function main(): Promise<void> {
     }`
   );
 
-  // 3. Initial embed (reconcile from the context files). Skippable via --no-embed.
+  // 3. Ensure the daemon: reuse a healthy one (any location — reuse wins
+  // over code path, version drift only warns), else sync the neutral home,
+  // start it, and verify /health. Throws on failure: setup must fail loudly
+  // here, never limp on with a dead daemon (the silent-fail-open §3 exists
+  // to prevent). Daemon start is a setup cost, never a hook cost.
+  await ensureDaemonReady();
+
+  // 4. Initial embed (reconcile from the context files). Skippable via --no-embed.
   if (args.embed) {
     const ctxDir = path.join(args.dir, '.claude', 'context');
     try {
@@ -177,7 +255,7 @@ async function main(): Promise<void> {
     console.log('  embed              skipped (--no-embed)');
   }
 
-  // 3b. One-time transcript-mining bootstrap scan (only when the skill passed
+  // 4b. One-time transcript-mining bootstrap scan (only when the skill passed
   // --mine-transcripts, i.e. the user said yes when asked). Same extraction
   // pipeline the recurring SessionStart trigger uses (GH issue #39) — this is
   // just the FIRST scan, matching decision-transcript-mining-recurring.md's
@@ -203,7 +281,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // 4. Config tuning via floor calibration (--tune or if prompted)
+  // 5. Config tuning via floor calibration (--tune or if prompted)
   if (args.tune) {
     console.log('\n── Config Tuning ──');
     try {
@@ -244,7 +322,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // 5. Stamp completion so the Muse SessionStart hook can tell "setup ran"
+  // 6. Stamp completion so the Muse SessionStart hook can tell "setup ran"
   // from "setup never ran". Written for both hosts; only the Muse hook reads
   // it today. A stamp never silences a dead daemon (the hook checks /health).
   const stamp = writeSetupStamp(args.dir, { host: args.host });

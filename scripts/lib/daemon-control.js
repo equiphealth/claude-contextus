@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,6 +75,89 @@ const EVAL_WORKER_TS = path.join(REPO_ROOT, 'daemon', 'eval-worker.ts');
 const MINE_TRANSCRIPTS_JS = path.join(REPO_ROOT, 'dist', 'scripts', 'mine-transcripts.js');
 const MINE_TRANSCRIPTS_TS = path.join(REPO_ROOT, 'scripts', 'mine-transcripts.ts');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
+
+/**
+ * Neutral daemon home (§3.3): host-shared code + deps + build. `~/.contextus/`
+ * is already the neutral runtime home (runtime/ pid+port, data/ unified DB);
+ * this extends it to the daemon code path, replacing the vague "setup-owned
+ * runtime location" and the Claude-only CLAUDE_PLUGIN_DATA branch (kept as a
+ * legacy fallback below). Hooks never write here; setup syncs it; the daemon
+ * runs from it. Both hosts share one neutral copy — no Muse twin, no fork.
+ */
+export const NEUTRAL_DIR = path.join(os.homedir(), '.contextus', 'daemon');
+const NEUTRAL_PKG = path.join(NEUTRAL_DIR, 'package.json');
+const NEUTRAL_MODULES = path.join(NEUTRAL_DIR, 'node_modules');
+const NEUTRAL_TSC = path.join(NEUTRAL_MODULES, 'typescript', 'bin', 'tsc');
+const NEUTRAL_TSX_BIN = path.join(NEUTRAL_MODULES, '.bin', 'tsx');
+export const NEUTRAL_DIST_SERVER = path.join(NEUTRAL_DIR, 'dist', 'daemon', 'server.js');
+const NEUTRAL_DIST_WORKER = path.join(NEUTRAL_DIR, 'dist', 'daemon', 'eval-worker.js');
+const NEUTRAL_VERSION_FILE = path.join(NEUTRAL_DIR, 'version.json');
+// Source dirs + files synced repo → neutral (a closed, buildable set: no
+// lib/ or daemon/ source imports outside it, verified 2026-10-27).
+const NEUTRAL_SYNC_DIRS = ['daemon', 'lib', 'scripts'];
+const NEUTRAL_SYNC_FILES = ['package.json', 'tsconfig.json'];
+
+/** Repo version (what the neutral copy must match). Cached per process. */
+let _repoVersion = undefined;
+export function repoVersion() {
+  if (_repoVersion === undefined) {
+    try {
+      _repoVersion =
+        JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')).version || null;
+    } catch {
+      _repoVersion = null;
+    }
+  }
+  return _repoVersion;
+}
+
+/**
+ * Neutral-copy state for setup decisions. `ready` means version-stamped AND
+ * deps AND dist all present. Anything else names the exact gap; setup (never
+ * a hook) closes it via syncNeutralDaemon.
+ */
+export function neutralDaemonStatus() {
+  const expected = repoVersion();
+  let stamp = null;
+  try {
+    stamp = JSON.parse(fs.readFileSync(NEUTRAL_VERSION_FILE, 'utf8'));
+  } catch {
+    /* missing stamp → missing copy */
+  }
+  if (!stamp) return { state: 'missing', expected, found: null };
+  if (expected && stamp.version !== expected)
+    return { state: 'stale-version', expected, found: stamp.version };
+  if (!fs.existsSync(NEUTRAL_MODULES)) return { state: 'missing-deps', expected, found: stamp.version };
+  if (!fs.existsSync(NEUTRAL_DIST_SERVER))
+    return { state: 'missing-dist', expected, found: stamp.version };
+  return { state: 'ready', expected, found: stamp.version };
+}
+
+/** True when the neutral copy is version-stamped with deps and dist present. */
+export function neutralDaemonReady() {
+  return neutralDaemonStatus().state === 'ready';
+}
+
+/**
+ * Running-daemon reuse comes before code path resolution (2026-10-27): a
+ * healthy daemon is reused regardless of where its code lives — plugin,
+ * repo, or neutral. A version mismatch is logged explicitly and NEVER
+ * auto-upgraded under a live session; restart picks up the new code.
+ * Warn-only: returns nothing, throws nothing.
+ */
+export function noteDaemonVersion(health) {
+  try {
+    const running = health && typeof health.version === 'string' ? health.version : null;
+    const expected = repoVersion();
+    if (running && expected && running !== expected) {
+      console.error(
+        `[contextus] daemon version ${running} != expected ${expected} — leaving the running daemon alone; restart it to upgrade (never auto-upgraded under a live session).`
+      );
+    }
+  } catch {
+    /* warn-only */
+  }
+}
 import { stripJsonComments } from './parse-jsonc.js';
 const PLUGIN_JSONC = path.join(REPO_ROOT, 'plugin.jsonc');
 const PLUGIN_JSON = fs.existsSync(PLUGIN_JSONC) ? PLUGIN_JSONC : path.join(REPO_ROOT, 'plugin.json');
@@ -135,6 +218,99 @@ export function ensureDistBuilt() {
       /* best-effort */
     }
   }
+}
+
+/** Last ~1500 chars of command output for failure reports. */
+function tailOutput(s) {
+  const t = String(s || '');
+  return t.length > 1500 ? `…${t.slice(-1500)}` : t;
+}
+
+/**
+ * Sync the neutral daemon home (SETUP ONLY — never called from a hook).
+ * Idempotent: a `ready` copy is a no-op. Steps: wipe code (the npm cache
+ * survives — it is not code), copy source dirs, FULL `npm install` (no
+ * --omit=dev: omit+explicit mis-resolves when explicits are dev-listed, so
+ * the full tree is the only deterministic one), build with the LOCAL tsc,
+ * verify sentinels, write the version stamp.
+ *
+ * Setup pays the build cost once, inside its own step: no hook ever builds,
+ * and a broken build fails the setup loudly instead of degrading silently at
+ * session start. No npx anywhere on this path — no network fetch, no hook
+ * timeout risk. Throws on any failure; the caller reports it verbatim.
+ */
+export function syncNeutralDaemon({ log = () => {}, npmCache } = {}) {
+  const expected = repoVersion();
+  if (!expected) throw new Error(`cannot read version from ${path.join(REPO_ROOT, 'package.json')}`);
+  const prior = neutralDaemonStatus();
+  if (prior.state === 'ready') {
+    log(`neutral daemon ${prior.found} already in sync`);
+    return { synced: false, ...prior };
+  }
+  log(`syncing neutral daemon (was: ${prior.state}, want: ${expected})`);
+
+  // 1. Code sync. Wipe everything except the npm cache: no stale files
+  // survive a version change, and the cache survives the wipe.
+  fs.mkdirSync(NEUTRAL_DIR, { recursive: true });
+  for (const ent of fs.readdirSync(NEUTRAL_DIR)) {
+    if (ent === '.npm-cache') continue;
+    fs.rmSync(path.join(NEUTRAL_DIR, ent), { recursive: true, force: true });
+  }
+  for (const d of NEUTRAL_SYNC_DIRS) {
+    const src = path.join(REPO_ROOT, d);
+    if (!fs.existsSync(src)) throw new Error(`sync source missing: ${src}`);
+    fs.cpSync(src, path.join(NEUTRAL_DIR, d), { recursive: true });
+  }
+  for (const f of NEUTRAL_SYNC_FILES) {
+    const src = path.join(REPO_ROOT, f);
+    if (!fs.existsSync(src)) throw new Error(`sync source missing: ${src}`);
+    fs.copyFileSync(src, path.join(NEUTRAL_DIR, f));
+  }
+
+  // 2. Deps: FULL install, deliberately no --omit=dev. npm's omit+explicit
+  // interaction is unreliable when the explicit packages are also dev-listed
+  // (observed 2026-10-27: exit 0 with a dev-populated tree MISSING the
+  // explicit typescript/tsx — a silent wrong tree, the worst outcome for a
+  // setup step). Full install is deterministic: tree == repo dev tree, so
+  // the neutral build matches the repo build bit-for-bit, tsx fallback
+  // included. Cost is disk only (per-machine dir, never shipped).
+  // Setup-owned cache always: never depends on ~/.npm being writable
+  // (root-owned ~/.npm is a known env failure).
+  const npmEnv = { ...process.env, npm_config_cache: npmCache || path.join(NEUTRAL_DIR, '.npm-cache') };
+  const npmRun = (args) =>
+    spawnSync('npm', args, { cwd: NEUTRAL_DIR, env: npmEnv, encoding: 'utf8', timeout: 300000 });
+  // --ignore-scripts: the repo's `prepare` script installs git hooks
+  // (`git config core.hooksPath`) — wrong in a non-repo neutral copy and
+  // fatal to the install when it fails. Prod deps here ship prebuilt
+  // (lancedb download, transformers wasm); nothing needs lifecycle scripts.
+  const r = npmRun(['install', '--no-audit', '--no-fund', '--ignore-scripts']);
+  if (r.status !== 0)
+    throw new Error(
+      `neutral npm install failed (status=${r.status} signal=${r.signal || 'none'} spawnError=${(r.error && r.error.message) || 'none'}):\n${tailOutput(r.stderr || r.stdout)}`
+    );
+  log('deps installed (full tree: prod + typescript/tsx/@types/node)');
+
+  // 3. Build with the LOCAL tsc. Never npx (see contract above).
+  if (!fs.existsSync(NEUTRAL_TSC)) throw new Error(`local tsc missing after install: ${NEUTRAL_TSC}`);
+  const b = spawnSync(process.execPath, [NEUTRAL_TSC], {
+    cwd: NEUTRAL_DIR,
+    encoding: 'utf8',
+    timeout: 300000
+  });
+  if (b.status !== 0)
+    throw new Error(`neutral tsc build failed:\n${tailOutput(b.stdout)}\n${tailOutput(b.stderr)}`);
+  if (!fs.existsSync(NEUTRAL_DIST_SERVER))
+    throw new Error(`build exited 0 but dist entry missing: ${NEUTRAL_DIST_SERVER}`);
+  log('dist built with local tsc');
+
+  // 4. Stamp. Version match is what neutralDaemonReady() checks.
+  fs.writeFileSync(
+    NEUTRAL_VERSION_FILE,
+    JSON.stringify({ version: expected, syncedAt: new Date().toISOString(), node: process.version }, null, 2) +
+      '\n'
+  );
+  log(`neutral daemon ${expected} ready`);
+  return { synced: true, state: 'ready', expected, found: expected };
 }
 
 /** Valid notification verbosity levels (least → most chatty). */
@@ -281,6 +457,14 @@ function isDevMode() {
  * unused (empty) for the daemon/eval-worker's own launches.
  */
 function resolveLaunch(jsPath, tsPath, extraArgs = []) {
+  // Neutral ready + non-dev → run the setup-owned build (host-shared). Covers
+  // the daemon AND the eval worker (both live in the neutral dist). Never a
+  // second daemon: callers check /health (reuse) before they ever spawn.
+  if (!isDevMode() && neutralDaemonReady()) {
+    if (jsPath === DAEMON_JS) return { cmd: process.execPath, args: [NEUTRAL_DIST_SERVER, ...extraArgs] };
+    if (jsPath === EVAL_WORKER_JS)
+      return { cmd: process.execPath, args: [NEUTRAL_DIST_WORKER, ...extraArgs] };
+  }
   if (!isDevMode() && fs.existsSync(jsPath)) {
     return { cmd: process.execPath, args: [jsPath, ...extraArgs] }; // node dist/.../X.js
   }
@@ -370,7 +554,12 @@ export async function ensureDaemonRunning() {
   // callers take their normal down-path against the pinned URL.
   if (process.env.CONTEXTUS_NO_SPAWN) return false;
   const health = await getHealth(1000);
-  if (health) return true;
+  if (health) {
+    // Reuse wins over code path: a healthy daemon serves regardless of where
+    // its code lives. Version drift is warned, never acted on here.
+    noteDaemonVersion(health);
+    return true;
+  }
 
   const pid = readPid();
   if (pid && pidAlive(pid)) {

@@ -20,3 +20,19 @@ export function readSetupStamp(cwd?: string): SetupStamp | null;
 export function writeSetupStamp(cwd?: string, info?: { host?: string }): SetupStamp | null;
 export function hasAgentsStanza(cwd?: string): boolean;
 export function hasContextusStanza(cwd?: string): boolean;
+
+export const NEUTRAL_DIR: string;
+export const NEUTRAL_DIST_SERVER: string;
+export function repoVersion(): string | null;
+export interface NeutralStatus {
+  state: 'ready' | 'missing' | 'stale-version' | 'missing-deps' | 'missing-dist';
+  expected: string | null;
+  found: string | null;
+}
+export function neutralDaemonStatus(): NeutralStatus;
+export function neutralDaemonReady(): boolean;
+export function noteDaemonVersion(health: unknown): void;
+export function syncNeutralDaemon(opts?: {
+  log?: (msg: string) => void;
+  npmCache?: string;
+}): { synced: boolean } & NeutralStatus;
