@@ -34,6 +34,11 @@
     "mcpServers": [],
     "reminders": [],
     "skills": [
+      {
+        "enabledDefault": true,
+        "id": "contextus-setup",
+        "path": "skills/contextus-setup/SKILL.md"
+      },
       { "enabledDefault": true, "id": "configure", "path": "skills/configure/SKILL.md" },
       {
         "enabledDefault": true,
@@ -53,11 +58,6 @@
       { "enabledDefault": true, "id": "context-stats", "path": "skills/context-stats/SKILL.md" },
       { "enabledDefault": true, "id": "context-status", "path": "skills/context-status/SKILL.md" },
       { "enabledDefault": true, "id": "context-tag", "path": "skills/context-tag/SKILL.md" },
-      {
-        "enabledDefault": true,
-        "id": "contextus-setup",
-        "path": "skills/contextus-setup/SKILL.md"
-      },
       {
         "enabledDefault": true,
         "id": "contextus-upgrade",

@@ -25,7 +25,8 @@ import {
   getVerbosity,
   checkCorpus,
   fireReconcile,
-  hasPopulatedContextDir,
+  hasAgentsStanza,
+  readSetupStamp,
   STANZA_START
 } from '../../scripts/lib/daemon-control.js';
 import { emitContext, emitSystemMessage, emitEmpty } from '../shared/emit.js';
@@ -41,16 +42,6 @@ async function readStdin() {
     return JSON.parse(data || '{}');
   } catch {
     return {};
-  }
-}
-
-/** Does the project AGENTS.md already carry the contextus stanza? */
-function hasAgentsStanza(cwd) {
-  const file = path.join(cwd || process.cwd(), 'AGENTS.md');
-  try {
-    return fs.readFileSync(file, 'utf8').includes(STANZA_START);
-  } catch {
-    return false; // no AGENTS.md → no stanza
   }
 }
 
@@ -84,20 +75,22 @@ async function main() {
 
   const verbose = getVerbosity() === 'verbose';
   const corpus = await checkCorpus(projectId, cwd).catch(() => null);
-  const populated = hasPopulatedContextDir(cwd);
   const hasStanza = hasAgentsStanza(cwd);
   const health = await getHealth(1000).catch(() => null);
   const daemonOk = !!(health && health.modelLoaded !== false);
 
-  // Setup nudge: the one-time "run /setup first" reminder. Fires while setup
-  // is incomplete (daemon down OR no corpus), quiet forever once healthy.
-  // Rides additionalContext so it can ask the model to act, unlike a bare
-  // systemMessage. Inert until hooks are approved — the setup skill (which
-  // runs unapproved) is the backstop for the pre-approval window.
-  if (!daemonOk || !populated) {
+  // Setup nudge: the one-time "run /setup first" reminder. Fires while the
+  // setup stamp is missing (setup never completed here) or the daemon is
+  // down; quiet forever once setup completes AND the daemon answers. The
+  // stamp alone never silences a dead daemon. Rides additionalContext so it
+  // can ask the model to act, unlike a bare systemMessage. Inert until hooks
+  // are approved — the setup skill (which runs unapproved) is the backstop
+  // for the pre-approval window.
+  const stamp = readSetupStamp(cwd);
+  if (!stamp || !daemonOk) {
     const reason = !daemonOk
       ? 'the Contextus daemon is not reachable'
-      : 'this project has no Contextus corpus yet';
+      : 'setup has not been completed in this project';
     emitContext({
       hookEventName: 'SessionStart',
       additionalContext:

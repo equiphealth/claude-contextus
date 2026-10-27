@@ -446,6 +446,61 @@ export function hasContextusStanza(cwd) {
 }
 
 /**
+ * Does the project AGENTS.md already carry the contextus stanza? Muse-host
+ * counterpart of hasContextusStanza (Muse uses AGENTS.md, not CLAUDE.md).
+ * Setup owns the file; hooks only read. A missing file counts as "no stanza".
+ */
+export function hasAgentsStanza(cwd) {
+  const file = path.join(cwd || process.cwd(), 'AGENTS.md');
+  try {
+    return fs.readFileSync(file, 'utf8').includes(STANZA_START);
+  } catch {
+    return false; // no AGENTS.md → no stanza
+  }
+}
+
+/**
+ * Setup-completion stamp. Written by /contextus-setup on success, read by the
+ * Muse SessionStart hook to tell "setup ran, silence is expected" apart from
+ * "setup never ran". Lives at `<project>/.claude/setup.json` (NOT inside
+ * `.claude/context/`, which gets embedded). Machine-local state in effect,
+ * but safe if committed: a stamped project with a dead daemon still nudges,
+ * because the hook checks /health independently of the stamp.
+ */
+export function setupStampPath(cwd) {
+  return path.join(cwd || process.cwd(), '.claude', 'setup.json');
+}
+
+/** The parsed stamp object, or null when setup has not completed here. */
+export function readSetupStamp(cwd) {
+  try {
+    const raw = fs.readFileSync(setupStampPath(cwd), 'utf8');
+    const stamp = JSON.parse(raw);
+    if (stamp && typeof stamp === 'object' && stamp.version === 1) return stamp;
+    return null;
+  } catch {
+    return null; // missing/unparseable → not set up
+  }
+}
+
+/** Record a completed setup run. Never throws (setup reports, never crashes). */
+export function writeSetupStamp(cwd, info = {}) {
+  try {
+    const dir = path.dirname(setupStampPath(cwd));
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = {
+      version: 1,
+      completedAt: new Date().toISOString(),
+      host: info.host || 'claude',
+    };
+    fs.writeFileSync(setupStampPath(cwd), JSON.stringify(stamp, null, 2) + '\n');
+    return stamp;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Is `.claude/context/` already populated with real context files? Used to tell a
  * MIGRATED project (corpus exists, stanza missing) apart from a FRESH one (nothing
  * yet) so the session-start nudge can say the right thing — "scaffold" is wrong

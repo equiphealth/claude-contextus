@@ -2,22 +2,25 @@
 /**
  * contextus-setup — the EXPLICIT half of first-run onboarding (the skill engine).
  *
- * This is the ONLY thing in the system that edits CLAUDE.md. A hook must never
- * auto-edit an outward-facing, user-owned file (first-run-onboarding memory); the
- * cheap invisible corpus embed may be automatic (session-start auto-reconcile),
- * but the visible file edit is opt-in and lives here, behind a marked block.
+ * This is the ONLY thing in the system that edits the project rules file
+ * (CLAUDE.md, or AGENTS.md with --host muse). A hook must never auto-edit an
+ * outward-facing, user-owned file (first-run-onboarding memory); the cheap
+ * invisible corpus embed may be automatic (session-start auto-reconcile), but
+ * the visible file edit is opt-in and lives here, behind a marked block.
  *
  * What it does, all idempotent:
  *   1. Scaffold `.claude/context/` + a starter `CONTEXT.md` index if absent.
- *   2. Upsert a marked, idempotent contextus stanza into the project CLAUDE.md
+ *   2. Upsert a marked, idempotent contextus stanza into the project rules file
  *      (<!-- contextus:start --> … <!-- contextus:end -->) — re-running updates
  *      in place, never duplicates.
  *   3. Run the initial embed (reconcile the corpus from the context files).
  *   4. Confirm the daemon is reachable; print status.
+ *   5. Write the setup-completion stamp the Muse SessionStart hook reads.
  *
  * Usage:
  *   pnpm contextus-setup                 # set up the current project (cwd)
  *   pnpm contextus-setup --dir <path>    # set up a specific project root
+ *   pnpm contextus-setup --host muse     # Muse host: stanza goes to AGENTS.md
  *   pnpm contextus-setup --no-embed      # scaffold + stanza only, skip embedding
  *   pnpm contextus-setup --mine-transcripts   # also run a one-time transcript-mining
  *                                              # bootstrap scan (~1 week of history) —
@@ -27,7 +30,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { upsertStanza, hasStanza } from '../lib/capture/claude-md-stanza.js';
+import {
+  upsertStanza,
+  hasStanza,
+  HOST_STANZA,
+  type SetupHost
+} from '../lib/capture/claude-md-stanza.js';
+import { writeSetupStamp } from './lib/daemon-control.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { tableExists, countRows } from '../lib/storage/lance-client.js';
 import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js';
@@ -41,6 +50,7 @@ interface Args {
   embed: boolean;
   tune: boolean;
   mineTranscripts: boolean;
+  host: SetupHost;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -48,13 +58,21 @@ function parseArgs(argv: string[]): Args {
   let embed = true;
   let tune = false;
   let mineTranscripts = false;
+  let host: SetupHost = 'claude';
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--dir' && argv[i + 1]) dir = path.resolve(argv[++i]);
     else if (argv[i] === '--no-embed') embed = false;
     else if (argv[i] === '--tune') tune = true;
     else if (argv[i] === '--mine-transcripts') mineTranscripts = true;
+    else if (argv[i] === '--host' && argv[i + 1]) {
+      const next = argv[++i];
+      if (next !== 'claude' && next !== 'muse') {
+        throw new Error(`--host must be 'claude' or 'muse', got '${next}'`);
+      }
+      host = next;
+    }
   }
-  return { dir, embed, tune, mineTranscripts };
+  return { dir, embed, tune, mineTranscripts, host };
 }
 
 /** A small, honest starter index so a fresh project has somewhere to grow. */
@@ -94,13 +112,18 @@ function scaffoldContextDir(root: string): { createdDir: boolean; createdIndex: 
   return { createdDir, createdIndex };
 }
 
-/** Upsert the stanza into CLAUDE.md (creating the file if absent). */
-function writeStanza(root: string): { created: boolean; changed: boolean } {
-  const file = path.join(root, 'CLAUDE.md');
-  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+/**
+ * Upsert the stanza into the host's project rules file (creating it if
+ * absent). Muse mode targets AGENTS.md with the generic body; Claude mode
+ * keeps the existing CLAUDE.md behavior byte-for-byte.
+ */
+function writeStanza(root: string, host: SetupHost): { created: boolean; changed: boolean } {
+  const { file, body } = HOST_STANZA[host];
+  const filePath = path.join(root, file);
+  const existing = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
   const created = existing === '';
-  const { content, changed } = upsertStanza(existing);
-  if (changed) fs.writeFileSync(file, content);
+  const { content, changed } = upsertStanza(existing, body);
+  if (changed) fs.writeFileSync(filePath, content);
   return { created, changed: changed || created };
 }
 
@@ -117,14 +140,15 @@ async function main(): Promise<void> {
       (scaffold.createdIndex ? ' (+ starter CONTEXT.md)' : '')
   );
 
-  // 2. Upsert the CLAUDE.md stanza (the only file we edit; idempotent).
-  const before = fs.existsSync(path.join(args.dir, 'CLAUDE.md'))
-    ? hasStanza(fs.readFileSync(path.join(args.dir, 'CLAUDE.md'), 'utf8'))
+  // 2. Upsert the host rules-file stanza (the only file we edit; idempotent).
+  const rulesFile = HOST_STANZA[args.host].file;
+  const before = fs.existsSync(path.join(args.dir, rulesFile))
+    ? hasStanza(fs.readFileSync(path.join(args.dir, rulesFile), 'utf8'))
     : false;
-  const stanza = writeStanza(args.dir);
+  const stanza = writeStanza(args.dir, args.host);
   console.log(
-    `  CLAUDE.md stanza   ${
-      before ? 'updated in place (no duplicate)' : stanza.created ? 'created CLAUDE.md' : 'added'
+    `  ${rulesFile} stanza   ${
+      before ? 'updated in place (no duplicate)' : stanza.created ? `created ${rulesFile}` : 'added'
     }`
   );
 
@@ -219,6 +243,14 @@ async function main(): Promise<void> {
       }
     }
   }
+
+  // 5. Stamp completion so the Muse SessionStart hook can tell "setup ran"
+  // from "setup never ran". Written for both hosts; only the Muse hook reads
+  // it today. A stamp never silences a dead daemon (the hook checks /health).
+  const stamp = writeSetupStamp(args.dir, { host: args.host });
+  console.log(
+    `  setup stamp      ${stamp ? `.claude/setup.json (${args.host})` : 'FAILED to write'}`
+  );
 
   console.log('\n✓ Setup complete. Context will be injected automatically on your next prompts.');
   if (!args.tune) {

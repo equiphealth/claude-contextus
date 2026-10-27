@@ -1,6 +1,6 @@
 ---
 name: contextus-setup
-description: Guided setup wizard — scaffold, configure, and embed for a project. Two tracks (quick/power user). First-run or re-configure.
+description: Run this first after install. Guided setup wizard — scaffold, configure, and embed for a project. Two tracks (quick/power user). First-run or re-configure.
 ---
 
 # contextus-setup

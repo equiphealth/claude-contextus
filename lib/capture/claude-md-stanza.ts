@@ -45,6 +45,37 @@ export function renderStanza(body: string = STANZA_BODY): string {
   return `${STANZA_START}\n${body}\n${STANZA_END}`;
 }
 
+/**
+ * The AGENTS.md stanza body (Muse host). Same markers as STANZA_BODY, and
+ * intentionally identical text in Phase 1 — STANZA_BODY is already
+ * host-neutral, and Phase 1 keeps the `.claude/context/` corpus path. This
+ * separate export is the divergence point if the hosts ever need different
+ * copy; setup selects it via HOST_STANZA, never by editing this module.
+ */
+export const AGENTS_STANZA_BODY = `## Context (claude-contextus)
+
+This project uses [claude-contextus](https://github.com/equiphealth/claude-contextus):
+relevant patterns from your configured sources are **retrieved and injected
+automatically** on each prompt — you don't need to search for them. Injected blocks are
+tagged \`[contextus — …]\`.
+
+**Mid-task fallback**: injection only fires once, keyed to the prompt that started the
+turn. If a long task drifts into a subtopic that prompt didn't hint at, and you suspect
+relevant project knowledge exists but wasn't surfaced, proactively run
+\`/context-search "<query>"\` yourself rather than assuming silence means nothing exists.
+
+Context capture behavior is controlled by the per-prompt injected footer — follow
+its instructions exactly (it may tell you to propose, write directly, or stay silent).
+New context files live under \`.claude/context/<category>/\` and are embedded automatically.`;
+
+/** Setup host → project rules file + stanza body. Muse writes AGENTS.md. */
+export const HOST_STANZA = {
+  claude: { file: 'CLAUDE.md', body: STANZA_BODY },
+  muse: { file: 'AGENTS.md', body: AGENTS_STANZA_BODY }
+} as const;
+
+export type SetupHost = keyof typeof HOST_STANZA;
+
 /** Does the text already contain a contextus stanza? */
 export function hasStanza(text: string): boolean {
   return text.includes(STANZA_START);
