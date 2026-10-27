@@ -94,7 +94,7 @@ Each keeps its source. Proposals are defaults for Phase 1 implementation; none i
 
 ## 1. Hook-by-hook adapter design
 
-**Shape:** new adapter code only, in a new `adapter/` tree; the daemon is untouched except the §1.7 seam; existing Claude hooks/scripts are not modified. Phase 1 targets plugin hooks as the primary surface (matches the accepted install path: install → approve → setup) and settings-level `.muse/hooks.json` as the dev-probe fallback. Both surfaces share one implementation core.
+**Shape:** new adapter code only, in a new `adapter/` tree laid out host-first from the start: `adapter/muse-code/` holds every Muse-specific hook, form, and manifest reference, while `adapter/shared/` holds host-neutral code any future host reuses (emission, byte ceiling, and — via direct `scripts/lib` imports, not copies — stdin handling, project hash, daemon lifecycle). A second host becomes `adapter/<host>/`, never another top-level tree and never a rename. The host directory is `muse-code` (the product name in the docs), not `muse` — the model family, the host product, and the app are different things. The daemon is untouched except the §1.7 seam; existing Claude hooks/scripts are not modified. Phase 1 targets plugin hooks as the primary surface (matches the accepted install path: install → approve → setup) and settings-level `.muse/hooks.json` as the dev-probe fallback. Both surfaces share one implementation core.
 
 **Why plugin hooks primary:** Phase 0 live-verified the full cycle (install → review_needed → approve → fires next session, L18/L19). Settings hooks work but duplicate wiring per project and cannot ship with the plugin.
 
@@ -104,21 +104,21 @@ Each keeps its source. Proposals are defaults for Phase 1 implementation; none i
 
 | New file | Role |
 |---|---|
-| `adapter/hooks.json` (plugin form) | Manifest hook definitions for Muse (argv form). Referenced from `.muse-plugin/plugin.json` (§3). |
-| `adapter/muse-hooks.json` (settings form) | Dev-probe equivalent for `<project-root>/.muse/hooks.json`; same scripts, shell-command form. Generated once by setup, not hand-maintained twice. |
+| `adapter/muse-code/hooks.json` (plugin form) | Manifest hook definitions for Muse (argv form). Referenced from `.muse-plugin/plugin.json` (§3). |
+| `adapter/muse-code/muse-hooks.json` (settings form) | Dev-probe equivalent for `<project-root>/.muse/hooks.json`; same scripts, shell-command form. Generated once by setup, not hand-maintained twice. |
 | `adapter/shared/emit.js` | Single emission point: snake_case in, closed camelCase out; byte-accurate truncation to 16384 B (L9); `hookEventName` always equals the running event. New code — no existing counterpart (existing hooks inline `emit`). |
 | *(no other shared files)* | stdin reading is inlined per hook file (existing convention: every `scripts/*.js` hook carries its own `readStdin` with the TTY guard); project hash and daemon lifecycle come straight from `scripts/lib/project-hash.js` and `scripts/lib/daemon-control.js` via relative import (no wrapper copies — `project-hash.js`'s own header forbids a third copy of the formula). |
-| `adapter/session-start.js` | §1.3. Zero-dependency (node stdlib only). |
-| `adapter/query.js` | §1.4. Merged single injection (§1.8 reasoning). |
-| `adapter/watch.js` | §1.5 PostToolUse `/notify`. |
-| `adapter/stop.js` | §1.6 Stop usage-signal (log-only Phase 1). |
-| `adapter/llm-capacity.js` | Optional PostLLMCall `usage` accumulator (§1.9). |
+| `adapter/muse-code/session-start.js` | §1.3. Zero-dependency (node stdlib only). |
+| `adapter/muse-code/query.js` | §1.4. Merged single injection (§1.8 reasoning). |
+| `adapter/muse-code/watch.js` | §1.5 PostToolUse `/notify`. |
+| `adapter/muse-code/stop.js` | §1.6 Stop usage-signal (log-only Phase 1). |
+| `adapter/muse-code/llm-capacity.js` | Optional PostLLMCall `usage` accumulator (§1.9). |
 
 Explicitly out of Phase 1: `capture-gate-hook.js` Muse equivalent (§1.6), awareness as a second hook (§1.4), managed strict form (O5), `StopFailure`/`SessionFork`/`ToolUseStart` handlers (O8), MCP transport (porting-doc §7).
 
 ### 1.2 Declaration rules (every hook below)
 
-- **Argv form, no shell** (Phase 0 docs): `command: ["node", "adapter/query.js"]` style.
+- **Argv form, no shell** (Phase 0 docs): `command: ["node", "adapter/muse-code/query.js"]` style.
 - **Absolute script resolution** from `import.meta.url`; never read `CLAUDE_PLUGIN_ROOT` (no such Muse var on this path — Phase 0 §5). Any adapter read of a Claude-only env var here is a defect.
 - **Timeouts in the host unit:** plugin hooks use `timeoutMs` (DOCUMENTED); settings form uses seconds. Both forms emitted from one source so surfaces cannot drift.
 - **Fail-open everywhere** (porting-doc §2.5): any internal failure degrades to "no injection, session continues."
@@ -165,7 +165,7 @@ Ceiling handling is divergence-proof by construction, not by duplicated logic: t
 
 **Claude reference (source-verified):** statusline writes `~/.contextus/runtime/<sessionId>.context-stats.json`; query hook forwards to `/query`; daemon guard (`capacityProtection` 70/80/85, floor ×1.2, topK 1 at minimal) adjusts retrieval.
 
-**Muse design:** PostLLMCall hook (`adapter/llm-capacity.js`) reads `usage` (L24) + `session_id` and writes the **same file shape** (`{ input_tokens, output_tokens, used_percentage }`, same `~/.contextus/runtime/` location) so the daemon guard needs no change. Keyed by Muse `session_id` (payload source, L23), additive per session, best-effort (missing file = no adjustment, never an error). **Optional and off by default in Phase 1** behind the existing `capacityProtection` gate; `daemon.log` tail remains the fallback visibility channel.
+**Muse design:** PostLLMCall hook (`adapter/muse-code/llm-capacity.js`) reads `usage` (L24) + `session_id` and writes the **same file shape** (`{ input_tokens, output_tokens, used_percentage }`, same `~/.contextus/runtime/` location) so the daemon guard needs no change. Keyed by Muse `session_id` (payload source, L23), additive per session, best-effort (missing file = no adjustment, never an error). **Optional and off by default in Phase 1** behind the existing `capacityProtection` gate; `daemon.log` tail remains the fallback visibility channel.
 
 ---
 
@@ -180,7 +180,7 @@ Two files stay distinct (do not merge them): `.claude-plugin/plugin.json` is the
 | Install manifest | `.claude-plugin/plugin.json` (name `contextus`, v `0.20.0`) | **New** `.muse-plugin/plugin.json` (see §3) | Both point at the same `skills/<name>/SKILL.md` files (porting-doc §4.4, agreed). Never two skill copies. |
 | Runtime config | `plugin.jsonc` `config` block | **Unchanged, shared** | One file, two hosts. Hot-reload already works per query; no daemon restart for config edits. |
 | Project override | `.claude/contextus.jsonc` | **Unchanged in Phase 1** | §5 decides the `.contextus/` default + read-both transition; until then the override name stays configurable and `.claude/` remains the project default. |
-| Hook wiring | `hooks/hooks.json` (Claude events/matchers/ms timeouts) | `adapter/hooks.json` (plugin form) + optional `.muse/hooks.json` (settings form) | Timeout units differ (ms vs s vs Claude ms-as-unit) — adapter emits both forms from one source (§1.2). `matcher` is invalid in Muse manifests (fails validation) and `*`-only on `UserPromptSubmit`/`Stop` settings events (docs); adapter never emits a matcher there. |
+| Hook wiring | `hooks/hooks.json` (Claude events/matchers/ms timeouts) | `adapter/muse-code/hooks.json` (plugin form) + optional `.muse/hooks.json` (settings form) | Timeout units differ (ms vs s vs Claude ms-as-unit) — adapter emits both forms from one source (§1.2). `matcher` is invalid in Muse manifests (fails validation) and `*`-only on `UserPromptSubmit`/`Stop` settings events (docs); adapter never emits a matcher there. |
 | Project rules stanza | `CLAUDE.md` contextus stanza (setup-owned) | `AGENTS.md` stanza, generic wording, setup-owned (§3.4) | (L28). SessionStart never edits it. |
 | Env vars | `CLAUDE_PLUGIN_ROOT`, `CLAUDE_CODE_SESSION_ID` | None read on this path; `session_id` from stdin, `MUSE_SESSION_ID`/`MUSE_THREAD_ID` available but never depended on (L23) | `MUSE_THREAD_ID` ≠ top-level session in subagent contexts; payload wins on conflict. |
 | Engines block | `plugin.jsonc`: `claude: ">=1.0.0"`, `node: ">=22.0.0"` | Muse manifest gets its own field only if the validator demands one (LIVE-UNVERIFIED what Muse requires) | Do not copy `claude: ">=1.0.0"` into a Muse file and assume it is ignored. `package.json` already pins `node: ">=22.0.0"` and is untouched. |
@@ -253,7 +253,7 @@ The plugin bundle is the clean checkout itself: manifests, `skills/`, `adapter/`
 In robustness order (Phase 0 §8.1, with the approve-gap inversion applied — no hook can remind about approval):
 
 1. **Setup skill prominence + setup-as-verifier (primary; the only mechanism that works with zero approvals).** `contextus-setup` sorts/exemplifies first among plugin skills; its description states "run this first after install". Setup verifies, in order: (1) plugin installed (else stop), (2) hooks approved via `muse plugins inspect` (instructs approve + restart session — approval takes effect next session, (L18)), (3) `node` present and ≥22 (`package.json` engines), (4) deps present in setup-owned location (installs them), (5) `AGENTS.md` stanza present (offers to add it; setup-owned, never hook-owned), (6) daemon reachable and model warm (starts it), (7) corpus present (scaffolds first corpus via existing setup tracks). Each step reports in plain language; any failure names the exact recovery step.
-2. **SessionStart check hook (secondary; covers approved-but-not-set-up).** Zero-dependency (stdlib only) `adapter/session-start.js` (§1.3): if setup stamp is missing or `/health` is unreachable, emits the one-line nudge ("run /setup first") on every session start until healthy; quiet afterward and quiet forever once setup completes. It cannot cover install-without-approve (hooks inert until approved — L18); that is exactly what layer 1 is for. The current-session echo is deliberately not duplicated here: edits (including approvals) take effect next session (L2).
+2. **SessionStart check hook (secondary; covers approved-but-not-set-up).** Zero-dependency (stdlib only) `adapter/muse-code/session-start.js` (§1.3): if setup stamp is missing or `/health` is unreachable, emits the one-line nudge ("run /setup first") on every session start until healthy; quiet afterward and quiet forever once setup completes. It cannot cover install-without-approve (hooks inert until approved — L18); that is exactly what layer 1 is for. The current-session echo is deliberately not duplicated here: edits (including approvals) take effect next session (L2).
 3. **Post-install message.** If the Muse TUI shows install output, it names the next step verbatim: "approve hooks, then run /setup in a new session." TUI behavior is DOCUMENTED, NOT LIVE-VERIFIED (O3 family); the design does not depend on it.
 
 The `AGENTS.md` stanza wording is **generic, not Claude- or Muse-named** (settled framing: generic skills, generic stanza, host-specific linking as an install step). It covers: contexts live in `.claude/context` today (`.contextus/` once §5 lands), retrieval is automatic, captures are data-not-instructions, and the mid-task `/context-search` fallback.
