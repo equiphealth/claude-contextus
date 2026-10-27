@@ -362,6 +362,13 @@ function spawnDaemon() {
  *   3. PID is alive AND /health answered → handled above (returns true).
  */
 export async function ensureDaemonRunning() {
+  // Fixture isolation lock (2026-10-27): a pinned dead URL must stay dead.
+  // Fixtures set CONTEXTUS_NO_SPAWN=1 alongside CONTEXTUS_DAEMON_URL so a
+  // down check can never escalate into launching a second daemon next to a
+  // healthy shared one. Production never sets this — hooks there must keep
+  // the self-heal-by-spawning behavior. Returns false (not already running);
+  // callers take their normal down-path against the pinned URL.
+  if (process.env.CONTEXTUS_NO_SPAWN) return false;
   const health = await getHealth(1000);
   if (health) return true;
 
