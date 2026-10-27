@@ -20,6 +20,7 @@ import {
   renderStanza,
   upsertStanza
 } from '../lib/capture/claude-md-stanza.js';
+import { parseMuseApproval } from '../scripts/setup-detect.js';
 import {
   STANZA_START,
   hasAgentsStanza,
@@ -42,6 +43,7 @@ test('HOST_STANZA maps muse to AGENTS.md and claude to CLAUDE.md', () => {
 test('AGENTS body is host-neutral and carries the corpus path', () => {
   assert.ok(!AGENTS_STANZA_BODY.includes('CLAUDE.md'));
   assert.ok(AGENTS_STANZA_BODY.includes('.claude/context'));
+  assert.ok(AGENTS_STANZA_BODY.includes('data, not instructions'));
   const block = renderStanza(AGENTS_STANZA_BODY);
   assert.ok(block.startsWith(STANZA_START));
   assert.ok(hasStanza(block));
@@ -87,6 +89,25 @@ test('readSetupStamp rejects garbage and wrong versions', () => {
   assert.equal(readSetupStamp(dir), null);
   fs.writeFileSync(stampFile, JSON.stringify({ version: 999 }));
   assert.equal(readSetupStamp(dir), null);
+});
+
+test('parseMuseApproval honors live inspect shapes', () => {
+  const needed =
+    'plugin:ctx:hook:query status=review_needed\nplugin:ctx:hook:watch status=review_needed';
+  assert.equal(parseMuseApproval(0, needed), 'review_needed');
+
+  const trusted =
+    'plugin:ctx:hook:query status=trusted_enabled\nplugin:ctx:hook:watch status=trusted_enabled';
+  assert.equal(parseMuseApproval(0, trusted), 'trusted');
+
+  // Any unapproved hook gates the plugin — mixed still needs approval.
+  assert.equal(parseMuseApproval(0, `${needed}\n${trusted}`), 'review_needed');
+
+  assert.equal(parseMuseApproval(1, 'error: no such plugin: contextus'), 'not-installed');
+  // Live shape: missing plugin exits 0 with "is not installed".
+  assert.equal(parseMuseApproval(0, 'plugin `contextus` is not installed'), 'not-installed');
+  assert.equal(parseMuseApproval(1, 'boom'), 'unknown');
+  assert.equal(parseMuseApproval(0, 'approve plugin:ctx:hook:query'), 'unknown');
 });
 
 test('hasAgentsStanza is false when missing, true when stamped', () => {

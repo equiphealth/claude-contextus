@@ -56,6 +56,50 @@ Read this JSON before presenting anything to the user.
 
 Import these functions directly when needed, or invoke via `tsx` for CLI use.
 
+### Step 0b: Muse host (only when running under Muse Code)
+
+When this skill runs under Muse Code, the host is `muse`:
+
+1. Detect with the host flag from the plugin's own scripts directory (the skill
+   knows its install path; there is no verified Muse equivalent of
+   `$CLAUDE_PLUGIN_ROOT`, so never reference one):
+   ```bash
+   tsx <plugin-dir>/scripts/setup-detect.ts --dir /path/to/project --host muse
+   ```
+   Added fields: `host`, `hasAgentsStanza` (AGENTS.md, not CLAUDE.md),
+   `setupStamp` (`{present, host, completedAt}`), `museApproval`
+   (`cli-missing` | `not-installed` | `review_needed` | `trusted` | `unknown`).
+2. Read `AGENTS.md` everywhere below where the flow says `CLAUDE.md`, and read
+   `hasAgentsStanza` where it says `hasStanza`. Re-run = `setupStamp.present`
+   AND `hasAgentsStanza`.
+3. Approval gate (hooks are inert until approved — no hook can remind about
+   approval, so this check is the skill's job):
+   - `review_needed` → instruct `muse plugins approve contextus`, then start a
+     new session (approval takes effect next session). Stop — do not continue
+     setup until re-detect shows `trusted`.
+   - `not-installed` → the plugin itself is not installed. Stop with install steps.
+   - `cli-missing` → fail loudly (Muse CLI not on PATH in this environment).
+   - `unknown` → warn and continue; re-verify approval before finishing.
+4. Runtime deps, npm-first: verify `node` ≥ 22 (`package.json` engines).
+   Install the daemon runtime deps with **npm, first and preferably only** —
+   never `pnpm` inside a tree used as an install source — into a setup-owned
+   runtime location: never the installed plugin cache (approval-hash flip
+   risk) and never the plugin source tree (an installed-deps source becomes
+   uninstallable). Fallback if npm is somehow absent: corepack-provided pnpm,
+   then fail loud. If Node itself is missing, fail loudly with a manual step
+   (install Node LTS → re-run setup); never auto-install Node or edit PATH
+   without explicit user approval.
+5. `dist/` rule: the daemon runs from committed `node dist/daemon/server.js`.
+   If `dist/daemon/server.js` is missing, fail loudly with a restore step —
+   never build `dist/` during setup.
+6. Start the daemon against the runtime deps, verify `GET /health`
+   (`modelLoaded`), and only then declare success. Check Ollama/model
+   availability here and report it; keyword fallback is the documented
+   degradation when embeddings are unavailable.
+7. Write the rules stanza to `AGENTS.md` via `contextus-setup --host muse`
+   (setup-owned, never hook-owned) and confirm `.claude/setup.json` exists —
+   the SessionStart nudge reads that stamp. Never write the stamp by hand.
+
 ### Step 1: Route Based on State
 
 **If `--tune` flag:** Jump to [Calibration Mode](#calibration-mode).
