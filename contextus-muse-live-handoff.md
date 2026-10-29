@@ -24,29 +24,6 @@ sleep 30; curl -s -m 10 http://127.0.0.1:37800/health | head -c 300; echo
 Leave this daemon RUNNING — steps 1–6 all need it (setup reuses it, hooks
 call it, step 6 queries it). Teardown is the last section of this file.
 
-## 0. Audit verdict (done 2026-10-27)
-
-Fixture contact with the production daemon: exactly ONE `projects.json`
-registration (`.../.tmp/phase1-live/h6-sources/probeproj`,
-lastSeen 2026-10-27T15:48:16Z). No log traces, no usage signals, no
-last-injection files. The 20 h1h2 probe files were archived via `/delete`
-(ok:true × 20) as a precaution — rows were never ingested (nothing reached
-the daemon from the in-process probe), and the files live in `.tmp/`
-(gitignored scratch), so nothing of value moved. Optional cleanup of the
-junk registration (backup first):
-
-```bash
-cp ~/.contextus/data/projects.json ~/.contextus/data/projects.json.pre-handoff-bak
-python3 -c "
-import json, os
-p = os.path.expanduser('~/.contextus/data/projects.json')
-d = json.load(open(p))
-d = {k: v for k, v in d.items() if 'phase1-live' not in str(v)}
-json.dump(d, open(p, 'w'), indent=2)
-print('remaining:', len(d))
-"
-```
-
 ## 1. B1 — lean install + approve + hooks fire
 
 ```bash
@@ -153,9 +130,14 @@ here; the Meta path itself is verified in-process). Paste back the log lines.
 kill $(cat ~/.contextus/runtime/daemon.pid)   # or the PID recorded in step 0
 sleep 2; curl -s -m 5 http://127.0.0.1:37800/health || echo "port free"
 rm -rf /tmp/muse-handoff-proj /tmp/ctx-bundle  # if still present
+# Optional: remove the one junk audit registration (harmless either way)
+cp ~/.contextus/data/projects.json ~/.contextus/data/projects.json.pre-handoff-bak
+python3 -c "import json, os; p = os.path.expanduser('~/.contextus/data/projects.json'); d = json.load(open(p)); d = {k: v for k, v in d.items() if 'phase1-live' not in str(v)}; json.dump(d, open(p), 'w', indent=2); print('remaining:', len(d))"
 ```
 
-Only kill the daemon here. Everything before this point needs it running.
+Only kill the daemon here. Everything before this point needs it running. (The
+2026-10-27 audit verdict — one junk registration, zero log/usage traces — is
+recorded in `contextus-muse-audit-2026-10-27.md`; nothing else to do there.)
 - **N1 live half:** needs both hosts capturing into one corpus; code already
   determines the gate outcome (daemon reads `.claude/` only — keep it).
 - **B3 fresh profile:** needs a machine without Node/package managers.
