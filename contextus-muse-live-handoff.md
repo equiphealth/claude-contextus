@@ -37,10 +37,29 @@ muse plugins inspect contextus                # expect: hooks trusted_enabled
 ```
 
 Then open a NEW Muse session in `/tmp/muse-handoff-proj` (fresh dir) and send
-any prompt. **Expect:** a visible "Setup needed: the Contextus daemon is not
-reachable / setup has not been completed" nudge (SessionStart fired — this is
-also the B4 post-approve half and the H6 systemMessage rendering check).
-Paste back whether the nudge rendered and its exact wording.
+any prompt. **Expect:** the model itself brings up setup — the SessionStart
+nudge rides `additionalContext` (model context, NOT a user-visible banner),
+so the observable is the model telling you to run `/contextus-setup`, quoting
+the "Setup needed ... setup has not been completed in this project" wording.
+(This is also the B4 post-approve half: hooks firing at all. The H6
+*systemMessage* rendering check is separate — see step 5.)
+If the model never mentions setup: either the hook didn't fire, or the model
+dropped injected context. Distinguish with the manual hook run below and
+paste back both results.
+
+```bash
+HOOK=$(echo /Users/Anthony.Dawson/.local/share/muse/plugins/cache/local/contextus/*/package/adapter/muse-code/session-start.js)
+cd /tmp/muse-handoff-proj
+time echo '{"cwd":"/tmp/muse-handoff-proj","session_id":"handoff-nudge","source":"startup"}' | node "$HOOK"
+# expect: exit 0 in under ~10 s (daemon is up), JSON with hookSpecificOutput.additionalContext
+# containing "Setup needed: ... setup has not been completed in this project"
+```
+
+- Nudge JSON present → hook code + delivery path work; the TUI session either
+  predates approval or the model dropped the context (retry: brand-new session
+  started AFTER `approve`, one plain prompt like `hi`, then ask the model
+  "was any context injected about setup?").
+- Empty/crash/timeout → paste the exact output; that's a hook defect, not a model quirk.
 
 ## 2. B4 — pre-approve honesty (do BEFORE step 1's approve on a second profile if possible)
 
