@@ -87,14 +87,18 @@ When this skill runs under Muse Code, the host is `muse`:
    node <plugin-dir>/scripts/sync-neutral-daemon.js
    ```
    This copies `{daemon,lib,scripts}/` + `package.json` + `tsconfig.json` to
-   `~/.contextus/daemon/`, runs a FULL `npm install` (`--no-audit --no-fund
-   --ignore-scripts`, setup-owned cache — never `pnpm` in an install source,
-   never the plugin cache or source tree), builds `dist/` with the LOCAL
-   `tsc`, and writes the version stamp. Full install is deliberate: npm's
-   `--omit=dev` + explicit-package interaction mis-resolves when the explicit
-   packages are also dev-listed (observed: exit 0, dev-populated tree MISSING
-   tsc/tsx). Measured cost: ~470 MB runtime + ~360 MB cache, per machine,
-   never shipped. Any failure exits non-zero — stop, report, do not proceed.
+   `~/.contextus/daemon/`, `git init`s it (throwaway repo, so the `prepare`
+   hook lands harmlessly; requires `git` on PATH), runs a FULL `npm install`
+   (`--no-audit --no-fund`, lifecycle scripts RUN, setup-owned cache — never
+   `pnpm` in an install source, never the plugin cache or source tree),
+   builds `dist/` with the LOCAL `tsc`, and writes the version stamp. Full
+   install is deliberate: npm's `--omit=dev` + explicit-package interaction
+   mis-resolves when the explicit packages are also dev-listed (observed:
+   exit 0, dev-populated tree MISSING tsc/tsx). Scripts must run: sharp (via
+   transformers) downloads its native binding in postinstall — skipping
+   scripts installs clean and crashes the daemon at boot. Measured cost:
+   ~470 MB runtime + ~360 MB cache, per machine, never shipped. Any failure
+   exits non-zero — stop, report, do not proceed.
 5. Run setup from the neutral copy (it has the deps the lean plugin lacks):
    ```bash
    ~/.contextus/daemon/node_modules/.bin/tsx ~/.contextus/daemon/scripts/contextus-setup.ts --host muse --dir /path/to/project

@@ -279,16 +279,31 @@ export function syncNeutralDaemon({ log = () => {}, npmCache } = {}) {
   const npmEnv = { ...process.env, npm_config_cache: npmCache || path.join(NEUTRAL_DIR, '.npm-cache') };
   const npmRun = (args) =>
     spawnSync('npm', args, { cwd: NEUTRAL_DIR, env: npmEnv, encoding: 'utf8', timeout: 300000 });
-  // --ignore-scripts: the repo's `prepare` script installs git hooks
-  // (`git config core.hooksPath`) — wrong in a non-repo neutral copy and
-  // fatal to the install when it fails. Prod deps here ship prebuilt
-  // (lancedb download, transformers wasm); nothing needs lifecycle scripts.
-  const r = npmRun(['install', '--no-audit', '--no-fund', '--ignore-scripts']);
+  // Lifecycle scripts RUN (no --ignore-scripts): @xenova/transformers pulls
+  // sharp, whose postinstall downloads the native binding — skipping scripts
+  // produces a tree that installs clean and crashes at boot (observed
+  // 2026-10-27: "Cannot find module .../sharp-darwin-arm64v8.node"). This
+  // matches repo behavior (pnpm runs scripts). The one repo script that must
+  // not touch the neutral copy is `prepare` (git hooks into .githooks) —
+  // neutralised by giving the neutral dir its own throwaway git repo first
+  // (never committed to, never read by anything).
+  const gitInit = spawnSync('git', ['init', '-q'], {
+    cwd: NEUTRAL_DIR,
+    encoding: 'utf8',
+    timeout: 30000
+  });
+  if (gitInit.status !== 0) {
+    throw new Error(
+      'git is required for neutral setup (initialises the neutral dir so lifecycle scripts behave). ' +
+        `Install git and rerun. Detail: ${tailOutput(gitInit.stderr || gitInit.error?.message)}`
+    );
+  }
+  const r = npmRun(['install', '--no-audit', '--no-fund']);
   if (r.status !== 0)
     throw new Error(
       `neutral npm install failed (status=${r.status} signal=${r.signal || 'none'} spawnError=${(r.error && r.error.message) || 'none'}):\n${tailOutput(r.stderr || r.stdout)}`
     );
-  log('deps installed (full tree: prod + typescript/tsx/@types/node)');
+  log('deps installed (full tree incl. lifecycle scripts)');
 
   // 3. Build with the LOCAL tsc. Never npx (see contract above).
   if (!fs.existsSync(NEUTRAL_TSC)) throw new Error(`local tsc missing after install: ${NEUTRAL_TSC}`);
