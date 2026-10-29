@@ -12,7 +12,8 @@
 import { syncNeutralDaemon } from './lib/daemon-control.js';
 
 try {
-  const r = syncNeutralDaemon({ log: (m) => console.log(`  neutral daemon  ${m}`) });
+  const force = process.argv.includes('--force');
+  const r = syncNeutralDaemon({ log: (m) => console.log(`  neutral daemon  ${m}`), force });
   console.log(`  neutral daemon  ${r.synced ? 'synced' : 'already in sync'} (${r.found || r.expected})`);
 } catch (err) {
   console.error(`\n✗ neutral daemon sync failed: ${err instanceof Error ? err.message : err}`);

@@ -88,17 +88,32 @@ import { writeLastInjectionDebug, type LastInjectionDebug } from '../lib/debug-s
 const PREFERRED_PORT = parseInt(process.env.CONTEXTUS_DAEMON_PORT || '37800', 10);
 let actualPort: number = PREFERRED_PORT;
 const BASE_URL = () => `http://127.0.0.1:${actualPort}`;
-/** Daemon/protocol version read from package.json at startup. */
+/**
+ * Daemon/protocol version read from package.json at startup. Two layouts:
+ * source (`daemon/server.ts` → repo root) and compiled (`dist/daemon/` →
+ * two levels up). The compiled layout is what the neutral home runs, so a
+ * missing fallback reports "unknown" there — which also trips the
+ * reuse version check on every hook run.
+ */
 const DAEMON_VERSION = (() => {
   try {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    const pkgPath = path.join(__dirname, '../package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    return pkg.version;
+    for (const pkgPath of [
+      path.join(__dirname, '../package.json'),
+      path.join(__dirname, '../../package.json')
+    ]) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        if (pkg && typeof pkg.version === 'string') return pkg.version;
+      } catch {
+        /* try next layout */
+      }
+    }
   } catch {
-    return 'unknown';
+    /* fall through */
   }
+  return 'unknown';
 })();
 const RUNTIME_DIR = expandHome('~/.contextus/runtime');
 const CAPTURES_LOG = expandHome('~/.contextus/captures.log');

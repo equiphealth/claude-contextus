@@ -239,11 +239,11 @@ function tailOutput(s) {
  * session start. No npx anywhere on this path — no network fetch, no hook
  * timeout risk. Throws on any failure; the caller reports it verbatim.
  */
-export function syncNeutralDaemon({ log = () => {}, npmCache } = {}) {
+export function syncNeutralDaemon({ log = () => {}, npmCache, force = false } = {}) {
   const expected = repoVersion();
   if (!expected) throw new Error(`cannot read version from ${path.join(REPO_ROOT, 'package.json')}`);
   const prior = neutralDaemonStatus();
-  if (prior.state === 'ready') {
+  if (prior.state === 'ready' && !force) {
     log(`neutral daemon ${prior.found} already in sync`);
     return { synced: false, ...prior };
   }

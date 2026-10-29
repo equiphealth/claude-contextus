@@ -35,4 +35,5 @@ export function noteDaemonVersion(health: unknown): void;
 export function syncNeutralDaemon(opts?: {
   log?: (msg: string) => void;
   npmCache?: string;
+  force?: boolean;
 }): { synced: boolean } & NeutralStatus;
