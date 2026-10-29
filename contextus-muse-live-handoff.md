@@ -1,11 +1,28 @@
 # Muse Phase 1: live handoff (user-present runs)
 
-Run in a NORMAL terminal (not sandboxed). Your production daemon stays up
-throughout — nothing here restarts it. Setup reuses it (never restarts one).
-Paste back each command + its output.
+Run in a NORMAL terminal (not sandboxed). No production daemon is running
+(other sessions shut down) — step 0 starts a scratch one via the new neutral
+path, which doubles as its first real (non-hermetic) test. Paste back each
+command + its output.
 
-Preconditions: `muse --version` (record it), `node --version` (≥22),
-`curl -s -m 5 http://127.0.0.1:37800/health` shows `"modelLoaded":true`.
+Preconditions: `muse --version` (record it), `node --version` (≥22).
+
+## 0. Neutral sync + scratch daemon (also: first real sync test)
+
+```bash
+cd /Users/Anthony.Dawson/src/contextus
+node scripts/sync-neutral-daemon.js
+# expect: "deps installed", "dist built with local tsc", "neutral daemon 0.20.0 ready"
+# first run takes ~2-4 min (full npm install + tsc); paste back the whole output
+node ~/.contextus/daemon/dist/daemon/server.js > /tmp/ctx-daemon.log 2>&1 &
+echo $!   # record the PID
+sleep 30; curl -s -m 10 http://127.0.0.1:37800/health | head -c 300; echo
+# expect: {"status":"ok","version":"0.20.0",...,"modelLoaded":true,...}
+# if modelLoaded is false, wait 60 s and retry (cold Ollama model load)
+```
+
+At the very end (after §5): `kill $(cat ~/.contextus/runtime/daemon.pid)`
+(or the recorded PID) and confirm the port is free.
 
 ## 0. Audit verdict (done 2026-10-27)
 
@@ -109,12 +126,26 @@ fork (as available). For each: did the SessionStart state render visibly, and
 did anything leak into model context that should have been user-visible only?
 One line per source.
 
+## 6. M1 daemon-log half (expansion naming in daemon logs)
+
+Step 0's scratch daemon serves this — no config edits, no other sessions live:
+
+```bash
+curl -s -m 60 -X POST http://127.0.0.1:37800/query -H 'content-type: application/json' \
+  -d '{"prompt":"How do hooks handle token budgets?","cwd":"/tmp/muse-handoff-proj","agent":"muse","hookEvent":"UserPromptSubmit"}' | head -c 400; echo
+grep -E "expansion" ~/.contextus/logs/daemon.log | tail -n 5
+```
+
+**Pass:** log names the expansion provider + model for that query (whatever
+the active provider is — naming, not Meta specifically, is what's verified
+here; the Meta path itself is verified in-process). Paste back the log lines.
+
 ## Deferred (not handoff-safe)
 
-- **M1/M3 daemon-level:** needs a scratch daemon or production config edits —
-  explicitly out of scope while live Claude sessions run here. M1 provider
-  path is verified in-process (2 variants, `meta/muse-spark-1.3-contributor`,
-  13.5 s); M4 is fully PASS (production `/health` corroborates nomic).
+- **M3 multi-touchpoint grading:** needs a calibration campaign on a live
+  daemon — a procedure of its own, not a 5-minute handoff item.
+- **N1 live half / B3:** need both hosts capturing or a Node-less machine;
+  code already determines N1's outcome (keep `.claude/`).
 - **N1 live half:** needs both hosts capturing into one corpus; code already
   determines the gate outcome (daemon reads `.claude/` only — keep it).
 - **B3 fresh profile:** needs a machine without Node/package managers.
