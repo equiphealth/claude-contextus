@@ -21,8 +21,8 @@ sleep 30; curl -s -m 10 http://127.0.0.1:37800/health | head -c 300; echo
 # if modelLoaded is false, wait 60 s and retry (cold Ollama model load)
 ```
 
-At the very end (after §5): `kill $(cat ~/.contextus/runtime/daemon.pid)`
-(or the recorded PID) and confirm the port is free.
+Leave this daemon RUNNING — steps 1–6 all need it (setup reuses it, hooks
+call it, step 6 queries it). Teardown is the last section of this file.
 
 ## 0. Audit verdict (done 2026-10-27)
 
@@ -146,6 +146,16 @@ here; the Meta path itself is verified in-process). Paste back the log lines.
   daemon — a procedure of its own, not a 5-minute handoff item.
 - **N1 live half / B3:** need both hosts capturing or a Node-less machine;
   code already determines N1's outcome (keep `.claude/`).
+
+## Cleanup (last, after everything above)
+
+```bash
+kill $(cat ~/.contextus/runtime/daemon.pid)   # or the PID recorded in step 0
+sleep 2; curl -s -m 5 http://127.0.0.1:37800/health || echo "port free"
+rm -rf /tmp/muse-handoff-proj /tmp/ctx-bundle  # if still present
+```
+
+Only kill the daemon here. Everything before this point needs it running.
 - **N1 live half:** needs both hosts capturing into one corpus; code already
   determines the gate outcome (daemon reads `.claude/` only — keep it).
 - **B3 fresh profile:** needs a machine without Node/package managers.
