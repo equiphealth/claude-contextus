@@ -62,10 +62,19 @@ When this skill runs under Muse Code, the host is `muse`:
 
 1. Detect with the host flag from the plugin's own scripts directory (the skill
    knows its install path; there is no verified Muse equivalent of
-   `$CLAUDE_PLUGIN_ROOT`, so never reference one):
+   `$CLAUDE_PLUGIN_ROOT`, so never reference one). Resolve `tsx` from the
+   neutral bundle FIRST — bare `tsx` is usually absent on user machines
+   (observed live 2026-10-29: `tsx: command not found`: on the very first
+   setup step):
    ```bash
-   tsx <plugin-dir>/scripts/setup-detect.ts --dir /path/to/project --host muse
+   ~/.contextus/daemon/node_modules/.bin/tsx <plugin-dir>/scripts/setup-detect.ts --dir /path/to/project --host muse
    ```
+   Only run the sync in item 4 first when the neutral bundle is missing or
+   version-stale; otherwise its `tsx` is already there. Under Muse's sandbox
+   every new shell command prompts for approval — batch setup into as few
+   invocations as possible (see item 7): do not run detection, provider
+   checks, and config steps as separate commands when one engine call covers
+   them.
    Added fields: `host`, `hasAgentsStanza` (AGENTS.md, not CLAUDE.md),
    `setupStamp` (`{present, host, completedAt}`), `museApproval`
    (`cli-missing` | `not-installed` | `review_needed` | `trusted` | `unknown`).
@@ -111,6 +120,12 @@ When this skill runs under Muse Code, the host is `muse`:
 6. Write the rules stanza to `AGENTS.md` (setup-owned, never hook-owned) and
    confirm `.claude/setup.json` exists — the SessionStart nudge reads that
    stamp. Never write the stamp by hand.
+7. Approval batching (observed live 2026-10-29: ~10 prompts on the quick
+   path). Prefer the single-shot engine call in item 5 over step-by-step
+   commands — one approval instead of ten. Narrate the upcoming approvals
+   before the first one fires so the user knows the count; never work around
+   the sandbox (no "unsandboxed" retries without explicit user approval —
+   the elevated retry is the user's call, not the skill's).
 
 ### Step 1: Route Based on State
 
