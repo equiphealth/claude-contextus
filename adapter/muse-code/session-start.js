@@ -116,7 +116,7 @@ async function main() {
   // time it gets; the nudge below is already decided and never waits for it.
   setTimeout(() => process.exit(0), 2000).unref();
 
-  // Setup nudge: the one-time "run /setup first" reminder. Fires while the
+  // Setup nudge: the one-time "run /contextus-setup first" reminder. Fires while the
   // setup stamp is missing (setup never completed here) or the daemon is
   // down; quiet forever once setup completes AND the daemon answers. The
   // stamp alone never silences a dead daemon. Rides additionalContext so it
@@ -128,12 +128,17 @@ async function main() {
     const reason = !daemonOk
       ? 'the Contextus daemon is not reachable'
       : 'setup has not been completed in this project';
+    // Dual channel (2026-10-29): the imperative instruction rides
+    // additionalContext (model must act), and a short banner rides
+    // systemMessage (user-visible — a silent nudge the model drops is the
+    // failure mode this exists to prevent).
     emitContext({
       hookEventName: 'SessionStart',
       additionalContext:
         `[contextus] Setup needed: ${reason}. ` +
-        `Run the contextus-setup skill (/setup) to install dependencies, start the daemon, and scaffold the corpus. ` +
-        `Until then, no project context will be injected.`
+        `Tell the user to run /contextus-setup to install dependencies, start the daemon, and scaffold the corpus — or offer to run it for them right now. ` +
+        `Until setup completes, no project context will be injected.`,
+      systemMessage: `[contextus] Setup needed (${reason}): run /contextus-setup, or ask me to run it for you.`
     });
     return;
   }
@@ -145,7 +150,7 @@ async function main() {
     }
     if (!hasStanza) {
       parts.push(
-        'tip: add the contextus stanza to AGENTS.md via /setup for project rules discovery'
+        'tip: add the contextus stanza to AGENTS.md via /contextus-setup for project rules discovery'
       );
     }
     emitSystemMessage(parts.join(' · '));
@@ -154,7 +159,7 @@ async function main() {
 
   if (!hasStanza) {
     emitSystemMessage(
-      '[contextus] tip: add the contextus stanza to AGENTS.md via /setup for project rules discovery'
+      '[contextus] tip: add the contextus stanza to AGENTS.md via /contextus-setup for project rules discovery'
     );
     return;
   }
