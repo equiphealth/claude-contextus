@@ -752,7 +752,11 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // hook can grade usage against it (evaluation-architecture). Skipped entirely
   // when calibration is off — no disk churn on the normal hot path.
   if (readCalibrationState().evaluateUsage) {
-    recordLastInjection(projectLabel, {
+    // Key by canonical projectId (hash), not the raw caller label: the Stop
+    // hooks on both hosts look the record up by projectHash(cwd). Both hosts
+    // now send the hash, and resolveProjectId canonicalizes legacy raw paths —
+    // so this stays consistent for old and new callers alike.
+    recordLastInjection(projectId ?? projectLabel, {
       promptHash: hash,
       patterns: included.map((r) => ({
         id: r.filename || r.id,

@@ -20,9 +20,9 @@ import { emitEmpty } from '../shared/emit.js';
 
 const CONTEXTUS = path.join(os.homedir(), '.contextus');
 const USAGE_PATH = path.join(CONTEXTUS, 'logs', 'usage.jsonl');
-const DAEMON_LOG_PATH = path.join(CONTEXTUS, 'daemon.log');
-const SESSION_STATE = path.join(CONTEXTUS, 'data', 'session-state.json');
-const EVAL_QUEUE = path.join(CONTEXTUS, 'eval-queue.jsonl');
+const DAEMON_LOG_PATH = path.join(CONTEXTUS, 'logs', 'daemon.log');
+const SESSION_STATE = path.join(CONTEXTUS, '.session-state.json');
+const EVAL_QUEUE = path.join(CONTEXTUS, '.eval-queue.jsonl');
 const CALIBRATION_STATE = path.join(CONTEXTUS, 'calibration-state.json');
 
 function readJson(file, fallback) {

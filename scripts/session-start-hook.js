@@ -148,6 +148,10 @@ async function main() {
       lines.push(
         "contextus: waited for another session to build dist/ but it didn't finish — falling back to tsx."
       );
+    } else if (buildResult.reason === 'no-local-tsc') {
+      lines.push(
+        'contextus: no local TypeScript compiler found — run setup to sync and build the neutral home (node scripts/sync-neutral-daemon.js).'
+      );
     }
     const wasRunning = await ensureDaemonRunning();
     // If we spawned one, wait (bounded) for warm. Either way fetch /health so the

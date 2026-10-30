@@ -37,3 +37,4 @@ export function syncNeutralDaemon(opts?: {
   npmCache?: string;
   force?: boolean;
 }): { synced: boolean } & NeutralStatus;
+export function isDevMode(): boolean;

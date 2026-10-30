@@ -177,7 +177,8 @@ const DIST_SENTINEL_FILES = [
   path.join(REPO_ROOT, 'dist', 'lib', 'retrieval', 'inject-format.js'),
 ];
 const BUILD_LOCK = path.join(RUNTIME_DIR, 'build.lock');
-const BUILD_TIMEOUT_MS = 60000; // 60s — cold npx + full type-check on slow machines
+const BUILD_TIMEOUT_MS = 60000; // 60s — full type-check on slow machines
+const REPO_TSC = path.join(REPO_ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
 
 export function ensureDistBuilt() {
   if (isDevMode()) return { built: false, reason: 'dev-mode' };
@@ -205,8 +206,18 @@ export function ensureDistBuilt() {
     }
     return { built: false, reason: 'lock-timeout' };
   }
+  // Local tsc only — never npx (network fetch at hook time). Repo checkout
+  // tsc first (dev), neutral setup-owned tsc second. Neither present (lean
+  // install without setup) → report, don't fetch; the hook falls back to
+  // tsx or degrades, setup fails loudly on its own path.
+  const localTsc = [REPO_TSC, NEUTRAL_TSC].find((t) => fs.existsSync(t));
+  if (!localTsc) return { built: false, reason: 'no-local-tsc' };
   try {
-    execSync('npx tsc', { cwd: REPO_ROOT, stdio: 'ignore', timeout: BUILD_TIMEOUT_MS });
+    execSync(`"${process.execPath}" "${localTsc}"`, {
+      cwd: REPO_ROOT,
+      stdio: 'ignore',
+      timeout: BUILD_TIMEOUT_MS
+    });
     return { built: true };
   } catch (err) {
     const reason = err?.killed ? 'build-timeout' : 'build-failed';
@@ -450,26 +461,32 @@ export async function getHealth(timeoutMs = 1000, { probe = false } = {}) {
 /**
  * Should we run in dev mode (tsx on source) instead of compiled dist/?
  *
- * Auto-detects a source checkout (tsconfig.json at repo root) so changes to .ts
- * files take effect immediately without a build step. Override with:
- *   CONTEXTUS_DEV=1  → force dev mode (tsx)
- *   CONTEXTUS_DEV=0  → force production (node dist/)
+ * Pinned, not auto-detected: the installed plugin ships a tracked
+ * tsconfig.json, so detecting dev from its presence made every clean
+ * install behave as dev — skipping neutral/dist straight into a network
+ * fetch at hook time. Unset means production. Repo developers working
+ * from source export CONTEXTUS_DEV=1 in their shell.
+ *   CONTEXTUS_DEV=1  → dev mode (tsx on source)
+ *   CONTEXTUS_DEV=0 (or unset) → production (neutral dist, else repo dist)
  */
-function isDevMode() {
+export function isDevMode() {
   const env = process.env.CONTEXTUS_DEV;
   if (env === '1' || env === 'true') return true;
-  if (env === '0' || env === 'false') return false;
-  // Auto-detect: tsconfig.json at repo root = source checkout = dev mode
-  return fs.existsSync(path.join(REPO_ROOT, 'tsconfig.json'));
+  return false;
 }
 
 /**
  * Resolve how to launch a daemon process. In dev mode, always uses tsx on the
  * TypeScript source (changes take effect without `tsc`). In production, uses
- * the compiled dist/ JS. Falls back to tsx if dist/ is missing regardless.
- * Returns { cmd, args } for spawn(). `extraArgs` are appended after the entry
+ * the compiled dist/ JS (neutral home first, repo dist second). Returns
+ * { cmd, args } for spawn(). `extraArgs` are appended after the entry
  * file — used for CLI scripts (e.g. mine-transcripts.ts's `--project <cwd>`),
  * unused (empty) for the daemon/eval-worker's own launches.
+ *
+ * No npx fallback, ever: a network fetch at hook time is the hole the
+ * neutral mapping closed. When nothing runnable exists, this throws with an
+ * actionable message — hook callers catch it into their normal down-path
+ * (fail open), setup surfaces it loudly (fail closed).
  */
 function resolveLaunch(jsPath, tsPath, extraArgs = []) {
   // Neutral ready + non-dev → run the setup-owned build (host-shared). Covers
@@ -483,11 +500,13 @@ function resolveLaunch(jsPath, tsPath, extraArgs = []) {
   if (!isDevMode() && fs.existsSync(jsPath)) {
     return { cmd: process.execPath, args: [jsPath, ...extraArgs] }; // node dist/.../X.js
   }
-  // Dev mode or no build: run .ts via tsx (repo-local, else npx).
-  const useBin = fs.existsSync(TSX_BIN);
-  return useBin
-    ? { cmd: TSX_BIN, args: [tsPath, ...extraArgs] }
-    : { cmd: 'npx', args: ['tsx', tsPath, ...extraArgs] };
+  // Dev mode (CONTEXTUS_DEV=1): run .ts via the repo-local tsx only.
+  if (isDevMode() && fs.existsSync(TSX_BIN)) {
+    return { cmd: TSX_BIN, args: [tsPath, ...extraArgs] };
+  }
+  throw new Error(
+    `no runnable daemon build (neutral dist missing, repo dist missing, no repo tsx) — run setup to sync and build the neutral home: node scripts/sync-neutral-daemon.js`
+  );
 }
 
 /**
@@ -602,7 +621,12 @@ export async function ensureDaemonRunning() {
   // Either a clean crash (dead/no PID) or a freshly-evicted wedge — clear the
   // runtime files so the next daemon writes its own, and spawn.
   clearRuntimeFiles();
-  spawnDaemon();
+  try {
+    spawnDaemon();
+  } catch {
+    // No runnable build (resolveLaunch threw): stay on the down-path.
+    // Hooks degrade to nudge/fail-open; setup surfaces this loudly itself.
+  }
   return false;
 }
 

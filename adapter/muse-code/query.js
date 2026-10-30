@@ -128,7 +128,7 @@ async function main() {
     `${daemon}/query`,
     {
       prompt,
-      project: abs,
+      project: projectId,
       projectId,
       cwd: abs,
       contextStats: readContextStats(sessionId),
