@@ -2,6 +2,8 @@
 
 **Proactive context delivery for Claude Code** — automatic semantic retrieval from `.claude/context/`, injected on every prompt without querying.
 
+> Muse Code sessions read `AGENTS.md`, not this file — it mirrors the project conventions below. Keep the two in sync; the `<!-- contextus -->` stanza is setup-owned in both.
+
 ## Project Status
 
 **State**: Running in production (dogfooding across multiple repos)  

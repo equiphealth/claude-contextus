@@ -78,6 +78,17 @@ When this skill runs under Muse Code, the host is `muse`:
    Added fields: `host`, `hasAgentsStanza` (AGENTS.md, not CLAUDE.md),
    `setupStamp` (`{present, host, completedAt}`), `museApproval`
    (`cli-missing` | `not-installed` | `review_needed` | `trusted` | `unknown`).
+   Sandbox-denial signatures under Muse Code (observed live 2026-10-30 —
+   do NOT treat as service-down): `tsx` failing with `EPERM ... listen ... .pipe` (its IPC
+   server can't bind); `ollama list` failing with `connect: operation not
+   permitted`; empty curl to `localhost:11434` or daemon `:37800` in the
+   same session. These mean the sandbox blocked the socket, nothing about
+   the service — never route to the installed-stopped / not-installed
+   provider flows on this evidence. Instead request one user-approved
+   escalated run covering Ollama tags + `ollama list` + daemon `/health`
+   together (or ask the user to verify from their own terminal / re-run
+   with `--sandbox-network enabled`), and prefer the single-shot engine
+   call in item 5 for that run.
 2. Read `AGENTS.md` everywhere below where the flow says `CLAUDE.md`, and read
    `hasAgentsStanza` where it says `hasStanza`. Re-run = `setupStamp.present`
    AND `hasAgentsStanza`.
