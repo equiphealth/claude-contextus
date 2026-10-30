@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-30
+
+### Fixed
+- **Muse Stop hook read the wrong session-state files under the wrong key** (live Stop found no injection and exited 0 silently): paths aligned to the canonical `~/.contextus/.session-state.json`, `~/.contextus/logs/daemon.log`, `~/.contextus/.eval-queue.jsonl`, and the daemon's `/query` record is now keyed by canonical project hash on both hosts (Muse query sends the hash like Claude; daemon canonicalizes legacy raw paths via `resolveProjectId`).
+- **Daemon launch could fall back to `npx` at hook time**: `CONTEXTUS_DEV` is now pinned (unset means production; repo developers export `CONTEXTUS_DEV=1`), the tsconfig auto-detect is gone, `resolveLaunch` throws an actionable error instead of reaching `npx tsx`, and `ensureDistBuilt` uses a local tsc (repo, else neutral setup-owned) reporting `no-local-tsc` instead of fetching.
+
 ## [0.20.0] - 2026-10-15
 
 ### Added
