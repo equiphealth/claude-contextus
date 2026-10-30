@@ -151,7 +151,7 @@ sleep 2; curl -s -m 5 http://127.0.0.1:37800/health || echo "port free"
 rm -rf /tmp/muse-handoff-proj /tmp/ctx-bundle  # if still present
 # Optional: remove the one junk audit registration (harmless either way)
 cp ~/.contextus/data/projects.json ~/.contextus/data/projects.json.pre-handoff-bak
-python3 -c "import json, os; p = os.path.expanduser('~/.contextus/data/projects.json'); d = json.load(open(p)); d = {k: v for k, v in d.items() if 'phase1-live' not in str(v)}; json.dump(d, open(p), 'w', indent=2); print('remaining:', len(d))"
+python3 -c "import json; p='$HOME/.contextus/data/projects.json'; d=json.load(open(p)); dead={'/tmp/muse-handoff-proj','/private/tmp/muse-handoff-proj','/tmp/ctx-bundle'}; d={k:v for k,v in d.items() if 'phase1-live' not in str(v) and v.get('path') not in dead}; json.dump(d, open(p,'w'), indent=2); print('remaining:', len(d))"
 ```
 
 Only kill the daemon here. Everything before this point needs it running. (The
