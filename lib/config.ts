@@ -31,16 +31,28 @@ export interface BedrockProviderConfig {
 }
 
 export interface AnthropicProviderConfig {
-  // Uses ANTHROPIC_API_KEY env var — no config needed
+  /**
+   * Path to a file holding the Anthropic API key (preferred: survives a
+   * daemon restart regardless of what spawned it, since environment is
+   * fixed at process start but a file is read live). Never a literal key.
+   * Falls back to ANTHROPIC_API_KEY env var when unset.
+   */
+  apiKeyFile?: string;
 }
 
 export interface MetaProviderConfig {
   /** Model API base URL. Default: https://api.meta.ai/v1 */
   endpoint?: string;
   /**
+   * Path to a file holding the Model API key (preferred over apiKeyEnv —
+   * see readApiKeyFile()). Never a literal key.
+   */
+  apiKeyFile?: string;
+  /**
    * Env var holding the Model API key. Default: META_API_KEY, with
    * MODEL_API_KEY as fallback. Never a literal key — config names the
-   * variable, the daemon resolves it at call time.
+   * variable, the daemon resolves it at call time. Only consulted when
+   * apiKeyFile is unset.
    */
   apiKeyEnv?: string;
 }
@@ -63,6 +75,57 @@ export const META_API_KEY_ENV_DEFAULT = 'META_API_KEY';
 export const META_API_KEY_ENV_FALLBACK = 'MODEL_API_KEY';
 /** Default Meta chat model (Spark 1.3 Contributor — cheap bulk tier). */
 export const META_DEFAULT_MODEL = 'muse-spark-1.3-contributor';
+
+/** Why an apiKeyFile read failed — never includes file contents. */
+export type ApiKeyFileResult =
+  | { ok: true; key: string }
+  | { ok: false; reason: 'not-found' | 'unreadable' | 'empty'; path: string };
+
+/**
+ * Resolve an API key from a file path — the preferred credential mechanism
+ * over an env var. Rationale: process environment is fixed at daemon spawn,
+ * so a key exported to a shell after the daemon started (or inherited from
+ * whichever process spawned it — IDE, hook, CLI) is invisible to a running
+ * daemon regardless of mechanism. A file is read live, so rotation is just
+ * "edit the file" — no restart dependency on WHERE the restart came from.
+ *
+ * Never logs or returns file contents on failure — only a reason + the path,
+ * so a caller can fail loudly and name exactly what's wrong without risking
+ * the key itself ending up in a log line, error message, or captured context.
+ * Warns (stderr only, not thrown) if the file is group/world-readable —
+ * permissions problems shouldn't block a working demo, but should be loud.
+ */
+export function readApiKeyFile(filePath: string): ApiKeyFileResult {
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    return { ok: false, reason: 'not-found', path: filePath };
+  }
+  if ((stat.mode & 0o077) !== 0) {
+    console.error(
+      `[contextus] WARNING: key file ${filePath} is readable by group/other — recommend chmod 600`
+    );
+  }
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return { ok: false, reason: 'unreadable', path: filePath };
+  }
+  if (!raw) return { ok: false, reason: 'empty', path: filePath };
+  return { ok: true, key: raw };
+}
+
+/** Human-readable reason, for error messages — still never the key itself. */
+export function describeApiKeyFileFailure(
+  result: Extract<ApiKeyFileResult, { ok: false }>
+): string {
+  const reason = { 'not-found': 'not found', unreadable: 'not readable', empty: 'empty' }[
+    result.reason
+  ];
+  return `key file ${reason}: ${result.path}`;
+}
 
 // --- Feature configs ---
 

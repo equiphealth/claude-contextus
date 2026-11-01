@@ -12,19 +12,18 @@
     },
     "anthropic": {}
   },
-  "embedding": {
-    "provider": "ollama",
-    "model": "nomic-ai/nomic-embed-text-v1.5",
-    "ollamaModel": "nomic-embed-text",
-    "dimensions": 768,
-    "batchSize": 32,
-    "transformers": {
-      "localModelPath": "",
-      "cacheDir": "",
-      "remoteHost": "https://huggingface.co/",
-      "allowRemoteModels": true
-    }
-  },
+  // No "embedding" block here, deliberately (removed 2026-11-01 — was
+  // "ollama" and caused a live model-id mismatch). There is no per-project
+  // embedding override at ANY tier — lib/embedding/embedder.ts reads ONLY
+  // plugin.jsonc's global default (one daemon process, one loaded model,
+  // shared by every project on this machine). A write here, or in
+  // ~/.contextus/data/contextus/config.json (tier 2), would be silently
+  // ignored by the actual embed call — worse than an error. See
+  // gotchas/gotcha-embedding-provider-switch.md. plugin.jsonc's shipped
+  // default (transformers) already matches what this machine's corpus is
+  // actually embedded with. If a future machine genuinely needs to differ,
+  // that's a machine-wide migration — edit plugin.jsonc itself, restart the
+  // daemon, and /rebuild-embeddings --full everywhere — never a project file.
   "lancedb": {
     "mode": "file",
     "path": "~/.contextus/data/{project-name}"

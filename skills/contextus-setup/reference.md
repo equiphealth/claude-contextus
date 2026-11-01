@@ -199,6 +199,15 @@ How would you like to set this up?
 
 ### Q1: Provider Check (branch on `ollamaState.status`)
 
+**This is a machine-wide question, not a per-project one** — see the step-3
+note below. If `embeddingProvider` from setup-detect already shows a value
+(meaning the daemon already has one loaded), this question is really
+"verify it's still working," not "choose one for this project." Only treat
+it as a real first-time choice when nothing is configured anywhere yet
+(truly first setup on this machine). If the user picks something that
+DIFFERS from what's already active, say so explicitly before proceeding —
+don't silently treat it as this-project-only.
+
 #### State: `installed-running`
 Skip this question entirely — Ollama is ready.
 
@@ -331,8 +340,22 @@ If [1] on the second question: add `transcriptMining.enabled: true` to `.claude/
    {
    }
    ```
-   If user chose transformers in Q1, add `"embedding": { "provider": "transformers" }`.
-   If Q3b was Yes (enable recurring), add `"transcriptMining": { "enabled": true }` — even if the file already exists (this one field is written regardless, since it reflects an explicit choice just made, unlike the rest of this step's "only if new file" scope).
+   **Never add `embedding` here, and there's no tier-2 project file for it
+   either.** `lib/embedding/embedder.ts` reads ONLY the global
+   `loadConfig()` — one daemon process, one loaded model, shared by every
+   project on this machine; there is no per-project embedding override at
+   ANY tier, full stop. Writing one into `.claude/contextus.jsonc` (or
+   anywhere project-scoped) doesn't fail loudly — it just gets silently
+   ignored by the actual embed call, which is worse. Caught live
+   (2026-11-01): a stale tier-3 override on contextus's own dogfood project
+   caused a live model-id mismatch exactly this way — see
+   gotchas/gotcha-embedding-provider-switch.md. If Q1's answer differs from
+   `plugin.jsonc`'s shipped default, that's not a setup-time config write at
+   all — it's a machine-wide decision that needs editing `plugin.jsonc`
+   itself, a daemon restart, and `/rebuild-embeddings --full` for every
+   project + user scope on the machine. Flag this to the user rather than
+   writing anything; don't make it look like a routine setup choice.
+   If Q3b was Yes (enable recurring), add `"transcriptMining": { "enabled": true }` to `.claude/contextus.jsonc` — even if the file already exists (this one field is written regardless, since it reflects an explicit choice just made, unlike the rest of this step's "only if new file" scope). Transcript mining IS a team convention (whether this project wants retrospective scanning), unlike embedding provider.
 
 4. If migration was requested, run dry-run of `/migrate-memory`.
 
@@ -393,6 +416,13 @@ Let's configure each one. I'll explain as we go.
 
 ### P2: Embedding Provider (branch on `ollamaState.status`)
 
+**Machine-wide, not per-project** — same caveat as Q1 above. If
+`embeddingProvider` from setup-detect already shows a value, present this
+as "here's what's already active" / "verify it's working," not a fresh
+per-project choice. Flag explicitly if the user picks something different
+from what's already active — see the step-2 note below for what that
+actually requires.
+
 #### State: `installed-running`
 ```
 Embedding provider — how patterns are vectorized for search.
@@ -451,8 +481,8 @@ Embedding provider — how patterns are vectorized for search.
 
 **If [1a]:** Execute install via `scripts/install-ollama.ts`, wait, verify, continue to model selection.
 **If [1b]:** Show manual instructions, wait for Enter, verify, continue if successful.
-**If [1c]:** Set config `embedding.provider: "ollama"` but skip embedding (`--no-embed`).
-**If [2]:** Set config `embedding.provider: "transformers"`.
+**If [1c]:** Set `embedding.provider: "ollama"` (machine-local, see below) but skip embedding (`--no-embed`).
+**If [2]:** Set `embedding.provider: "transformers"` (machine-local, see below).
 
 #### Model Selection (after Ollama verified running)
 ```
@@ -465,15 +495,25 @@ Choose embedding model:
 
 Pull the selected model: `ollama pull {model}`
 
-Store in `.claude/contextus.jsonc`:
-```jsonc
-{
-  "embedding": {
-    "provider": "ollama",
-    "ollamaModel": "{selectedModel}"
-  }
-}
-```
+**Don't write `embedding` to ANY project file — there is no per-project
+override, at any tier.** `lib/embedding/embedder.ts` reads only the global
+`loadConfig()`; one daemon process, one loaded model, shared by every
+project. A write to `.claude/contextus.jsonc` (tier-3) or
+`~/.contextus/data/<project>/config.json` (tier-2) would be silently
+ignored by the actual embed call — worse than not writing anything, since
+`/configure show` would then lie about what's really active. Caught live
+(2026-11-01): a stale tier-3 override caused exactly this kind of
+model-id mismatch on contextus's own dogfood project — see
+gotchas/gotcha-embedding-provider-switch.md.
+
+If this model selection genuinely differs from what's already active
+(`setup-detect`'s `embeddingProvider`/`currentConfig`), that's a
+machine-wide migration, not a setup-time config write: editing
+`plugin.jsonc`'s `embedding` block directly, a daemon restart, and
+`/rebuild-embeddings --full` for every project + user scope on the
+machine. Tell the user this plainly and let them decide whether they
+actually want to do it now — don't fold it into an "only if new file"
+setup step like the rest of this section.
 
 On pull failure: "Model pull failed. Retry [r] or use Transformers.js [t]?"
 
@@ -639,7 +679,14 @@ If "enabled": add `"transcriptMining": { "enabled": true, "intervalHours": <chos
    ```
    The debug statusline installs silently either way — it's opt-in via `CONTEXTUS_DEBUG_STATUSLINE=1`, so installing it changes nothing for users who never set that var. If `jq` isn't available, this step logs a message and exits non-zero; don't treat that as fatal to the rest of setup.
 
-2. Write `.claude/contextus.jsonc` with all chosen values:
+2. Write `.claude/contextus.jsonc` with all chosen values — **except
+   `embedding`, which never goes in ANY project file.** There is no
+   per-project embedding override at any tier (see P2 above) — a write to
+   tier-2 OR tier-3 is silently ignored by the actual embed call, which
+   only reads `plugin.jsonc`'s global default. If P2's answer differs from
+   that default, it's a machine-wide migration (edit `plugin.jsonc`,
+   restart the daemon, `/rebuild-embeddings --full` everywhere) — tell the
+   user plainly rather than writing anything here:
    ```jsonc
    // contextus config — generated by /contextus-setup
    // Edit directly or re-run /contextus-setup to reconfigure.
@@ -652,9 +699,6 @@ If "enabled": add `"transcriptMining": { "enabled": true, "intervalHours": <chos
      },
      "expansion": {
        "mode": "<chosen>"
-     },
-     "embedding": {
-       "provider": "<chosen>"
      },
      "notifications": {
        "verbosity": "<chosen>"

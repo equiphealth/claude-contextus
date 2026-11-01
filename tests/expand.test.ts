@@ -1,12 +1,18 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   shouldExpand,
   parseVariants,
   buildPrompt,
   expandQuery,
+  resolveMetaApiKey,
+  resolveAnthropicApiKey,
   type ExpandedQueries
 } from '../lib/retrieval/expand.js';
+import { readApiKeyFile, describeApiKeyFileFailure } from '../lib/config.js';
 import type { ExpansionConfig } from '../lib/config.js';
 
 // --- shouldExpand ---
@@ -400,5 +406,153 @@ describe('initialBest computation', () => {
     const initialBest = Math.max(...raw.map((r) => r.similarity));
     assert.equal(shouldExpand('adaptive', initialBest, 0.55), true);
     assert.equal(shouldExpand('adaptive', initialBest, 0.5), false);
+  });
+});
+
+// --- File-based API key resolution ---
+
+describe('readApiKeyFile', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-key-test-'));
+
+  test('reads and trims a valid key file', () => {
+    const file = path.join(tmpDir, 'key-valid');
+    fs.writeFileSync(file, '  sk-test-123  \n', { mode: 0o600 });
+    const result = readApiKeyFile(file);
+    assert.deepEqual(result, { ok: true, key: 'sk-test-123' });
+  });
+
+  test('reports not-found for a missing path', () => {
+    const result = readApiKeyFile(path.join(tmpDir, 'does-not-exist'));
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.reason, 'not-found');
+      assert.match(describeApiKeyFileFailure(result), /not found/);
+    }
+  });
+
+  test('reports empty for a file with only whitespace', () => {
+    const file = path.join(tmpDir, 'key-empty');
+    fs.writeFileSync(file, '   \n', { mode: 0o600 });
+    const result = readApiKeyFile(file);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.reason, 'empty');
+      assert.match(describeApiKeyFileFailure(result), /empty/);
+    }
+  });
+
+  test('never includes file contents in a failure description', () => {
+    const file = path.join(tmpDir, 'key-secret');
+    fs.writeFileSync(file, 'super-secret-value', { mode: 0o600 });
+    // Force an "unreadable" case via a directory path instead of a file —
+    // statSync succeeds (it's a real path) but readFileSync on a directory throws.
+    const dirAsFile = path.join(tmpDir, 'a-directory');
+    fs.mkdirSync(dirAsFile);
+    const result = readApiKeyFile(dirAsFile);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.reason, 'unreadable');
+      const msg = describeApiKeyFileFailure(result);
+      assert.ok(!msg.includes('super-secret-value'));
+    }
+  });
+});
+
+describe('resolveMetaApiKey', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-meta-key-test-'));
+  const origMetaKey = process.env.META_API_KEY;
+  const origModelKey = process.env.MODEL_API_KEY;
+
+  test('apiKeyFile wins over env vars when both are set', () => {
+    process.env.META_API_KEY = 'env-value-should-not-win';
+    const file = path.join(tmpDir, 'meta-key');
+    fs.writeFileSync(file, 'file-value\n', { mode: 0o600 });
+    try {
+      assert.equal(resolveMetaApiKey(undefined, file), 'file-value');
+    } finally {
+      if (origMetaKey === undefined) delete process.env.META_API_KEY;
+      else process.env.META_API_KEY = origMetaKey;
+    }
+  });
+
+  test('throws (fails loud) when apiKeyFile is configured but broken, never silently falls through to env', () => {
+    process.env.META_API_KEY = 'env-value-should-not-be-used';
+    const missingFile = path.join(tmpDir, 'does-not-exist');
+    try {
+      assert.throws(() => resolveMetaApiKey(undefined, missingFile), /key file not found/);
+    } finally {
+      if (origMetaKey === undefined) delete process.env.META_API_KEY;
+      else process.env.META_API_KEY = origMetaKey;
+    }
+  });
+
+  test('falls back to env vars when apiKeyFile is not configured at all', () => {
+    delete process.env.META_API_KEY;
+    process.env.MODEL_API_KEY = 'fallback-env-value';
+    try {
+      assert.equal(resolveMetaApiKey(undefined, undefined), 'fallback-env-value');
+    } finally {
+      if (origMetaKey === undefined) delete process.env.META_API_KEY;
+      else process.env.META_API_KEY = origMetaKey;
+      if (origModelKey === undefined) delete process.env.MODEL_API_KEY;
+      else process.env.MODEL_API_KEY = origModelKey;
+    }
+  });
+
+  test('returns undefined when nothing is configured anywhere', () => {
+    delete process.env.META_API_KEY;
+    delete process.env.MODEL_API_KEY;
+    try {
+      assert.equal(resolveMetaApiKey(undefined, undefined), undefined);
+    } finally {
+      if (origMetaKey === undefined) delete process.env.META_API_KEY;
+      else process.env.META_API_KEY = origMetaKey;
+      if (origModelKey === undefined) delete process.env.MODEL_API_KEY;
+      else process.env.MODEL_API_KEY = origModelKey;
+    }
+  });
+});
+
+describe('resolveAnthropicApiKey', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-anthropic-key-test-'));
+  const origKey = process.env.ANTHROPIC_API_KEY;
+
+  test('apiKeyFile wins over ANTHROPIC_API_KEY when both are set', () => {
+    process.env.ANTHROPIC_API_KEY = 'env-value-should-not-win';
+    const file = path.join(tmpDir, 'anthropic-key');
+    fs.writeFileSync(file, 'file-value\n', { mode: 0o600 });
+    try {
+      assert.equal(resolveAnthropicApiKey(file), 'file-value');
+    } finally {
+      if (origKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = origKey;
+    }
+  });
+
+  test('throws when apiKeyFile is configured but broken', () => {
+    const missingFile = path.join(tmpDir, 'does-not-exist');
+    assert.throws(() => resolveAnthropicApiKey(missingFile), /key file not found/);
+  });
+
+  test('falls back to ANTHROPIC_API_KEY when apiKeyFile is not configured', () => {
+    process.env.ANTHROPIC_API_KEY = 'env-fallback';
+    try {
+      assert.equal(resolveAnthropicApiKey(undefined), 'env-fallback');
+    } finally {
+      if (origKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = origKey;
+    }
+  });
+});
+
+describe('expandQuery warning propagation', () => {
+  test('ExpandedQueries type carries an optional warning field', () => {
+    const withWarning: ExpandedQueries = {
+      variants: [],
+      latencyMs: 10,
+      provider: 'bedrock/haiku',
+      warning: 'Meta expansion: key file not found: /tmp/missing'
+    };
+    assert.equal(withWarning.warning?.includes('key file not found'), true);
   });
 });

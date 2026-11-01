@@ -417,12 +417,25 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // consistency). Both the model id AND the dimensions must agree — a mismatch on
   // either means the query vector and the stored vectors live in different spaces,
   // so similarities are meaningless. Fail fast + degrade rather than inject noise.
-  // Project-aware: floor/topK/etc. resolve through the 3-tier merge (global →
-  // machine-local → git-committed), so each project calibrates independently.
+  //
+  // Embedding config MUST come from loadConfig() (global), NOT loadProjectConfig():
+  // lib/embedding/embedder.ts's embedQuery() reads ONLY loadConfig() internally —
+  // there is exactly one loaded model process-wide, no per-project embedding
+  // override is possible or honored. Comparing against the project-merged config
+  // here would check the WRONG thing: a stale/incorrect per-project override that
+  // happens to still match the OLD corpus meta would pass this check while the
+  // daemon actually embeds the live query with a DIFFERENT model (whatever
+  // loadConfig() really resolves to) — silently injecting garbage similarities
+  // with no error logged, which is the exact failure this check exists to catch.
+  // Verified live (2026-11-01): this project's own tier-3 config had drifted from
+  // the global default this way — see gotchas/gotcha-embedding-provider-switch.md.
+  const embeddingCfg = loadConfig().embedding;
+  // Still project-aware for everything else: floor/topK/etc. resolve through the
+  // full 3-tier merge, so each project calibrates independently.
   const cfg = loadProjectConfig(projectId, cwd);
   const meta = readTableMeta(projectId);
   const activeModel =
-    cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model;
+    embeddingCfg.provider === 'ollama' ? embeddingCfg.ollamaModel : embeddingCfg.model;
   if (meta && meta.embeddingModel !== activeModel) {
     logError('error', 'daemon', 'Embedding model mismatch (corpus vs daemon)', {
       project: projectLabel,
@@ -433,11 +446,11 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     // Degrade gracefully — a mismatched space yields garbage similarities.
     return sendJson(res, 200, { continue: true });
   }
-  if (meta && meta.dimensions !== cfg.embedding.dimensions) {
+  if (meta && meta.dimensions !== embeddingCfg.dimensions) {
     logError('error', 'daemon', 'Embedding dimension mismatch (corpus vs daemon)', {
       project: projectLabel,
       corpus: meta.dimensions,
-      daemon: cfg.embedding.dimensions,
+      daemon: embeddingCfg.dimensions,
       fix: 're-embed the corpus (pnpm run embed) so stored vectors match config.embedding.dimensions'
     });
     return sendJson(res, 200, { continue: true });
@@ -626,11 +639,15 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   stats.queries++;
   let expansionStatus: LastInjectionDebug['expansion'] =
     cfg.expansion.mode === 'off' ? 'off' : 'skipped';
+  // Set only on a configured-but-broken credential (see ExpandedQueries.warning) —
+  // surfaced into the actual model-visible response below, not just daemon.log.
+  let expansionWarning: string | undefined;
   if (
     !usedKeywordFallback &&
     shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)
   ) {
     const expanded = await expandQuery(prompt, cfg.expansion, cfg.providers);
+    expansionWarning = expanded.warning;
     if (expanded.variants.length > 0) {
       stats.expansionFired++;
       expansionStatus = 'fired';
@@ -726,7 +743,21 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       });
     }
     if (outcome.kind === 'near-miss') {
-      return sendJson(res, 200, shapeHookOutput(outcome.notice, { agent, hookEvent }));
+      const notice = expansionWarning
+        ? `${outcome.notice}\n\n[contextus] expansion warning: ${expansionWarning}`
+        : outcome.notice;
+      return sendJson(res, 200, shapeHookOutput(notice, { agent, hookEvent }));
+    }
+    // No injection at all (floor not met) would otherwise mean the model
+    // never sees ANYTHING this call did — including a broken key file. Send
+    // a warning-only block rather than the usual bare {continue:true} so
+    // this doesn't silently vanish just because nothing else qualified.
+    if (expansionWarning) {
+      return sendJson(
+        res,
+        200,
+        shapeHookOutput(`[contextus] expansion warning: ${expansionWarning}`, { agent, hookEvent })
+      );
     }
     return sendJson(res, 200, { continue: true });
   }
@@ -808,7 +839,10 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     injectedFiles: injectedNames
   });
 
-  sendJson(res, 200, shapeHookOutput(block, { agent, hookEvent }));
+  const outBlock = expansionWarning
+    ? `${block}\n\n[contextus] expansion warning: ${expansionWarning}`
+    : block;
+  sendJson(res, 200, shapeHookOutput(outBlock, { agent, hookEvent }));
 }
 
 /**

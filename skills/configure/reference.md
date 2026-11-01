@@ -9,6 +9,21 @@ View or modify the project-level config (`.claude/contextus.json`). This is the
 team-shared, git-committed configuration — it wins over global defaults via the 3-tier
 merge (`plugin.json defaults` < `~/.contextus/data/<project>/config.json` < `.claude/contextus.json`).
 
+**Exception: `embedding.*` is NOT a `/configure set` key at all — it has no
+per-project override, in ANY tier.** `lib/embedding/embedder.ts` reads
+`loadConfig()` exclusively (every call site — pipeline, warmup, raw embed) —
+the global merge only, never project-aware. There is exactly one loaded
+model process-wide, serving every project's corpus from the same daemon. A
+per-project override in `.claude/contextus.json` (tier 3) OR
+`~/.contextus/data/<project>/config.json` (tier 2) is silently IGNORED by the
+actual embed call — it would make `/configure show` lie about what's really
+happening, which is worse than refusing. If a user asks to "switch this
+project's embedding provider": there is no such operation. Tell them so, and
+see "Switch embedding provider" below for what changing it for real actually
+requires. Caught live (2026-11-01): a stale tier-3 override on contextus's
+own dogfood project caused a model-id mismatch exactly this way — see
+`gotchas/gotcha-embedding-provider-switch.md`.
+
 ## Usage
 
 ```bash
@@ -40,15 +55,15 @@ merge (`plugin.json defaults` < `~/.contextus/data/<project>/config.json` < `.cl
     "similarityThreshold": 0.7,
     "maxTokens": 3000
   },
-  "embedding": {
-    "provider": "ollama",
-    "ollamaModel": "nomic-embed-text"
-  },
   "contextCapture": {
     "mode": "staging"
   }
 }
 ```
+
+`embedding` is deliberately NOT shown in this example — see the exception
+above. Its shape (for the machine-local tier-2 file) is documented separately
+below.
 
 ## Configuration Reference
 
@@ -94,13 +109,19 @@ Example — exclude `docs/prompts/` and `docs/archive/` from embedding:
 | `similarityThreshold` | number | `0.7` | Ideal similarity target (for calibration) |
 | `maxTokens` | number | `3000` | Token budget for injected context |
 
-### `embedding` — Model and provider
+### `embedding` — Model and provider (GLOBAL ONLY — not a `/configure` key, see exception above)
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `provider` | `"ollama"` \| `"transformers"` | `"ollama"` | Embedding backend |
+| `provider` | `"ollama"` \| `"transformers"` | `"transformers"` | Embedding backend |
 | `ollamaModel` | string | `"nomic-embed-text"` | Ollama model name |
 | `dimensions` | number | `768` | Vector dimensions (must match model) |
+
+Lives ONLY in `plugin.jsonc`'s shipped default — `lib/embedding/embedder.ts`
+never reads a project-scoped config for this, so nothing written via
+`/configure set` or any project file changes it. Shown here for the field
+shapes only, so you recognize them if you see this block in `plugin.jsonc`
+or a `/health` response.
 
 ### `contextCapture` — How new patterns are proposed
 
@@ -135,10 +156,27 @@ Example — exclude `docs/prompts/` and `docs/archive/` from embedding:
 
 ### Switch embedding provider
 
-```bash
-/configure set embedding.provider ollama
-# Reminder: requires /rebuild-embeddings --full after switching
-```
+**Not a `/configure set` operation — don't suggest it.** There's no
+per-project embedding override (see the exception above); the provider is
+whatever the single daemon process loaded, shared by every project's corpus
+on this machine. It's not impossible to change, it's just a bigger
+operation than any other setting here:
+
+1. Edit `plugin.jsonc`'s `embedding` block directly (the only thing
+   `lib/embedding/embedder.ts`'s `loadConfig()` actually reads) — this is a
+   real edit to a git-tracked file, so treat it like any other code change
+   (branch + PR in this repo; for an installed plugin, the machine's own
+   copy).
+2. Restart the daemon (`/manage-daemon restart`) — the new model only loads
+   on a fresh process.
+3. `/rebuild-embeddings --full` for **every** project on this machine, plus
+   user scope (`~/.contextus/context`, `~/.contextus/docs`) — not just the
+   one you were thinking about. Every corpus the daemon serves must move
+   together; a partial rebuild just recreates the mismatch elsewhere.
+
+See `gotchas/gotcha-embedding-provider-switch.md` for why steps 2-3 aren't
+optional, and the "stay on transformers" decision history for why this
+isn't something to do casually.
 
 ### Disable a source entirely
 
@@ -149,7 +187,7 @@ Example — exclude `docs/prompts/` and `docs/archive/` from embedding:
 ## Precedence (3-tier merge)
 
 1. **Plugin defaults** (`plugin.json config`) — ships with contextus
-2. **Machine-local** (`~/.contextus/data/<project>/config.json`) — `/context-calibrate --apply` writes here
+2. **Machine-local** (`~/.contextus/data/<project>/config.json`) — `/context-calibrate --apply` writes here. NOT where `embedding.*` goes (see exception above) — this tier is still project-scoped, and embedding has no project scope at all.
 3. **Project config** (`.claude/contextus.json`) — git-committed, team-shared, **WINS**
 
 Later tiers override earlier ones. Source `exclude` arrays are **merged** (additive),
