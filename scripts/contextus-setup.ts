@@ -36,6 +36,7 @@ import { spawn } from 'node:child_process';
 import {
   upsertStanza,
   hasStanza,
+  removeStanza,
   HOST_STANZA,
   type SetupHost
 } from '../lib/capture/claude-md-stanza.js';
@@ -187,15 +188,85 @@ function scaffoldContextDir(root: string): { createdDir: boolean; createdIndex: 
  * Upsert the stanza into the host's project rules file (creating it if
  * absent). Muse mode targets AGENTS.md with the generic body; Claude mode
  * keeps the existing CLAUDE.md behavior byte-for-byte.
+ *
+ * First-create seeding: if `file` doesn't exist yet AND its sibling
+ * (`seedFrom` — CLAUDE.md for muse, AGENTS.md for claude) does, mirror the
+ * sibling's real content (minus its own stanza) instead of starting from an
+ * empty file that would otherwise contain nothing but the contextus stanza.
+ * Without this, a project onboarded to a second host loses all of its actual
+ * conventions for that host — only an unenforced "keep them in sync by hand"
+ * expectation remained. Only fires on first create; an existing `file` is
+ * never overwritten by its sibling's content on a re-run.
  */
-function writeStanza(root: string, host: SetupHost): { created: boolean; changed: boolean } {
-  const { file, body } = HOST_STANZA[host];
+function writeStanza(
+  root: string,
+  host: SetupHost
+): { created: boolean; changed: boolean; seeded: boolean } {
+  const { file, body, seedFrom } = HOST_STANZA[host];
   const filePath = path.join(root, file);
-  const existing = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+  const fileExisted = fs.existsSync(filePath);
+  let existing = fileExisted ? fs.readFileSync(filePath, 'utf8') : '';
   const created = existing === '';
+  let seeded = false;
+
+  if (!fileExisted) {
+    const seedPath = path.join(root, seedFrom);
+    if (fs.existsSync(seedPath)) {
+      const seedContent = fs.readFileSync(seedPath, 'utf8');
+      // Mechanical copy only — a script cannot judge which prose is
+      // host-portable vs. specific to the sibling's harness (skill
+      // invocation syntax, hook names, tool names that don't map 1:1).
+      // Getting that right is a judgment call for whoever reads the result
+      // next (human or a model session), not something safe to guess here.
+      // The flag comment below (outside the stanza markers, so it's the
+      // user's to remove, never setup-owned) makes the copy visibly
+      // provisional instead of silently passing as "done and correct."
+      existing =
+        `<!-- contextus: this file was auto-seeded from ${seedFrom} by /contextus-setup ` +
+        `on ${new Date().toISOString().slice(0, 10)}. It's a mechanical copy, not a ` +
+        `reviewed one — check for ${seedFrom === 'CLAUDE.md' ? 'Claude Code' : 'Muse'}-specific ` +
+        `terminology (skill/hook/tool names, slash-command syntax) that may not carry over ` +
+        `correctly, then remove this comment. -->\n\n` +
+        removeStanza(seedContent);
+      seeded = true;
+    }
+  }
+
   const { content, changed } = upsertStanza(existing, body);
   if (changed) fs.writeFileSync(filePath, content);
-  return { created, changed: changed || created };
+  return { created, changed: changed || created, seeded };
+}
+
+/**
+ * Reconcile the OTHER host's rules file, if it already exists: re-upsert
+ * ITS OWN canonical stanza (its own host-specific body) in place, touching
+ * nothing outside the markers. Never creates the sibling — that's
+ * writeStanza's first-create seeding path, and only for the host that was
+ * actually invoked.
+ *
+ * Why this exists: seeding on first create isn't enough once both files
+ * already exist. Each stanza is only refreshed to the current template when
+ * setup runs FOR that specific host — so a project onboarded to both hosts
+ * drifts apart over time as the shared template text evolves and each file
+ * gets refreshed on a different cadence (or never, for whichever host
+ * nobody re-runs setup against). Verified live on this exact repo
+ * (2026-11-01): CLAUDE.md's and AGENTS.md's stanzas had each quietly lost a
+ * paragraph the other still had. Running setup for either host now
+ * converges BOTH files to canonical on every run, rather than only ever
+ * touching the one the command targeted.
+ */
+function reconcileSiblingStanza(
+  root: string,
+  host: SetupHost
+): { file: string; changed: boolean } | null {
+  const siblingHost: SetupHost = host === 'muse' ? 'claude' : 'muse';
+  const { file, body } = HOST_STANZA[siblingHost];
+  const filePath = path.join(root, file);
+  if (!fs.existsSync(filePath)) return null;
+  const existing = fs.readFileSync(filePath, 'utf8');
+  const { content, changed } = upsertStanza(existing, body);
+  if (changed) fs.writeFileSync(filePath, content);
+  return { file, changed };
 }
 
 async function main(): Promise<void> {
@@ -220,8 +291,18 @@ async function main(): Promise<void> {
   console.log(
     `  ${rulesFile} stanza   ${
       before ? 'updated in place (no duplicate)' : stanza.created ? `created ${rulesFile}` : 'added'
-    }`
+    }` + (stanza.seeded ? ' — seeded from sibling, needs a review pass (see flag comment)' : '')
   );
+
+  // 2b. Reconcile the sibling rules file's stanza too, if it already
+  // exists — keeps both files converging on every run instead of drifting
+  // apart between whichever host each one was last set up against.
+  const sibling = reconcileSiblingStanza(args.dir, args.host);
+  if (sibling) {
+    console.log(
+      `  ${sibling.file} stanza   ${sibling.changed ? 'reconciled to canonical' : 'already in sync'}`
+    );
+  }
 
   // 3. Ensure the daemon: reuse a healthy one (any location — reuse wins
   // over code path, version drift only warns), else sync the neutral home,

@@ -168,6 +168,16 @@ turn. If a long task drifts into a subtopic that prompt didn't hint at, and you 
 relevant project knowledge exists but wasn't surfaced, proactively run
 `/context-search "<query>"` yourself rather than assuming silence means nothing exists.
 
+**Hard trigger (don't rely on "suspecting" alone)**: "suspect relevant knowledge exists"
+is a judgment call that reliably loses to execution load during heads-down work — it
+competes with everything else you're tracking mid-task. So treat these as mechanical,
+non-optional triggers, the same way you'd always reach for a graph tool before grepping:
+on any tool-call error, failed command, or once you're 2+ tool calls deep diagnosing the
+same symptom, run `/context-search "<error or symptom text>"` *before* continuing to
+troubleshoot blind. This is in addition to the general "if you suspect" guidance above,
+not a replacement for it — the hard trigger covers the specific, checkable case; the
+general guidance still applies everywhere else.
+
 Context capture behavior is controlled by the per-prompt injected footer — follow
 its instructions exactly (it may tell you to propose, write directly, or stay silent).
 New context files live under `.claude/context/<category>/` and are embedded automatically.

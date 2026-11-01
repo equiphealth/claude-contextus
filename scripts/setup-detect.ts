@@ -20,6 +20,7 @@ import { promisify } from 'node:util';
 import { commandExists, detectPlatform, hasHomebrew, type Platform } from './install-ollama.js';
 import { hasAgentsStanza, readSetupStamp } from './lib/daemon-control.js';
 import type { SetupHost } from '../lib/capture/claude-md-stanza.js';
+import { loadConfig } from '../lib/config.js';
 
 const exec = promisify(execCb);
 
@@ -269,7 +270,18 @@ async function main(): Promise<void> {
     existingProjects: listExistingProjects(project),
     corpusState: detectCorpusState(cwd),
     usageLogEntries: countUsageEntries(),
-    embeddingProvider: 'ollama',
+    // Report what's ACTUALLY decided (plugin.jsonc → DEFAULTS, same merge the
+    // daemon itself loads), never a guess or a hardcoded literal. Setup must
+    // conform to the machine-wide decision, not choose independently — a
+    // hardcoded 'ollama' here previously lied regardless of what was really
+    // configured/running, which is exactly how a project got embedded via
+    // Ollama while the daemon was actually resolving to transformers
+    // defaults (see gotchas/gotcha-embedding-provider-switch.md). Whether
+    // this configured provider is actually viable right now (e.g. Ollama
+    // configured but not installed) is reported separately via
+    // ollamaReachable/ollamaState above; the wizard skill cross-references
+    // the two rather than this field re-deriving availability itself.
+    embeddingProvider: loadConfig().embedding.provider,
     currentConfig: readCurrentConfig(cwd),
     host,
     hasAgentsStanza: hasAgentsStanza(cwd),

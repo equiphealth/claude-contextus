@@ -62,6 +62,49 @@ agree or the file won't embed. (Rules: see CATEGORIES_AND_TAGS.md.)
 > choose?", `gotcha-` "what bites you?", `reference-` "where/how does X work?". When
 > unsure, `reference` is the safe neutral choice. Never `pattern` (not a category).
 
+## Implementation Mechanism
+
+There is no standalone `create-context` CLI script. `/create-context` is an
+agent-side calling convention: once you've decided create-vs-update (see below),
+the actual write is a single HTTP call to the daemon's capture endpoint —
+nothing else persists the file or triggers embedding.
+
+**Don't hardcode the port.** The daemon doesn't always bind 37800 — resolve the
+base URL the same way the hooks/scripts do (`scripts/lib/daemon-control.js` /
+`lib/daemon-url.ts`, `getBaseURL()`), in this priority order:
+1. `$CONTEXTUS_DAEMON_URL` env var, if set — use it verbatim.
+2. `~/.contextus/runtime/daemon.port` — a plain-text port number the daemon
+   writes at startup. Read it and build `http://127.0.0.1:<port>`.
+3. Only if neither exists, fall back to `http://127.0.0.1:37800`.
+
+```bash
+BASE_URL="${CONTEXTUS_DAEMON_URL:-http://127.0.0.1:$(cat ~/.contextus/runtime/daemon.port 2>/dev/null || echo 37800)}"
+curl -s -X POST "$BASE_URL/capture" \
+  -H 'content-type: application/json' \
+  -d '{"category":"<type>","slug":"<kebab-slug>","description":"<one line>","body":"<markdown body>","scope":"project","cwd":"'"$(pwd)"'","tags":["optional"]}'
+```
+
+- **Required fields**: `category`, `slug`, `description`, `body`. `scope` defaults
+  to `project`; pass `cwd` for project scope (omit for `"scope":"user"`, which
+  writes to `~/.contextus/context/` instead of `<cwd>/.claude/context/`).
+- **Create vs update is the same call**: the target path is deterministic —
+  `<category>/<type>-<slug>.md`. Calling `/capture` again with the same
+  `category`+`slug` overwrites that file; that overwrite *is* the update path.
+  There is no separate update endpoint — the similarity-check logic below just
+  decides which slug to pass.
+- **Response**: `{ok, file, relPath, target, embedded: "pending", scope}`.
+  Embedding is async — confirm via `/query` or the daemon log, not from this
+  response.
+- **Failure**: a 400 with `{"ok": false, "error": "..."}` usually means a
+  frontmatter-unsafe field (e.g. a colon in `description`) — rephrase and
+  retry, don't assume success.
+- **If curl to 127.0.0.1 fails with "operation not permitted"**: the calling
+  shell is sandboxed (seen on Muse Code hosts) — the daemon is very likely
+  fine; escalate/re-run outside the sandbox rather than concluding it's down.
+
+See `.claude/context/reference/reference-daemon-context-create-vs-update.md`
+for the full endpoint contract if this project has that dogfood corpus.
+
 ## How It Works
 
 ### 1. Similarity Check (automatic)

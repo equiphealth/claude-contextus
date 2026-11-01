@@ -95,7 +95,12 @@ const NEUTRAL_VERSION_FILE = path.join(NEUTRAL_DIR, 'version.json');
 // Source dirs + files synced repo → neutral (a closed, buildable set: no
 // lib/ or daemon/ source imports outside it, verified 2026-10-27).
 const NEUTRAL_SYNC_DIRS = ['daemon', 'lib', 'scripts'];
-const NEUTRAL_SYNC_FILES = ['package.json', 'tsconfig.json'];
+// plugin.jsonc MUST be synced: findPluginJson() (lib/config.ts) walks up from
+// the daemon's own dir looking for it. Without this, the neutral daemon finds
+// nothing, falls back to DEFAULTS (provider: transformers), and silently
+// diverges from whatever the repo's plugin.jsonc actually configures (e.g.
+// ollama) — a guaranteed provider mismatch with whatever embedded the corpus.
+const NEUTRAL_SYNC_FILES = ['package.json', 'tsconfig.json', 'plugin.jsonc'];
 
 /** Repo version (what the neutral copy must match). Cached per process. */
 let _repoVersion = undefined;

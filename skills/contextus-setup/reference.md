@@ -130,7 +130,11 @@ When this skill runs under Muse Code, the host is `muse`:
    it. Hooks never build; the 15 s hook budget is never spent here.
 6. Write the rules stanza to `AGENTS.md` (setup-owned, never hook-owned) and
    confirm `.claude/setup.json` exists — the SessionStart nudge reads that
-   stamp. Never write the stamp by hand.
+   stamp. Never write the stamp by hand. If the engine's output includes
+   `— seeded from sibling, needs a review pass` (true whenever `AGENTS.md`
+   didn't exist yet but `CLAUDE.md` did), see
+   **[Review a seeded rules file](#review-a-seeded-rules-file)** below —
+   required, not optional, before telling the user setup is done.
 7. Approval batching (observed live 2026-10-29: ~10 prompts on the quick
    path). Prefer the single-shot engine call in item 5 over step-by-step
    commands — one approval instead of ten. Narrate the upcoming approvals
@@ -315,6 +319,10 @@ If [1] on the second question: add `transcriptMining.enabled: true` to `.claude/
    tsx \
      $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts [--no-embed if needed] [--mine-transcripts if Q3a was Yes]
    ```
+   If its output includes `— seeded from sibling, needs a review pass`, see
+   **[Review a seeded rules file](#review-a-seeded-rules-file)** below before
+   declaring setup finished — this is NOT optional cleanup, the file is a
+   mechanical copy the script explicitly could not vouch for.
 
 3. Write minimal `.claude/contextus.jsonc` (only if file doesn't already exist):
    ```jsonc
@@ -671,6 +679,10 @@ If "enabled": add `"transcriptMining": { "enabled": true, "intervalHours": <chos
    tsx \
      $CLAUDE_PLUGIN_ROOT/scripts/contextus-setup.ts [--no-embed if provider down] [--mine-transcripts if P10a was Yes]
    ```
+   If its output includes `— seeded from sibling, needs a review pass`, see
+   **[Review a seeded rules file](#review-a-seeded-rules-file)** below before
+   declaring setup finished — this is NOT optional cleanup, the file is a
+   mechanical copy the script explicitly could not vouch for.
 
 4. If migration was requested, run `/migrate-memory` dry-run.
 
@@ -750,6 +762,39 @@ corpus — so it needs real usage to produce a meaningful recommendation.
 
 Come back after using contextus for a week. /context-status shows your prompt count.
 ```
+
+---
+
+## Review a Seeded Rules File
+
+When `writeStanza` creates `AGENTS.md`/`CLAUDE.md` for the first time and the
+project already has the OTHER one, the setup engine mechanically copies that
+sibling's content (minus its own stanza) as a starting point rather than
+leaving the new file blank — otherwise a project onboarded to a second host
+loses all of its real conventions for that host. But a script can't judge
+which prose is host-portable vs. specific to the sibling's harness (skill
+invocation syntax, hook names, tool names) — that copy is marked with a flag
+comment at the top of the new file and reported in the engine's own output
+(`— seeded from sibling, needs a review pass`), precisely because it is NOT
+vetted. Do not treat "the file now has content" as "setup is done" when this
+fires.
+
+**What to actually do** (this is where judgment belongs — a human or a model
+reading the result, never the deterministic script):
+
+1. Read the newly-seeded file in full.
+2. Flag anything that's specific to the SOURCE host and wouldn't make sense
+   or wouldn't work for the NEW host's readers — e.g. a seeded `AGENTS.md`
+   copied from `CLAUDE.md` may reference Claude Code skill slash-commands,
+   hook event names, or tool names that Muse sessions can't invoke the same
+   way. Rewrite or drop those lines; keep project facts that are genuinely
+   host-agnostic (architecture, commands, workflow, conventions) as-is.
+   Mirror the reverse direction too if seeding went `AGENTS.md` → `CLAUDE.md`.
+3. Remove the flag comment once you've actually reviewed the file — leaving
+   it in place after a real review just adds noise; leaving it in place
+   WITHOUT reviewing is the failure mode this step exists to prevent.
+4. Tell the user what you changed and why, briefly — this is user-owned
+   content outside the markers; don't silently rewrite it without saying so.
 
 ---
 

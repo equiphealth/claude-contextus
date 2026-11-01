@@ -139,17 +139,20 @@ async function main() {
     8000
   ).catch(() => null);
 
-  if (!out || typeof out !== 'object' || !out.hookSpecificOutput) {
+  const queryOk = out && typeof out === 'object' && out.hookSpecificOutput;
+  if (!queryOk) {
     try {
       await ensureDaemonRunning();
     } catch {
       /* one restart attempt; a miss is fine */
     }
-    emitEmpty();
-    return;
   }
 
   // --- Awareness footer (merged into the same block, §1.4) ---
+  // Independent of /query's success: the footer is static instruction text,
+  // not retrieval output, so a failed/sandboxed /query must not take it down
+  // too — that combination previously dropped BOTH retrieval and the
+  // /capture-mechanism footer on every sandbox-denied turn (silent, no error).
   const cfg = { ...captureConfigFromPlugin(), ...captureConfig(abs) };
   let footer = '';
   if (cfg.enabled !== false) {
@@ -173,9 +176,14 @@ async function main() {
     }
   }
 
+  if (!queryOk && !footer) {
+    emitEmpty();
+    return;
+  }
+
   emitMerged({
     hookEventName: 'UserPromptSubmit',
-    daemonBlock: out.hookSpecificOutput.additionalContext || '',
+    daemonBlock: queryOk ? out.hookSpecificOutput.additionalContext || '' : '',
     footer
   });
 }

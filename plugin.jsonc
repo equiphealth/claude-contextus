@@ -71,10 +71,17 @@
       "path": "~/.contextus/data/{project-name}"
     },
     "embedding": {
-      // DESIGN.md default is 'transformers' (in-process ONNX). Deployed as 'ollama'
-      // because the corporate Cloudflare Gateway blocks Hugging Face model downloads —
-      // Ollama runs the same nomic model locally over localhost.
-      "provider": "ollama",
+      // DECIDED 2026-11-01: stay on 'transformers' (in-process ONNX, DESIGN.md's own
+      // default) — every corpus on this machine (both projects + user scope) is
+      // already transformers-embedded. Do NOT flip this back to 'ollama' without a
+      // full re-embed of every project AND user-scope corpus on the machine first:
+      // the daemon loads ONE model for its ONE shared LanceDB, so a provider change
+      // here is a machine-wide migration, not a config edit — see
+      // gotchas/gotcha-embedding-provider-switch.md. 'ollama' was tried earlier
+      // (corporate network concerns over HF downloads), but that risk is
+      // network-dependent, not universal, and transformers is what's actually
+      // running everywhere today.
+      "provider": "transformers",
       "model": "nomic-ai/nomic-embed-text-v1.5",
       "ollamaModel": "nomic-embed-text",
       "dimensions": 768,
