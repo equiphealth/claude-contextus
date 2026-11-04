@@ -394,7 +394,7 @@ If you're not sure, start with contextus. Add claude-mem later if you find yours
 
 ## Contributing
 
-Issues and PRs welcome! This is a vacation project but I'm happy to collaborate.
+Contributions welcome! I review issues and PRs as time permits and I'm happy to collaborate.
 
 Original concept by Anthony Dawson; built using Equip Health, Inc. resources, which owns the original work.
 
