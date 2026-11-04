@@ -53,14 +53,18 @@ export function emitSystemMessage(text) {
  * Absolute backstop only: the daemon seam guarantees its block already fits,
  * so reaching this means the seam was bypassed. The mark names what happened.
  */
+const TRUNC_MARKER = '\n[contextus: truncated at host ceiling]';
+
 export function cutAtLine(text, cap) {
   const bytes = Buffer.byteLength(text, 'utf8');
   if (bytes <= cap) return { text, cut: false };
-  const buf = Buffer.from(text, 'utf8').subarray(0, cap);
+  // Reserve the marker's bytes first: the result must fit cap INCLUDING it.
+  const markerBytes = Buffer.byteLength(TRUNC_MARKER, 'utf8');
+  const buf = Buffer.from(text, 'utf8').subarray(0, Math.max(0, cap - markerBytes));
   const cut = new TextDecoder('utf-8').decode(buf, { stream: true });
   const at = cut.lastIndexOf('\n');
   const kept = at > 0 ? cut.slice(0, at) : cut;
-  return { text: kept + '\n[contextus: truncated at host ceiling]', cut: true };
+  return { text: kept + TRUNC_MARKER, cut: true };
 }
 
 /**
@@ -76,20 +80,40 @@ export function cutAtLine(text, cap) {
 export function emitMerged({ hookEventName, daemonBlock, footer, systemMessage }) {
   const block = String(daemonBlock ?? '');
   const foot = footer ? `\n\n${footer}` : '';
+  const sys = systemMessage
+    ? truncateChars(String(systemMessage), SYSTEM_MESSAGE_CHARS)
+    : undefined;
+  const buildWire = (m) => {
+    const o = { hookSpecificOutput: { hookEventName, additionalContext: m } };
+    if (sys !== undefined) o.systemMessage = sys;
+    return JSON.stringify(o) + '\n';
+  };
+  // Fit the WIRE bytes (payload + JSON envelope + systemMessage + newline),
+  // not just the payload — a cap-sized block still overflows the host's
+  // stdout limit once serialized.
+  const fitWire = (m) => {
+    let cur = m;
+    // Re-measure after each cut: JSON escaping can expand the payload, so a
+    // single pass can undershoot on quote-heavy text. Converges in practice
+    // on the first retry; bounded regardless.
+    for (let i = 0; i < 3; i++) {
+      const wire = buildWire(cur);
+      if (Buffer.byteLength(wire, 'utf8') <= STDOUT_CEILING) return wire;
+      const over = Buffer.byteLength(wire, 'utf8') - STDOUT_CEILING;
+      cur = cutAtLine(cur, Math.max(0, Buffer.byteLength(cur, 'utf8') - over)).text;
+    }
+    return buildWire(cutAtLine(cur, 0).text);
+  };
   let merged = block + foot;
-  if (Buffer.byteLength(merged, 'utf8') > STDOUT_CEILING && foot) {
+  if (Buffer.byteLength(buildWire(merged), 'utf8') > STDOUT_CEILING && foot) {
     console.error('[contextus] merged block over host ceiling: dropping adapter footer');
     merged = block;
   }
-  if (Buffer.byteLength(merged, 'utf8') > STDOUT_CEILING) {
+  if (Buffer.byteLength(buildWire(merged), 'utf8') > STDOUT_CEILING) {
     console.error('[contextus] DEFECT: daemon block exceeds host ceiling — line-cutting');
-    merged = cutAtLine(merged, STDOUT_CEILING).text;
   }
-  const out = {
-    hookSpecificOutput: { hookEventName, additionalContext: merged }
-  };
-  if (systemMessage) out.systemMessage = truncateChars(String(systemMessage), SYSTEM_MESSAGE_CHARS);
-  process.stdout.write(JSON.stringify(out) + '\n');
+  const wire = fitWire(merged);
+  process.stdout.write(wire);
 }
 
 /** Explicit no-op output: valid empty object, never an error, never applied. */

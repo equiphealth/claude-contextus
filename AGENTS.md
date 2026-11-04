@@ -21,7 +21,7 @@ PromptSubmit hook → daemon /query → embed prompt → vector search → reran
 ```
 
 - **Daemon** (`daemon/server.ts`) — HTTP server on localhost, auto-started by SessionStart hook
-- **Embedding** — nomic-embed-text via Ollama (768-dim), stored in LanceDB per-project
+- **Embedding** — nomic-embed-text via transformers, in-process (768-dim), stored in LanceDB per-project (Ollama path exists as fallback; `plugin.jsonc` `embedding.provider` is the source of truth)
 - **Retrieval** — similarity search + injection floor (0.45) + provenance footer
 - **Expansion** — multi-vector query expansion when initial scores are weak (adaptive/always/off)
 - **Calibration** — floor replay works (`/context-calibrate --floor`); post-prompt usage evaluation (Stop hook) not yet implemented
@@ -88,7 +88,7 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 **Corpus self-maintenance** (see `decisions/decision-corpus-self-maintenance-via-delete.md`) — bugs aren't the only thing that goes stale:
 - When a `decision` gets superseded, a `phase` ships, a `tradeoff` resolves, or a `question` gets answered — **archive the old file in the same commit**, via the daemon's `/delete` endpoint:
   ```bash
-  curl -s -X POST http://127.0.0.1:37800/delete \
+  curl -s -X POST "$(bash ~/.contextus/scripts/daemon-url.sh)/delete" \
     -H 'content-type: application/json' \
     -d '{"relPath":"<category>/<category>-<slug>.md","cwd":"'"$(pwd)"'"}'
   ```

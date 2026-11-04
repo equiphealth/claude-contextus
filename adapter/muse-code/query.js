@@ -160,18 +160,24 @@ async function main() {
     if (mode !== 'silent') {
       const text = readAwarenessPrompts(mode);
       if (text) {
-        let staged = 0;
-        let existing = 0;
         try {
-          const nov = await postJson(`${daemon}/novelty`, { prompt, projectId, cwd: abs }, 3000);
-          staged = Number.isFinite(nov?.stagedCount) ? nov.stagedCount : 0;
-          existing = Number.isFinite(nov?.existingCount) ? nov.existingCount : 0;
+          // GET-only route (no POST /novelty): recently-injected pattern names.
+          const res = await fetch(`${daemon}/novelty?project=${encodeURIComponent(projectId)}`, {
+            signal: AbortSignal.timeout(3000)
+          });
+          const nov = res.ok ? await res.json() : null;
+          const recent = Array.isArray(nov?.recent)
+            ? nov.recent.filter((n) => typeof n === 'string')
+            : [];
+          if (recent.length > 0) {
+            footer = text + `\nAlready-covered patterns (don't re-propose): ${recent.join(', ')}`;
+          } else {
+            footer = text;
+          }
         } catch {
-          /* footer degrades to uncounted; novelty failure never blocks */
+          /* footer degrades to unlisted; novelty failure never blocks */
+          footer = text;
         }
-        footer = text
-          .replace('{stagedCount}', String(staged))
-          .replace('{existingCount}', String(existing));
       }
     }
   }

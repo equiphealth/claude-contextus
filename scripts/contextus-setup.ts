@@ -58,7 +58,7 @@ import { mineProject } from './mine-transcripts.js';
 /** GET /health, parsed or null. Never throws (down-ness is data here). */
 async function readDaemonHealth(
   timeoutMs = 10000
-): Promise<{ modelLoaded?: unknown; version?: unknown } | null> {
+): Promise<{ modelLoaded?: unknown; version?: unknown; warmupError?: unknown } | null> {
   try {
     const res = await fetch(`${getDaemonURL()}/health`, {
       signal: AbortSignal.timeout(timeoutMs)
@@ -79,11 +79,43 @@ async function readDaemonHealth(
 async function ensureDaemonReady(): Promise<void> {
   const running = await readDaemonHealth();
   if (running) {
-    // Reuse wins over code path (condition 1): never restart, never upgrade
-    // under a live session. Drift only warns (inside noteDaemonVersion).
-    noteDaemonVersion(running);
-    console.log('  daemon           already running (reused — not restarted)');
-    return;
+    if (running.modelLoaded === true) {
+      // Reuse wins over code path (condition 1): never restart, never upgrade
+      // under a live session. Drift only warns (inside noteDaemonVersion).
+      noteDaemonVersion(running);
+      console.log('  daemon           already running (reused — not restarted)');
+      return;
+    }
+    if (typeof running.warmupError === 'string' && running.warmupError) {
+      // Hard failure, not still-warming: waiting or spawning over it helps
+      // nothing. Name the fix instead of writing the completion stamp.
+      throw new Error(
+        `daemon warmup failed: ${running.warmupError} — fix the provider, then re-run setup (a restart alone replays the same failure)`
+      );
+    }
+    // Alive but still warming (e.g. slow model load from another setup):
+    // wait for warm rather than stamping completion against a cold daemon.
+    // Never spawn over it — that would lose an EADDRINUSE race, not heal.
+    console.log('  daemon           alive but model not warm yet — waiting…');
+    const deadline = Date.now() + 90000;
+    for (;;) {
+      const health = await readDaemonHealth(5000);
+      if (health && health.modelLoaded === true) {
+        noteDaemonVersion(health);
+        console.log('  daemon           reachable and model warm (reused)');
+        return;
+      }
+      if (health && typeof health.warmupError === 'string' && health.warmupError) {
+        throw new Error(
+          `daemon warmup failed: ${health.warmupError} — fix the provider, then re-run setup`
+        );
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          'daemon stayed cold past the 90 s budget — check ~/.contextus/logs/daemon.log, then re-run setup'
+        );
+      }
+    }
   }
   console.log('  daemon           syncing neutral home…');
   const sync = syncNeutralDaemon({ log: (m) => console.log(`  neutral daemon  ${m}`) });

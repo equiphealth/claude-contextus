@@ -51,8 +51,7 @@ async function main() {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        filePath: relPath,
-        absolutePath: path.isAbsolute(relPath) ? relPath : path.join(abs, relPath),
+        file: relPath,
         project: abs,
         projectId: projectHash(abs),
         cwd: abs,

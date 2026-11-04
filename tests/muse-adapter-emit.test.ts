@@ -42,7 +42,15 @@ test('emitMerged: under ceiling passes block + footer through', () => {
 });
 
 test('emitMerged: over ceiling drops only the adapter footer', () => {
-  const daemonBlock = 'D'.repeat(STDOUT_CEILING - 10);
+  // The block must fit the WIRE cap (payload + JSON envelope + newline), not
+  // just the payload cap — otherwise this exercises the defect line-cut path.
+  const envelope = Buffer.byteLength(
+    JSON.stringify({
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '' }
+    }) + '\n',
+    'utf8'
+  );
+  const daemonBlock = 'D'.repeat(STDOUT_CEILING - envelope - 10);
   const { out, errors } = capture(() =>
     emitMerged({ hookEventName: 'UserPromptSubmit', daemonBlock, footer: 'FOOT'.repeat(100) })
   );
@@ -61,6 +69,37 @@ test('emitMerged: oversized daemon block hits the marked line-cut backstop', () 
   assert.ok(Buffer.byteLength(ctx, 'utf8') <= STDOUT_CEILING);
   assert.ok(ctx.includes('[contextus: truncated at host ceiling]'), 'cut is marked');
   assert.ok(errors.some((e) => e.includes('DEFECT')));
+});
+
+test('cutAtLine: result fits cap INCLUDING the marker', () => {
+  const { text, cut } = cutAtLine('keep-this\n' + 'x'.repeat(5000), 100);
+  assert.equal(cut, true);
+  assert.ok(
+    Buffer.byteLength(text, 'utf8') <= 100,
+    `marker-inclusive size must fit cap, got ${Buffer.byteLength(text, 'utf8')}`
+  );
+  assert.ok(text.endsWith('[contextus: truncated at host ceiling]'));
+});
+
+test('emitMerged: full wire output fits the host ceiling, envelope included', () => {
+  const big = 'line-one\n' + 'Z'.repeat(STDOUT_CEILING * 2);
+  const { out } = capture(() =>
+    emitMerged({
+      hookEventName: 'UserPromptSubmit',
+      daemonBlock: big,
+      footer: 'FOOT'.repeat(500),
+      systemMessage: 'sys note '.repeat(50)
+    })
+  );
+  const wire = out.endsWith('\n') ? out : out + '\n';
+  assert.ok(
+    Buffer.byteLength(wire, 'utf8') <= STDOUT_CEILING,
+    `wire size must fit host ceiling, got ${Buffer.byteLength(wire, 'utf8')}`
+  );
+  const parsed = JSON.parse(out);
+  assert.ok(
+    parsed.hookSpecificOutput.additionalContext.includes('[contextus: truncated at host ceiling]')
+  );
 });
 
 test('cutAtLine: under cap returns text unchanged', () => {

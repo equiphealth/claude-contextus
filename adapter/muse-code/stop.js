@@ -167,6 +167,7 @@ async function main() {
         injectedNames.length > 0
           ? `${Math.round((usedPatterns.length / injectedNames.length) * 100)}%`
           : '0%',
+      phash: injection.promptHash || '',
       project
     })
   );

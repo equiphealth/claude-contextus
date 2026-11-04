@@ -87,6 +87,9 @@ test('Stop reads canonical session-state and writes canonical usage log + eval q
 
     const daemonLog = fs.readFileSync(path.join(home, '.contextus', 'logs', 'daemon.log'), 'utf-8');
     assert.match(daemonLog, /Usage signal/);
+    // Verdict linkage: the human line carries the prompt hash so watch can
+    // join it to the retrieval that produced it (same key as the JSONL record).
+    assert.match(daemonLog, /phash=p1/);
 
     // Old paths stay untouched.
     assert.ok(!fs.existsSync(path.join(home, '.contextus', 'daemon.log')));
