@@ -14,7 +14,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
-import crypto from 'node:crypto';
+import { projectHash } from './lib/project-hash.js';
 import { getBaseURL, ensureDaemonRunning } from './lib/daemon-control.js';
 
 /** Read all of stdin as a string (the hook payload JSON). */
@@ -27,12 +27,6 @@ function readStdin() {
     // If nothing is piped, don't hang.
     if (process.stdin.isTTY) resolve('');
   });
-}
-
-/** Compute the projectId hash from an absolute path (matches lib/config.ts projectHash). */
-function projectId(cwd) {
-  const abs = path.resolve(cwd || process.cwd());
-  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
 }
 
 /** Read context-window stats written by statusline (best-effort). */
@@ -73,7 +67,7 @@ async function main() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         prompt,
-        project: projectId(cwd),
+        project: projectHash(cwd || process.cwd()),
         cwd,
         contextStats: readContextStats(),
         sessionId: process.env.CLAUDE_CODE_SESSION_ID

@@ -15,12 +15,12 @@ metadata:
 - **Same slug again:** Overwrites existing file (this is how you update)
 
 ```bash
-BASE_URL="${CONTEXTUS_DAEMON_URL:-http://127.0.0.1:$(cat ~/.contextus/runtime/daemon.port 2>/dev/null || echo 37800)}"
+BASE_URL=$(bash ~/.contextus/scripts/daemon-url.sh)
 curl -s -X POST "$BASE_URL/capture" \
   -H 'content-type: application/json' \
   -d '{"slug":"my-pattern","description":"...","category":"reference","body":"updated content","cwd":"$(pwd)"}'
 ```
-37800 is only the last-resort default — resolve `$CONTEXTUS_DAEMON_URL` / `~/.contextus/runtime/daemon.port` first, same priority order the hooks use (`scripts/lib/daemon-control.js` `getBaseURL()`).
+Never hardcode the port — `~/.contextus/scripts/daemon-url.sh` resolves it with the same priority the hooks use (`scripts/lib/daemon-control.js` `getBaseURL()`).
 
 ## How It Works
 

@@ -31,7 +31,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
-import crypto from 'node:crypto';
+import { projectHash } from './lib/project-hash.js';
 import {
   ensureDaemonRunning,
   ensureDepsInstalled,
@@ -85,11 +85,7 @@ function readStdin() {
   });
 }
 
-/** Compute the projectId hash from an absolute path (matches lib/config.ts projectHash). */
-function projectId(cwd) {
-  const abs = path.resolve(cwd || process.cwd());
-  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
-}
+
 
 async function main() {
   // Housekeeping: remove stale stats files from previous sessions (best-effort).
@@ -184,7 +180,7 @@ async function main() {
   // review of #40, item #6). checkCorpus has its own internal try/catch and
   // 1500ms timeout, so calling it here even when the daemon never came up at
   // all is safe — it just returns null quickly.
-  const project = projectId(cwd);
+  const project = projectHash(cwd || process.cwd());
   const plan = await checkCorpus(project, cwd);
 
   // Auto-reconcile: only meaningful once the model is warm (the daemon can't

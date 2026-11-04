@@ -1,12 +1,12 @@
 Context capture (staging mode active): call the daemon's /capture endpoint directly — do NOT use the Write tool (skips embedding) and do NOT output "Context: propose: <topic>" or ask permission first.
 
 ```bash
-BASE_URL="${CONTEXTUS_DAEMON_URL:-http://127.0.0.1:$(cat ~/.contextus/runtime/daemon.port 2>/dev/null || echo 37800)}"
+BASE_URL=$(bash ~/.contextus/scripts/daemon-url.sh)
 curl -s -X POST "$BASE_URL/capture" \
   -H 'content-type: application/json' \
   -d '{"slug":"<kebab-slug>","description":"<one-line topical signal>","category":"<type>","tags":["optional","tags"],"body":"<full markdown body>","cwd":"'"$(pwd)"'"}'
 ```
-Don't hardcode port 37800 — it's only the last-resort default. Resolve it as above: `$CONTEXTUS_DAEMON_URL` env var first, then `~/.contextus/runtime/daemon.port`.
+Don't hardcode the port — `daemon-url.sh` resolves it (`$CONTEXTUS_DAEMON_URL`, then the daemon's port file, then 37800).
 
 Categories: `arch`, `decision`, `tradeoff`, `gotcha`, `api`, `phase`, `project`, `schema`, `security`, `perf`, `reference`, `implementation`. Scope: `cwd` alone = project; add `"scope":"user"` for cross-project/personal patterns. Same `slug`+`category` **overwrites** the existing file — read it first if preserving content.
 

@@ -78,7 +78,8 @@ import {
   logParanoid,
   logError,
   logInfo,
-  promptHash
+  promptHash,
+  promptPreview
 } from '../lib/logger.js';
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 import { startEvalLoop, stopEvalLoop } from './eval-loop.js';
@@ -639,6 +640,9 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   stats.queries++;
   let expansionStatus: LastInjectionDebug['expansion'] =
     cfg.expansion.mode === 'off' ? 'off' : 'skipped';
+  // Row id → variant index that surfaced it (-1 = original prompt).
+  // Filled during the union merge below; read at log time for attribution.
+  const variantSource = new Map<string, number>();
   // Set only on a configured-but-broken credential (see ExpandedQueries.warning) —
   // surfaced into the actual model-visible response below, not just daemon.log.
   let expansionWarning: string | undefined;
@@ -661,20 +665,28 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         })
       );
       // Union: merge all results, dedupe by row id (keep highest similarity).
+      // variantSource tracks WHICH query surfaced each row (-1 = original
+      // prompt, N = expanded variant index) so watch can attribute winners.
       const originalCount = raw.length;
       const seen = new Map<string, (typeof raw)[0]>();
-      for (const r of raw) seen.set(r.id, r);
-      for (const results of variantSearches) {
-        for (const r of results) {
+      for (const r of raw) {
+        seen.set(r.id, r);
+        variantSource.set(r.id, -1);
+      }
+      for (let vi = 0; vi < variantSearches.length; vi++) {
+        for (const r of variantSearches[vi]) {
           const existing = seen.get(r.id);
           if (!existing || r.similarity > existing.similarity) {
             seen.set(r.id, r);
+            variantSource.set(r.id, vi);
           }
         }
       }
       raw = Array.from(seen.values());
       logInfo('Expansion fired', {
         project: projectLabel,
+        phash: hash,
+        prompt: `"${promptPreview(prompt).replace(/"/g, "'")}"`,
         variants: expanded.variants,
         provider: expanded.provider,
         latencyMs: expanded.latencyMs,
@@ -686,6 +698,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     stats.expansionSkipped++;
     logInfo('Expansion skipped', {
       project: projectLabel,
+      phash: hash,
+      prompt: `"${promptPreview(prompt).replace(/"/g, "'")}"`,
       initialBest: Number(initialBest.toFixed(4)),
       threshold: cfg.expansion.expansionThreshold
     });
@@ -710,10 +724,13 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     logNoInject({
       project: projectLabel,
       promptHash: hash,
+      promptPreview: promptPreview(prompt),
       bestScore: Number(outcome.bestScore.toFixed(4)),
       promptTokens: estimateTokens(prompt),
       latencyMs: Date.now() - started,
-      floorDropped: outcome.floorDropped
+      floorDropped: outcome.floorDropped,
+      // Fired but nothing injected = failed rescue; not fired = n/a.
+      rescued: expansionStatus === 'fired' ? false : null
     });
     writeLastInjectionDebug(sessionId, projectId, {
       project: projectLabel,
@@ -797,15 +814,30 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     });
   }
 
+  // Attribute each injected row to the query that surfaced it (-1 = original
+  // prompt). Only meaningful when expansion fired; otherwise stays empty and
+  // the log line omits variant info entirely.
+  const variantAttribution: Record<string, number> = {};
+  if (expansionStatus === 'fired') {
+    for (const r of included) {
+      variantAttribution[r.filename || r.id] = variantSource.get(r.id) ?? -1;
+    }
+  }
+  const wasWeakStart =
+    expansionStatus === 'fired' && initialBest < cfg.expansion.expansionThreshold;
   logRetrieval({
     project: projectLabel,
     promptHash: hash,
+    promptPreview: promptPreview(prompt),
     retrieved: injectedNames,
     similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
     tokensInjected: tokens,
     promptTokens: estimateTokens(prompt),
     latencyMs: Date.now() - started,
-    floorDropped: outcome.floorDropped
+    floorDropped: outcome.floorDropped,
+    initialBest: expansionStatus === 'fired' ? initialBest : null,
+    rescued: expansionStatus === 'fired' ? wasWeakStart : null,
+    variantAttribution
   });
 
   if (cfg.logging.paranoid) {

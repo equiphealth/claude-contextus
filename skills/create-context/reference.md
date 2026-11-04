@@ -78,7 +78,7 @@ base URL the same way the hooks/scripts do (`scripts/lib/daemon-control.js` /
 3. Only if neither exists, fall back to `http://127.0.0.1:37800`.
 
 ```bash
-BASE_URL="${CONTEXTUS_DAEMON_URL:-http://127.0.0.1:$(cat ~/.contextus/runtime/daemon.port 2>/dev/null || echo 37800)}"
+BASE_URL=$(bash ~/.contextus/scripts/daemon-url.sh)
 curl -s -X POST "$BASE_URL/capture" \
   -H 'content-type: application/json' \
   -d '{"category":"<type>","slug":"<kebab-slug>","description":"<one line>","body":"<markdown body>","scope":"project","cwd":"'"$(pwd)"'","tags":["optional"]}'

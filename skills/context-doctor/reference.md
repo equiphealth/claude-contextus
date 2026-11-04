@@ -24,19 +24,28 @@ sets cwd to contextus and inspects the *wrong* corpus).
 
 ```bash
 cd <target-project>
-TSX=~/src/claude-contextus/node_modules/.bin/tsx
+# Neutral-copy tsx (Muse host: the plugin package is lean — run repo scripts
+# from ~/.contextus/daemon, which has the full node_modules). Node 22 required.
+TSX=~/.contextus/daemon/node_modules/.bin/tsx
+REPO=~/src/contextus   # the contextus checkout under test
+
+# Resolve the daemon base URL via the installed helper (never hardcode the port):
+BASE_URL=$(bash ~/.contextus/scripts/daemon-url.sh)
 
 # 1. Is the daemon alive + warm? (provider, model, warmupError)
-curl -s 127.0.0.1:37800/health | jq
+curl -s "$BASE_URL/health" | jq
 
 # 2. What's the corpus state for THIS project? (new/stale/fresh/empty + quarantined[])
-PROJECT_ID=$(echo -n "$PWD" | sha256sum | cut -c1-12)
-curl -s -X POST http://127.0.0.1:37800/reconcile \
+# Pass the path and let the daemon canonicalize it server-side (resolveProjectId).
+# Do NOT pre-compute the hash in shell: `echo -n | sha256sum` is not portable
+# (some shells print a literal "-n" and a trailing newline, hashing the wrong
+# bytes), and a wrong hash silently lazy-registers a phantom project.
+curl -s -X POST "$BASE_URL/reconcile" \
   -H 'Content-Type: application/json' \
-  -d "{\"project\":\"${PROJECT_ID}\",\"cwd\":\"$PWD\",\"check\":true}" | jq
+  -d "{\"project\":\"$PWD\",\"cwd\":\"$PWD\",\"check\":true}" | jq
 
 # 3. Replay a real query — shows scores AND the per-project floor + below-floor flags
-$TSX ~/src/claude-contextus/scripts/search.ts "your actual prompt here"
+$TSX $REPO/scripts/search.ts "your actual prompt here"
 
 # 4. The source of truth for live retrievals (scores, no-inject decisions)
 tail -30 ~/.contextus/logs/daemon.log

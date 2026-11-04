@@ -551,6 +551,31 @@ Query expansion: generates alternate phrasings when initial search is weak
   'always'   = every query (+100-200ms, higher recall)
   'off'      = disabled (saves latency)
   [Keep adaptive] [always] [off]
+
+Expansion provider (default: Ollama `qwen2.5:3b` with Bedrock Haiku fallback —
+needs nothing, no keys involved). Change it only to demo or debug another
+backend:
+  [Keep Ollama] [Meta (`muse-spark-1.3-contributor`)] [Anthropic]
+
+If Meta or Anthropic: the daemon needs an API key, and setup must NEVER see
+the key value itself — not pasted, not echoed, not captured. Ask for a FILE
+path only:
+  "Path to a file holding ONLY the API key? (first non-blank line is read)"
+
+Validate without ever printing contents: the file must exist, be readable,
+and non-empty — report only pass/fail and the path. Warn (do not block) if it
+is group/world-readable. Write the PATH — never the key — to the
+machine-local tier-2 file `~/.contextus/data/<project>/config.json`
+(`projectLocalConfigPath()`), never to git-committed tier-3:
+  { "expansion": { "provider": "meta", "model": "muse-spark-1.3-contributor",
+      "timeoutMs": 25000 },
+    "providers": { "meta": { "apiKeyFile": "<path>" } } }
+(Meta is a reasoning model — it needs the generous timeout; the 5000ms default
+is tuned for local Ollama.) Then verify live with one `expandQuery` before
+declaring setup finished: a configured-but-broken key file throws naming the
+path rather than silently demoting to fallback, and that error is only useful
+here, at setup time — not weeks later on a weak query. Anthropic is the same
+shape under `providers.anthropic.apiKeyFile`.
 ```
 
 ### P5: Sources
@@ -699,6 +724,10 @@ If "enabled": add `"transcriptMining": { "enabled": true, "intervalHours": <chos
      },
      "expansion": {
        "mode": "<chosen>"
+       // + "provider"/"model"/"timeoutMs" ONLY if P4 changed the provider:
+       //   those three, plus the apiKeyFile PATH, go to tier-2
+       //   (~/.contextus/data/<project>/config.json), NEVER here —
+       //   keys must not be git-committed
      },
      "notifications": {
        "verbosity": "<chosen>"

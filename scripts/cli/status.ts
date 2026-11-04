@@ -11,12 +11,12 @@
  */
 
 import { execSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readVersionState, compareSemver } from '../../lib/version.js';
+import { projectHash } from '../../lib/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -327,9 +327,7 @@ async function main() {
   }
 
   // Detect project if not specified — supports hash, name, or path via registry lookup
-  const project = opts.project
-    ? resolveProject(opts.project)
-    : crypto.createHash('sha256').update(path.resolve(process.cwd())).digest('hex').slice(0, 12);
+  const project = opts.project ? resolveProject(opts.project) : projectHash(process.cwd());
 
   if (opts.cost) {
     runCostReport(project, opts.days);

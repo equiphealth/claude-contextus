@@ -16,19 +16,20 @@ The contextus daemon supports per-project scoping via the unified LanceDB. Howev
 
 ## The Fix
 
-All daemon HTTP calls from skills must compute and pass the `projectId` query parameter:
+All daemon HTTP calls from skills must pass a project identifier — and the
+identifier should be the absolute path (or `cwd`), NOT a hand-computed hash.
+The daemon canonicalizes hash/name/path server-side (`resolveProjectId` +
+`projectHash(cwd)` fallback), so hand-hashing in shell only adds a way to get
+it wrong (`echo -n` is not portable; a wrong hash silently lazy-registers a
+phantom project):
 
 ```bash
-# Compute projectId (same as daemon does)
-cwd=$(pwd)  # or resolve from manifest
-projectId=$(echo -n "$cwd" | sha256sum | cut -c1-12)
+# Example: /introspect — pass the path, daemon hashes it
+curl -s "http://127.0.0.1:37800/introspect?project=$(pwd)"
 
-# Example: /introspect
-curl -s "http://127.0.0.1:37800/introspect?project=${projectId}"
-
-# Example: POST /query with project in body
+# Example: POST /query with project in body (cwd does the scoping work)
 curl -X POST -H "Content-Type: application/json" \
-  -d "{\"project\":\"${projectId}\",\"prompt\":\"...\"}" \
+  -d "{\"project\":\"$(pwd)\",\"cwd\":\"$(pwd)\",\"prompt\":\"...\"}" \
   http://127.0.0.1:37800/query
 ```
 
@@ -42,8 +43,8 @@ projectId = sha256(absolutePath).slice(0, 12)
 Where `absolutePath` is the absolute filesystem path to the project root (e.g., `/Users/alice/src/my-project`).
 
 This ensures:
-- Same project at different paths = same hash (portable)
-- Different projects = different hashes (collision-free)
+- Same absolute path on different machines = same hash (portable across shared workspaces)
+- Different paths (including two clones of one repo) = different hashes (collision-free — but note this means renames/moves orphan the old corpus; see the adopt-on-move plan)
 - Opaque (not leaking paths in logs)
 
 ## Where Project Parameter Goes
@@ -71,11 +72,8 @@ Skills that query the daemon MUST:
 # 1. Get current project path
 PROJECT_PATH=$(pwd)
 
-# 2. Compute projectId
-PROJECT_ID=$(echo -n "$PROJECT_PATH" | sha256sum | cut -c1-12)
-
-# 3. Query /introspect with projectId
-curl -s "http://127.0.0.1:37800/introspect?project=${PROJECT_ID}" \
+# 2. Query /introspect with the path — the daemon resolves it to the canonical hash
+curl -s "http://127.0.0.1:37800/introspect?project=${PROJECT_PATH}" \
   | jq '.corpus'
 ```
 
@@ -97,8 +95,7 @@ curl -s "http://127.0.0.1:37800/introspect" | jq '.corpus.chunks'
 # => 1472 (all projects)
 
 # With project parameter (CORRECT — this project only)
-projectId=$(echo -n "$(pwd)" | sha256sum | cut -c1-12)
-curl -s "http://127.0.0.1:37800/introspect?project=${projectId}" \
+curl -s "http://127.0.0.1:37800/introspect?project=$(pwd)" \
   | jq '.corpus.chunks'
 # => 855 (claude-contextus only)
 ```

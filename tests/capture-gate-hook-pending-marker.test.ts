@@ -16,15 +16,11 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { projectHash } from '../scripts/lib/project-hash.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOOK = path.resolve(__dirname, '..', 'scripts', 'capture-gate-hook.js');
-
-function projectHash(cwd: string): string {
-  return crypto.createHash('sha256').update(path.resolve(cwd)).digest('hex').slice(0, 12);
-}
 
 function writeTranscript(homeDir: string, lines: unknown[]): string {
   const file = path.join(homeDir, 'transcript.jsonl');

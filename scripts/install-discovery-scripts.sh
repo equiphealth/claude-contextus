@@ -14,6 +14,7 @@ INSTALL_DIR="${HOME}/.contextus/scripts"
 SCRIPTS=(
     "daemon-config.sh"
     "find-contextus-root.sh"
+    "daemon-url.sh"
 )
 
 echo "Installing contextus discovery scripts to ${INSTALL_DIR}..."

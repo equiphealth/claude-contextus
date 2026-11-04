@@ -27,8 +27,7 @@
  * respawn and move on (the file gets picked up by the next full embed or edit).
  */
 
-import crypto from 'node:crypto';
-import path from 'node:path';
+import { projectHash } from './lib/project-hash.js';
 import { getBaseURL, ensureDaemonRunning } from './lib/daemon-control.js';
 
 function readStdin() {
@@ -43,11 +42,6 @@ function readStdin() {
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj));
-}
-
-function projectId(cwd) {
-  const abs = path.resolve(cwd || process.cwd());
-  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
 }
 
 /**
@@ -91,7 +85,7 @@ async function main() {
     const res = await fetch(`${getBaseURL()}/notify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ file, cwd, project: projectId(cwd) }),
+      body: JSON.stringify({ file, cwd, project: projectHash(cwd || process.cwd()) }),
       signal: AbortSignal.timeout(5000),
     });
     const result = await res.json().catch(() => null);

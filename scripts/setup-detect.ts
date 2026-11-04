@@ -10,7 +10,6 @@
  *   pnpm setup-detect --dir <path>     # detect from specific project root
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -20,7 +19,7 @@ import { promisify } from 'node:util';
 import { commandExists, detectPlatform, hasHomebrew, type Platform } from './install-ollama.js';
 import { hasAgentsStanza, readSetupStamp } from './lib/daemon-control.js';
 import type { SetupHost } from '../lib/capture/claude-md-stanza.js';
-import { loadConfig } from '../lib/config.js';
+import { loadConfig, projectHash } from '../lib/config.js';
 
 const exec = promisify(execCb);
 
@@ -42,7 +41,12 @@ type OllamaState =
  * `not-checked` keeps the Claude path free of a muse-CLI probe.
  */
 export type MuseApproval =
-  'not-checked' | 'cli-missing' | 'not-installed' | 'review_needed' | 'trusted' | 'unknown';
+  | 'not-checked'
+  | 'cli-missing'
+  | 'not-installed'
+  | 'review_needed'
+  | 'trusted'
+  | 'unknown';
 
 /**
  * Pure parser for `muse plugins inspect` output (live shapes: `status=review_needed`,
@@ -251,7 +255,7 @@ async function detectOllama(): Promise<OllamaState> {
 
 async function main(): Promise<void> {
   const { dir: cwd, host } = parseArgs();
-  const project = crypto.createHash('sha256').update(path.resolve(cwd)).digest('hex').slice(0, 12);
+  const project = projectHash(cwd);
   const platform = detectPlatform();
   const stamp = readSetupStamp(cwd);
 
