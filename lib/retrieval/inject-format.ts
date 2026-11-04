@@ -158,7 +158,7 @@ export function fitBlockToCeiling(opts: {
     (a, b) => (b.finalScore ?? b.similarity) - (a.finalScore ?? a.similarity)
   );
   const dropped: RankedResult[] = [];
-  let remaining = [...ranked];
+  const remaining = [...ranked];
   while (remaining.length > 0) {
     const lowest = remaining.pop();
     if (lowest === undefined) break;
