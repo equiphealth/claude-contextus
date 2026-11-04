@@ -11,7 +11,12 @@ import type { RankedResult } from './reranker.js';
 import { rerank } from './reranker.js';
 import { dedupe, collapseByFile } from './dedup.js';
 import { applyFloor } from './floor.js';
-import { formatInjection, renderFooterInstruction } from './inject-format.js';
+import {
+  formatInjection,
+  renderFooterInstruction,
+  fitBlockToCeiling,
+  estimateTokens
+} from './inject-format.js';
 import { buildRetrievalMissNotice, isNearMiss, extractNearTopics } from './miss-notice.js';
 import type { DroppedChunkLog } from '../logger.js';
 
@@ -20,6 +25,12 @@ export interface PipelineConfig {
   injectionFloor: number;
   maxTokens: number;
   provenanceFooter: boolean;
+  /**
+   * Optional host byte ceiling (Muse edge seam). When set, the assembled
+   * block is fit intelligently (chunk-drop with references, §fitBlockToCeiling)
+   * instead of going out whole. When unset, assembly is exactly today's.
+   */
+  byteCeiling?: number;
 }
 
 export type PipelineOutcome =
@@ -68,6 +79,24 @@ export function processSearchResults(
     : '';
   const footer = config.provenanceFooter ? renderFooterInstruction(included) : '';
   const block = rawBlock + fallbackNotice + footer;
+
+  if (config.byteCeiling && config.byteCeiling > 0) {
+    const fit = fitBlockToCeiling({
+      kept,
+      maxTokens: config.maxTokens,
+      cwd: opts?.cwd,
+      fallbackNotice: !!opts?.usedKeywordFallback,
+      provenanceFooter: config.provenanceFooter,
+      byteCeiling: config.byteCeiling
+    });
+    return {
+      kind: 'inject',
+      block: fit.block,
+      included: fit.included,
+      tokens: estimateTokens(fit.block),
+      floorDropped
+    };
+  }
 
   return { kind: 'inject', block, included, tokens, floorDropped };
 }

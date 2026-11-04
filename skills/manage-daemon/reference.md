@@ -33,11 +33,16 @@ When the user invokes this skill, determine the action from their argument (defa
 PID=$(cat ~/.contextus/runtime/daemon.pid 2>/dev/null)
 if [ -n "$PID" ] && ps -p "$PID" > /dev/null 2>&1; then
   echo "Daemon running (PID $PID)"
-  curl -s http://127.0.0.1:37800/health | jq .
+  curl -s "$(bash ~/.contextus/scripts/daemon-url.sh)/health" | jq .
 else
   echo "Daemon not running"
 fi
 ```
+
+Never inline the port-resolution fallback chain (`$CONTEXTUS_DAEMON_URL` →
+`daemon.port` file → 37800) — always call `daemon-url.sh`. An inlined copy
+drifting from the canonical one already caused a real incident (phantom
+project from hashing the wrong bytes).
 
 ### Stop
 
@@ -53,54 +58,51 @@ fi
 
 ### Start
 
-**Do not launch with a bare `cmd & disown`.** That pattern only detaches the process from the *current shell's job table* — if the shell itself is a child of the calling agent/CLI process (true whenever you're launching from inside an agent's Bash tool, not a real interactive terminal), the daemon's parent is still that shell, which is still a descendant of the CLI session. Exiting the session can take the daemon down with it. This is not hypothetical — it happened in practice: `& disown` inside an agent Bash call left the daemon parented straight back to the `claude` process (confirmed via `ps -o pid,ppid`), and the `disown` itself silently failed under a restricted shell allowlist without erroring loudly.
-
-Use `nohup` with explicit fd redirection instead, and verify reparenting after, don't just trust the launch succeeded silently:
+**Don't hand-roll a launch command — delegate to `ensureDaemonRunning()`.**
+`scripts/lib/daemon-control.js` already resolves neutral-dist vs repo-dist vs
+`CONTEXTUS_DEV=1` tsx-on-source correctly, and spawns via Node's own
+`detached: true` + `unref()` (not a shell `nohup ... & disown`, which this
+doc used to recommend — that pattern is one layer too low: it can leave the
+process parented to the calling shell if the shell itself is a child of the
+agent/CLI session, and `disown` can silently no-op under a restricted shell
+allowlist with no error). A hand-rolled `node --import tsx daemon/server.ts`
+also skips the neutral-dist check entirely, which is exactly backwards —
+confirmed live (2026-11-01): a manual tsx-on-repo-source launch either
+failed outright (environment-specific native-module issue in the repo's own
+`node_modules`) or lost a race against the correct neutral-dist spawn
+elsewhere, while the WRONG approach was the one being followed as "the
+documented procedure." Never reimplement this a second, divergent way:
 
 ```bash
-# Check not already running
+cd ~/.contextus/daemon   # neutral copy — always present post-setup, no repo checkout needed
+node --import tsx -e "
+import('./scripts/lib/daemon-control.js').then(async (m) => {
+  const wasRunning = await m.ensureDaemonRunning();
+  console.log(wasRunning ? 'Daemon already healthy' : 'Spawned (resolveLaunch picked neutral dist / repo dist / dev tsx as appropriate)');
+});
+"
+
+# Give it a moment, then verify the SAME way regardless of which build ran:
+sleep 2
 PID=$(cat ~/.contextus/runtime/daemon.pid 2>/dev/null)
 if [ -n "$PID" ] && ps -p "$PID" > /dev/null 2>&1; then
-  echo "Daemon already running (PID $PID) — use restart to replace it"
-  exit 0
-fi
-
-# Launch fully detached: nohup (ignore SIGHUP) + redirect all three fds explicitly
-# (bare `&` without stdin redirection can still leave the process attached to a
-# controlling terminal/session in some shell configs) + disown (best-effort - if
-# this silently no-ops under a restricted shell, nohup + fd redirection alone is
-# still enough for the process to survive the parent shell exiting)
-mkdir -p ~/.contextus/logs
-CONTEXTUS_ROOT=~/src/claude-contextus
-cd "$CONTEXTUS_ROOT"
-nohup node --import tsx daemon/server.ts > ~/.contextus/logs/daemon.log 2>&1 < /dev/null &
-disown
-
-# Wait briefly for PID file
-sleep 2
-NEW_PID=$(cat ~/.contextus/runtime/daemon.pid 2>/dev/null)
-if [ -n "$NEW_PID" ] && ps -p "$NEW_PID" > /dev/null 2>&1; then
-  echo "Daemon started (PID $NEW_PID)"
-  curl -s http://127.0.0.1:37800/health | jq .
-
-  # Verify it's actually detached, not just running - PID-file existence alone
-  # does NOT prove this. A PPID of 1 (macOS/Linux init/launchd) confirms the
-  # parent shell already exited and the daemon was reparented, i.e. it is
-  # genuinely independent of whatever launched it.
-  PPID=$(ps -o ppid= -p "$NEW_PID" | tr -d ' ')
-  if [ "$PPID" = "1" ]; then
-    echo "Confirmed detached (PPID 1 — reparented to init)"
-  else
-    echo "WARNING: daemon PPID is $PPID, not 1 — it may still be attached to the launching shell/session. Re-check with: ps -o pid,ppid,command -p $NEW_PID"
-  fi
+  echo "Daemon running (PID $PID)"
+  ps -o pid,ppid,command -p "$PID"   # confirm PPID 1 (reparented) AND which build actually launched
+  curl -s "$(bash ~/.contextus/scripts/daemon-url.sh)/health" | jq .
 else
   echo "ERROR: daemon failed to start — check ~/.contextus/logs/daemon.log"
 fi
 ```
 
+If `ensureDaemonRunning()` throws (no runnable build at all — neutral dist
+missing, repo dist missing, no repo tsx), it names the fix directly: `node
+scripts/sync-neutral-daemon.js`. Don't work around that by falling back to
+a manual launch — that's the exact anti-pattern this section now warns
+against.
+
 ### Restart
 
-Run stop, then start (using the detached-launch pattern above, not a bare `& disown`). Report the new PID, health status, and the PPID-1 detachment confirmation.
+Run stop, then start (using `ensureDaemonRunning()` above, never a hand-rolled launch command). Report the new PID, which build actually launched (`ps -o command`), health status, and PPID 1.
 
 ## When to Use
 
@@ -116,3 +118,4 @@ Run stop, then start (using the detached-launch pattern above, not a bare `& dis
 - If start fails, check `~/.contextus/logs/daemon.log` for errors (model load failures, port conflicts)
 - The daemon listens on port 37800 by default (localhost only)
 - **When manually restarting from inside an agent session** (not the SessionStart hook's own launch path — that one's fine), always confirm PPID 1 after start. A daemon manually restarted mid-session and left attached to that session's process tree will die when the session exits, silently undoing the restart. See the Start section above for why `& disown` alone isn't sufficient.
+- **In Muse Code, do not restart the daemon from inside an agent session.** Unmanaged backgrounding is blocked, and a process started in session dies with the session. Do not stop a healthy daemon unless a surviving replacement is already guaranteed outside the session. For a restart, give the user the exact terminal commands, have them run those outside the session, then verify health after. A daemon run under a managed session is temporary only, and must be labeled as a bridge, not a restart.

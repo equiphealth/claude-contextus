@@ -18,7 +18,6 @@
  * eyeball — the apply path is gated in the calling script, never here.
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -26,7 +25,7 @@ import { embedQuery } from '../embedding/embedder.js';
 import { search, tableExists } from '../storage/lance-client.js';
 import { rerank } from '../retrieval/reranker.js';
 import { collapseByFile } from '../retrieval/dedup.js';
-import { loadConfig } from '../config.js';
+import { loadConfig, projectHash } from '../config.js';
 import {
   recommendFloor,
   type ReplayResult,
@@ -109,9 +108,7 @@ export async function runFloorReplay(
   opts: ReplayOptions = {},
   onProgress?: (msg: string) => void
 ): Promise<ReplayOutcome> {
-  const project =
-    opts.project ??
-    crypto.createHash('sha256').update(path.resolve(process.cwd())).digest('hex').slice(0, 12);
+  const project = opts.project ?? projectHash(process.cwd());
   const limit = opts.limit ?? Infinity;
   const cfg = loadConfig();
 

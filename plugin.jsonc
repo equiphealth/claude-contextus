@@ -5,7 +5,7 @@
   // Two files on purpose: this is the tunable runtime config, that is the install descriptor.
   // Keep `version` in sync with the manifest.
   "name": "contextus",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "description": "Context-aware knowledge system with automatic semantic retrieval",
   "author": "Anthony Dawson",
   "repository": "github:equiphealth/claude-contextus",
@@ -23,6 +23,13 @@
         "region": "us-east-1"
       },
       "anthropic": {}
+      // Meta Model API (Muse support). Uncomment to use; key comes from the
+      // named env var at call time, never baked in here.
+      // "meta": {
+      //   "endpoint": "https://api.meta.ai/v1",
+      //   "apiKeyEnv": "META_API_KEY"
+      // }
+      // MODEL_API_KEY is honored as a fallback when apiKeyEnv is unset.
     },
     "sources": {
       "projectContext": {
@@ -64,10 +71,17 @@
       "path": "~/.contextus/data/{project-name}"
     },
     "embedding": {
-      // DESIGN.md default is 'transformers' (in-process ONNX). Deployed as 'ollama'
-      // because the corporate Cloudflare Gateway blocks Hugging Face model downloads —
-      // Ollama runs the same nomic model locally over localhost.
-      "provider": "ollama",
+      // DECIDED 2026-11-01: stay on 'transformers' (in-process ONNX, DESIGN.md's own
+      // default) — every corpus on this machine (both projects + user scope) is
+      // already transformers-embedded. Do NOT flip this back to 'ollama' without a
+      // full re-embed of every project AND user-scope corpus on the machine first:
+      // the daemon loads ONE model for its ONE shared LanceDB, so a provider change
+      // here is a machine-wide migration, not a config edit — see
+      // gotchas/gotcha-embedding-provider-switch.md. 'ollama' was tried earlier
+      // (corporate network concerns over HF downloads), but that risk is
+      // network-dependent, not universal, and transformers is what's actually
+      // running everywhere today.
+      "provider": "transformers",
       "model": "nomic-ai/nomic-embed-text-v1.5",
       "ollamaModel": "nomic-embed-text",
       "dimensions": 768,
@@ -107,6 +121,11 @@
       "maxVariants": 3,
       "temperature": 0.7,
       "timeoutMs": 5000
+      // Meta example (Spark 1.3 Contributor — verified live; reasoning models
+      // need headroom, so raise the timeout or expansion silently falls back):
+      // "provider": "meta",
+      // "model": "muse-spark-1.3-contributor",
+      // "timeoutMs": 25000
     },
     "autoRebuild": true,
     "contextCapture": {
@@ -148,6 +167,11 @@
       "reduceAt": 70, // reduce topK to min(configured, 3)
       "minimalAt": 80, // topK=1, floor*1.2
       "disableAt": 85 // no injection, emit warning
+      // Optional explicit context-window size (tokens). Hosts that report
+      // cumulative input_tokens without a used_percentage (Muse PostLLMCall
+      // accumulator) resolve pct = input_tokens / contextWindowTokens * 100.
+      // Unset = percentage path only; the daemon never guesses a window.
+      // "contextWindowTokens": 200000
     },
     "usageEvaluation": {
       // Evaluate injected context usage after each response. Runs in a background loop

@@ -2,6 +2,8 @@
 
 **Proactive context delivery for Claude Code** — automatic semantic retrieval from `.claude/context/`, injected on every prompt without querying.
 
+> Muse Code sessions read `AGENTS.md`, not this file — it mirrors the project conventions below. Keep the two in sync; the `<!-- contextus -->` stanza is setup-owned in both.
+
 ## Project Status
 
 **State**: Running in production (dogfooding across multiple repos)  
@@ -67,7 +69,7 @@ pnpm daemon            # start daemon manually (normally auto-started by hooks)
 - Pre-commit hook checks prettier (install: `pnpm prepare`)
 - Target ~80% test coverage — exports + edge cases + failures, skip internal-helper obsession
 - JSONC everywhere — use `//` comments, no trailing commas
-- **Daemon code changes**: Restart daemon before verification (`/manage-daemon restart`) — tests actual deployment path, not shortcuts. Direct script execution (`npx tsx ...`) bypasses daemon and may show false positive.
+- **Daemon code changes**: Restart daemon before verification (`/manage-daemon restart`) — tests actual deployment path, not shortcuts. Direct script execution (`npx tsx ...`) bypasses daemon and may show false positive. Hook-time launching defaults to production builds (neutral dist, else repo dist) — repo developers iterating on `.ts` sources via hooks must `export CONTEXTUS_DEV=1` for tsx-on-source behavior.
 
 **When documenting discoveries**:
 - Durable patterns → `.claude/context/<category>/` (auto-embedded)

@@ -16,7 +16,7 @@ ProjectId is a 12-char SHA256 hash of the absolute path (e.g., `09536d40613e`). 
 
 ## Why We Use Hashes
 
-**Stability across renames/moves**: If projectId was the path string, moving a project would orphan its entire corpus. The hash creates a stable identifier independent of filesystem location.
+**Stability of the lookup key (NOT across renames/moves)**: The hash decouples the DB key and every log/config reference from the raw path string — only the registry maps it back. But the hash is *of* the path, so a rename/move still produces a new ID and orphans the old corpus. True move-stability needs an adopt-on-move flow (detect known name at unknown path during setup, offer to adopt the old corpus); until that exists, treat moves as new projects.
 
 **No name collisions**: Multiple projects named "automation" or "app" would conflict if we used basename. Hashes guarantee uniqueness.
 

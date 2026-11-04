@@ -79,6 +79,8 @@ export interface DroppedChunkLog {
 export interface RetrievalLog {
   project: string;
   promptHash: string;
+  /** whitespace-collapsed first 120 chars of the prompt (watch display + grouping) */
+  promptPreview: string;
   retrieved: string[];
   similarityScores: number[];
   tokensInjected: number;
@@ -87,6 +89,17 @@ export interface RetrievalLog {
   latencyMs: number;
   /** every chunk the floor dropped, with its score (v2 governance evidence) */
   floorDropped: DroppedChunkLog[];
+  /** best initial (pre-expansion) score, when expansion fired; else null */
+  initialBest: number | null;
+  /** true when expansion fired on a weak query and retrieval then injected */
+  rescued: boolean | null;
+  /** injected filename → variant index that surfaced it (-1 = original query) */
+  variantAttribution: Record<string, number>;
+}
+
+/** Collapse whitespace and truncate — prompt preview safe for single-line logs. */
+export function promptPreview(prompt: string, maxLen = 120): string {
+  return prompt.replace(/\s+/g, ' ').trim().slice(0, maxLen);
 }
 
 /** Log a successful retrieval (≥1 chunk injected) to both sinks. */
@@ -96,35 +109,69 @@ export function logRetrieval(e: RetrievalLog): void {
     timestamp: new Date().toISOString(),
     project: e.project,
     prompt_hash: e.promptHash,
+    prompt_preview: e.promptPreview,
     retrieved: e.retrieved,
     tokens_injected: e.tokensInjected,
     prompt_tokens: e.promptTokens,
     latency_ms: e.latencyMs,
     similarity_scores: e.similarityScores,
-    floor_dropped: e.floorDropped
+    floor_dropped: e.floorDropped,
+    initial_best: e.initialBest,
+    rescued: e.rescued,
+    variant_attribution: e.variantAttribution
   };
   appendSafe(USAGE_PATH, JSON.stringify(record) + '\n');
-  appendSafe(
-    DAEMON_LOG_PATH,
-    humanLine('INFO', `Retrieved ${e.retrieved.length} patterns`, {
-      scores: e.similarityScores.map((s) => s.toFixed(2)).join('/') || '—',
-      latency: `${e.latencyMs}ms`,
-      dropped: e.floorDropped.length,
-      project: e.project
-    })
-  );
+  const kv: Record<string, unknown> = {
+    phash: e.promptHash,
+    prompt: `"${e.promptPreview.replace(/"/g, "'")}"`,
+    scores: e.similarityScores.map((s) => s.toFixed(2)).join('/') || '—',
+    latency: `${e.latencyMs}ms`,
+    dropped: e.floorDropped.length,
+    project: e.project
+  };
+  if (e.initialBest !== null) kv.initialBest = e.initialBest.toFixed(4);
+  if (e.rescued !== null) kv.rescued = e.rescued;
+  const top = topVariant(e.variantAttribution, e.retrieved);
+  if (top !== null) kv.topVariant = top;
+  appendSafe(DAEMON_LOG_PATH, humanLine('INFO', `Retrieved ${e.retrieved.length} patterns`, kv));
+}
+
+/** Variant index behind the most injected rows (original query = -1); null when unknown. */
+export function topVariant(
+  attribution: Record<string, number>,
+  retrieved: string[]
+): number | null {
+  const counts = new Map<number, number>();
+  for (const f of retrieved) {
+    const v = attribution[f];
+    if (v === undefined) continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [v, n] of counts) {
+    if (n > bestCount) {
+      best = v;
+      bestCount = n;
+    }
+  }
+  return best;
 }
 
 /** A retrieval where nothing cleared the floor — a first-class logged outcome. */
 export interface NoInjectLog {
   project: string;
   promptHash: string;
+  /** whitespace-collapsed first 120 chars of the prompt (watch display + grouping) */
+  promptPreview: string;
   bestScore: number;
   /** estimated token count of the user's prompt */
   promptTokens: number;
   latencyMs: number;
   /** below-floor chunks still logged as governance evidence */
   floorDropped: DroppedChunkLog[];
+  /** false when expansion fired but retrieval still missed (failed rescue); else null */
+  rescued: boolean | null;
 }
 
 /** Log a no-inject (below-floor) outcome to both sinks. */
@@ -134,23 +181,26 @@ export function logNoInject(e: NoInjectLog): void {
     timestamp: new Date().toISOString(),
     project: e.project,
     prompt_hash: e.promptHash,
+    prompt_preview: e.promptPreview,
     retrieved: [],
     tokens_injected: 0,
     prompt_tokens: e.promptTokens,
     latency_ms: e.latencyMs,
     reason: 'below_floor',
     best_match_score: e.bestScore,
-    floor_dropped: e.floorDropped
+    floor_dropped: e.floorDropped,
+    rescued: e.rescued
   };
   appendSafe(USAGE_PATH, JSON.stringify(record) + '\n');
-  appendSafe(
-    DAEMON_LOG_PATH,
-    humanLine('INFO', 'No retrieval', {
-      reason: 'below_floor',
-      best: e.bestScore.toFixed(4),
-      project: e.project
-    })
-  );
+  const kv: Record<string, unknown> = {
+    reason: 'below_floor',
+    best: e.bestScore.toFixed(4),
+    phash: e.promptHash,
+    prompt: `"${e.promptPreview.replace(/"/g, "'")}"`,
+    project: e.project
+  };
+  if (e.rescued !== null) kv.rescued = e.rescued;
+  appendSafe(DAEMON_LOG_PATH, humanLine('INFO', 'No retrieval', kv));
 }
 
 /** A single pattern's calibration rating (LOGGING.md calibration_eval event). */
@@ -192,6 +242,7 @@ export function logCalibrationEval(e: CalibrationEvalLog): void {
       score: e.weightedScore.toFixed(2),
       rated: e.evaluations.length,
       of: e.retrieved.length,
+      phash: e.promptHash,
       project: e.project
     })
   );
@@ -246,6 +297,7 @@ export function logUsageSignal(e: UsageSignalLog): void {
     humanLine('INFO', 'Usage signal', {
       used: `${e.used.length}/${e.injected.length}`,
       rate: `${(e.usageRate * 100).toFixed(0)}%`,
+      phash: e.promptHash,
       project: e.project
     })
   );

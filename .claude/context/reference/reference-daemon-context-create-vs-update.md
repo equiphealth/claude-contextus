@@ -15,10 +15,12 @@ metadata:
 - **Same slug again:** Overwrites existing file (this is how you update)
 
 ```bash
-curl -s -X POST http://127.0.0.1:37800/capture \
+BASE_URL=$(bash ~/.contextus/scripts/daemon-url.sh)
+curl -s -X POST "$BASE_URL/capture" \
   -H 'content-type: application/json' \
   -d '{"slug":"my-pattern","description":"...","category":"reference","body":"updated content","cwd":"$(pwd)"}'
 ```
+Never hardcode the port — `~/.contextus/scripts/daemon-url.sh` resolves it with the same priority the hooks use (`scripts/lib/daemon-control.js` `getBaseURL()`).
 
 ## How It Works
 

@@ -2,22 +2,27 @@
 /**
  * contextus-setup — the EXPLICIT half of first-run onboarding (the skill engine).
  *
- * This is the ONLY thing in the system that edits CLAUDE.md. A hook must never
- * auto-edit an outward-facing, user-owned file (first-run-onboarding memory); the
- * cheap invisible corpus embed may be automatic (session-start auto-reconcile),
- * but the visible file edit is opt-in and lives here, behind a marked block.
+ * This is the ONLY thing in the system that edits the project rules file
+ * (CLAUDE.md, or AGENTS.md with --host muse). A hook must never auto-edit an
+ * outward-facing, user-owned file (first-run-onboarding memory); the cheap
+ * invisible corpus embed may be automatic (session-start auto-reconcile), but
+ * the visible file edit is opt-in and lives here, behind a marked block.
  *
  * What it does, all idempotent:
  *   1. Scaffold `.claude/context/` + a starter `CONTEXT.md` index if absent.
- *   2. Upsert a marked, idempotent contextus stanza into the project CLAUDE.md
+ *   2. Upsert a marked, idempotent contextus stanza into the project rules file
  *      (<!-- contextus:start --> … <!-- contextus:end -->) — re-running updates
  *      in place, never duplicates.
- *   3. Run the initial embed (reconcile the corpus from the context files).
- *   4. Confirm the daemon is reachable; print status.
+ *   3. Ensure the daemon: reuse a healthy one, else sync the neutral home
+ *      (~/.contextus/daemon), start it, verify /health + model warm.
+ *      Throws on failure — no stamp, non-zero exit.
+ *   4. Run the initial embed (reconcile the corpus from the context files).
+ *   5. Write the setup-completion stamp the SessionStart hook reads.
  *
  * Usage:
  *   pnpm contextus-setup                 # set up the current project (cwd)
  *   pnpm contextus-setup --dir <path>    # set up a specific project root
+ *   pnpm contextus-setup --host muse     # Muse host: stanza goes to AGENTS.md
  *   pnpm contextus-setup --no-embed      # scaffold + stanza only, skip embedding
  *   pnpm contextus-setup --mine-transcripts   # also run a one-time transcript-mining
  *                                              # bootstrap scan (~1 week of history) —
@@ -27,7 +32,21 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { upsertStanza, hasStanza } from '../lib/capture/claude-md-stanza.js';
+import {
+  upsertStanza,
+  hasStanza,
+  removeStanza,
+  HOST_STANZA,
+  type SetupHost
+} from '../lib/capture/claude-md-stanza.js';
+import {
+  writeSetupStamp,
+  syncNeutralDaemon,
+  noteDaemonVersion,
+  ensureDaemonRunning,
+  NEUTRAL_DIST_SERVER
+} from './lib/daemon-control.js';
+import { getDaemonURL } from '../lib/daemon-url.js';
 import { runReconcile } from '../lib/embedding/reconcile-run.js';
 import { tableExists, countRows } from '../lib/storage/lance-client.js';
 import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js';
@@ -36,11 +55,104 @@ import { buildChanges, renderDiff, hasRealChanges } from '../lib/calibration/con
 import { loadConfig, projectLocalConfigPath } from '../lib/config.js';
 import { mineProject } from './mine-transcripts.js';
 
+/** GET /health, parsed or null. Never throws (down-ness is data here). */
+async function readDaemonHealth(
+  timeoutMs = 10000
+): Promise<{ modelLoaded?: unknown; version?: unknown; warmupError?: unknown } | null> {
+  try {
+    const res = await fetch(`${getDaemonURL()}/health`, {
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { modelLoaded?: unknown; version?: unknown };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Setup-time daemon guarantee: reuse a healthy daemon wherever it runs,
+ * else sync the neutral home, start it detached, and poll /health until the
+ * model is warm. Throws with the exact recovery step on any failure — the
+ * caller exits non-zero and no completion stamp is written.
+ */
+async function ensureDaemonReady(): Promise<void> {
+  const running = await readDaemonHealth();
+  if (running) {
+    if (running.modelLoaded === true) {
+      // Reuse wins over code path (condition 1): never restart, never upgrade
+      // under a live session. Drift only warns (inside noteDaemonVersion).
+      noteDaemonVersion(running);
+      console.log('  daemon           already running (reused — not restarted)');
+      return;
+    }
+    if (typeof running.warmupError === 'string' && running.warmupError) {
+      // Hard failure, not still-warming: waiting or spawning over it helps
+      // nothing. Name the fix instead of writing the completion stamp.
+      throw new Error(
+        `daemon warmup failed: ${running.warmupError} — fix the provider, then re-run setup (a restart alone replays the same failure)`
+      );
+    }
+    // Alive but still warming (e.g. slow model load from another setup):
+    // wait for warm rather than stamping completion against a cold daemon.
+    // Never spawn over it — that would lose an EADDRINUSE race, not heal.
+    console.log('  daemon           alive but model not warm yet — waiting…');
+    const deadline = Date.now() + 90000;
+    for (;;) {
+      const health = await readDaemonHealth(5000);
+      if (health && health.modelLoaded === true) {
+        noteDaemonVersion(health);
+        console.log('  daemon           reachable and model warm (reused)');
+        return;
+      }
+      if (health && typeof health.warmupError === 'string' && health.warmupError) {
+        throw new Error(
+          `daemon warmup failed: ${health.warmupError} — fix the provider, then re-run setup`
+        );
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          'daemon stayed cold past the 90 s budget — check ~/.contextus/logs/daemon.log, then re-run setup'
+        );
+      }
+    }
+  }
+  console.log('  daemon           syncing neutral home…');
+  const sync = syncNeutralDaemon({ log: (m) => console.log(`  neutral daemon  ${m}`) });
+  console.log(
+    `  neutral daemon   ${sync.synced ? 'synced' : 'already in sync'} (${sync.found || sync.expected})`
+  );
+  if (!fs.existsSync(NEUTRAL_DIST_SERVER)) {
+    throw new Error(`neutral dist entry missing after sync: ${NEUTRAL_DIST_SERVER}`);
+  }
+  // Delegate evict + spawn to the shared lifecycle helper (handles a wedged
+  // PID/port that a raw spawn would EADDRINUSE-crash against), then wait warm.
+  await ensureDaemonRunning();
+  console.log('  daemon           spawned, waiting for model warm…');
+  const deadline = Date.now() + 90000;
+  for (;;) {
+    const health = await readDaemonHealth(5000);
+    if (health && health.modelLoaded) {
+      noteDaemonVersion(health);
+      console.log('  daemon           reachable and model warm');
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        'daemon started but /health never reported modelLoaded within 90 s. ' +
+          'Check the embedding provider (Ollama) and rerun setup — setup re-verifies from scratch.'
+      );
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
 interface Args {
   dir: string;
   embed: boolean;
   tune: boolean;
   mineTranscripts: boolean;
+  host: SetupHost;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -48,13 +160,21 @@ function parseArgs(argv: string[]): Args {
   let embed = true;
   let tune = false;
   let mineTranscripts = false;
+  let host: SetupHost = 'claude';
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--dir' && argv[i + 1]) dir = path.resolve(argv[++i]);
     else if (argv[i] === '--no-embed') embed = false;
     else if (argv[i] === '--tune') tune = true;
     else if (argv[i] === '--mine-transcripts') mineTranscripts = true;
+    else if (argv[i] === '--host' && argv[i + 1]) {
+      const next = argv[++i];
+      if (next !== 'claude' && next !== 'muse') {
+        throw new Error(`--host must be 'claude' or 'muse', got '${next}'`);
+      }
+      host = next;
+    }
   }
-  return { dir, embed, tune, mineTranscripts };
+  return { dir, embed, tune, mineTranscripts, host };
 }
 
 /** A small, honest starter index so a fresh project has somewhere to grow. */
@@ -94,14 +214,89 @@ function scaffoldContextDir(root: string): { createdDir: boolean; createdIndex: 
   return { createdDir, createdIndex };
 }
 
-/** Upsert the stanza into CLAUDE.md (creating the file if absent). */
-function writeStanza(root: string): { created: boolean; changed: boolean } {
-  const file = path.join(root, 'CLAUDE.md');
-  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+/**
+ * Upsert the stanza into the host's project rules file (creating it if
+ * absent). Muse mode targets AGENTS.md with the generic body; Claude mode
+ * keeps the existing CLAUDE.md behavior byte-for-byte.
+ *
+ * First-create seeding: if `file` doesn't exist yet AND its sibling
+ * (`seedFrom` — CLAUDE.md for muse, AGENTS.md for claude) does, mirror the
+ * sibling's real content (minus its own stanza) instead of starting from an
+ * empty file that would otherwise contain nothing but the contextus stanza.
+ * Without this, a project onboarded to a second host loses all of its actual
+ * conventions for that host — only an unenforced "keep them in sync by hand"
+ * expectation remained. Only fires on first create; an existing `file` is
+ * never overwritten by its sibling's content on a re-run.
+ */
+function writeStanza(
+  root: string,
+  host: SetupHost
+): { created: boolean; changed: boolean; seeded: boolean } {
+  const { file, body, seedFrom } = HOST_STANZA[host];
+  const filePath = path.join(root, file);
+  const fileExisted = fs.existsSync(filePath);
+  let existing = fileExisted ? fs.readFileSync(filePath, 'utf8') : '';
   const created = existing === '';
-  const { content, changed } = upsertStanza(existing);
-  if (changed) fs.writeFileSync(file, content);
-  return { created, changed: changed || created };
+  let seeded = false;
+
+  if (!fileExisted) {
+    const seedPath = path.join(root, seedFrom);
+    if (fs.existsSync(seedPath)) {
+      const seedContent = fs.readFileSync(seedPath, 'utf8');
+      // Mechanical copy only — a script cannot judge which prose is
+      // host-portable vs. specific to the sibling's harness (skill
+      // invocation syntax, hook names, tool names that don't map 1:1).
+      // Getting that right is a judgment call for whoever reads the result
+      // next (human or a model session), not something safe to guess here.
+      // The flag comment below (outside the stanza markers, so it's the
+      // user's to remove, never setup-owned) makes the copy visibly
+      // provisional instead of silently passing as "done and correct."
+      existing =
+        `<!-- contextus: this file was auto-seeded from ${seedFrom} by /contextus-setup ` +
+        `on ${new Date().toISOString().slice(0, 10)}. It's a mechanical copy, not a ` +
+        `reviewed one — check for ${seedFrom === 'CLAUDE.md' ? 'Claude Code' : 'Muse'}-specific ` +
+        `terminology (skill/hook/tool names, slash-command syntax) that may not carry over ` +
+        `correctly, then remove this comment. -->\n\n` +
+        removeStanza(seedContent);
+      seeded = true;
+    }
+  }
+
+  const { content, changed } = upsertStanza(existing, body);
+  if (changed) fs.writeFileSync(filePath, content);
+  return { created, changed: changed || created, seeded };
+}
+
+/**
+ * Reconcile the OTHER host's rules file, if it already exists: re-upsert
+ * ITS OWN canonical stanza (its own host-specific body) in place, touching
+ * nothing outside the markers. Never creates the sibling — that's
+ * writeStanza's first-create seeding path, and only for the host that was
+ * actually invoked.
+ *
+ * Why this exists: seeding on first create isn't enough once both files
+ * already exist. Each stanza is only refreshed to the current template when
+ * setup runs FOR that specific host — so a project onboarded to both hosts
+ * drifts apart over time as the shared template text evolves and each file
+ * gets refreshed on a different cadence (or never, for whichever host
+ * nobody re-runs setup against). Verified live on this exact repo
+ * (2026-11-01): CLAUDE.md's and AGENTS.md's stanzas had each quietly lost a
+ * paragraph the other still had. Running setup for either host now
+ * converges BOTH files to canonical on every run, rather than only ever
+ * touching the one the command targeted.
+ */
+function reconcileSiblingStanza(
+  root: string,
+  host: SetupHost
+): { file: string; changed: boolean } | null {
+  const siblingHost: SetupHost = host === 'muse' ? 'claude' : 'muse';
+  const { file, body } = HOST_STANZA[siblingHost];
+  const filePath = path.join(root, file);
+  if (!fs.existsSync(filePath)) return null;
+  const existing = fs.readFileSync(filePath, 'utf8');
+  const { content, changed } = upsertStanza(existing, body);
+  if (changed) fs.writeFileSync(filePath, content);
+  return { file, changed };
 }
 
 async function main(): Promise<void> {
@@ -117,18 +312,36 @@ async function main(): Promise<void> {
       (scaffold.createdIndex ? ' (+ starter CONTEXT.md)' : '')
   );
 
-  // 2. Upsert the CLAUDE.md stanza (the only file we edit; idempotent).
-  const before = fs.existsSync(path.join(args.dir, 'CLAUDE.md'))
-    ? hasStanza(fs.readFileSync(path.join(args.dir, 'CLAUDE.md'), 'utf8'))
+  // 2. Upsert the host rules-file stanza (the only file we edit; idempotent).
+  const rulesFile = HOST_STANZA[args.host].file;
+  const before = fs.existsSync(path.join(args.dir, rulesFile))
+    ? hasStanza(fs.readFileSync(path.join(args.dir, rulesFile), 'utf8'))
     : false;
-  const stanza = writeStanza(args.dir);
+  const stanza = writeStanza(args.dir, args.host);
   console.log(
-    `  CLAUDE.md stanza   ${
-      before ? 'updated in place (no duplicate)' : stanza.created ? 'created CLAUDE.md' : 'added'
-    }`
+    `  ${rulesFile} stanza   ${
+      before ? 'updated in place (no duplicate)' : stanza.created ? `created ${rulesFile}` : 'added'
+    }` + (stanza.seeded ? ' — seeded from sibling, needs a review pass (see flag comment)' : '')
   );
 
-  // 3. Initial embed (reconcile from the context files). Skippable via --no-embed.
+  // 2b. Reconcile the sibling rules file's stanza too, if it already
+  // exists — keeps both files converging on every run instead of drifting
+  // apart between whichever host each one was last set up against.
+  const sibling = reconcileSiblingStanza(args.dir, args.host);
+  if (sibling) {
+    console.log(
+      `  ${sibling.file} stanza   ${sibling.changed ? 'reconciled to canonical' : 'already in sync'}`
+    );
+  }
+
+  // 3. Ensure the daemon: reuse a healthy one (any location — reuse wins
+  // over code path, version drift only warns), else sync the neutral home,
+  // start it, and verify /health. Throws on failure: setup must fail loudly
+  // here, never limp on with a dead daemon (the silent-fail-open §3 exists
+  // to prevent). Daemon start is a setup cost, never a hook cost.
+  await ensureDaemonReady();
+
+  // 4. Initial embed (reconcile from the context files). Skippable via --no-embed.
   if (args.embed) {
     const ctxDir = path.join(args.dir, '.claude', 'context');
     try {
@@ -153,7 +366,7 @@ async function main(): Promise<void> {
     console.log('  embed              skipped (--no-embed)');
   }
 
-  // 3b. One-time transcript-mining bootstrap scan (only when the skill passed
+  // 4b. One-time transcript-mining bootstrap scan (only when the skill passed
   // --mine-transcripts, i.e. the user said yes when asked). Same extraction
   // pipeline the recurring SessionStart trigger uses (GH issue #39) — this is
   // just the FIRST scan, matching decision-transcript-mining-recurring.md's
@@ -179,7 +392,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // 4. Config tuning via floor calibration (--tune or if prompted)
+  // 5. Config tuning via floor calibration (--tune or if prompted)
   if (args.tune) {
     console.log('\n── Config Tuning ──');
     try {
@@ -219,6 +432,17 @@ async function main(): Promise<void> {
       }
     }
   }
+
+  // 6. Stamp completion so the Muse SessionStart hook can tell "setup ran"
+  // from "setup never ran". Written for both hosts; only the Muse hook reads
+  // it today. A stamp never silences a dead daemon (the hook checks /health).
+  const stamp = writeSetupStamp(args.dir, { host: args.host });
+  if (!stamp) {
+    throw new Error(
+      'setup stamp (.claude/setup.json) could not be written — without it the SessionStart hook will keep nudging setup. Fix project-dir writability and re-run setup.'
+    );
+  }
+  console.log(`  setup stamp      .claude/setup.json (${args.host})`);
 
   console.log('\n✓ Setup complete. Context will be injected automatically on your next prompts.');
   if (!args.tune) {

@@ -85,6 +85,97 @@ export interface FormatResult {
   tokens: number;
 }
 
+/** Result of fitting a rendered block to a host byte ceiling. */
+export interface FitResult {
+  /** the block to inject (byte-identical to the unfit block when under the ceiling) */
+  block: string;
+  /** chunks kept in full */
+  included: RankedResult[];
+  /** chunks replaced by one-line references */
+  dropped: RankedResult[];
+  /** whether any chunk was replaced */
+  truncated: boolean;
+}
+
+/**
+ * Intelligent host-ceiling fit (Muse support edge seam).
+ *
+ * Never splits a chunk mid-line (survivors re-render atomically through
+ * formatInjection) and never touches the header, the fallback notice, or the
+ * provenance footer — those stay intact always. Drops lowest-ranked chunks
+ * first (finalScore, falling back to similarity), replacing each with a
+ * one-line reference (path + section + score) so the model knows it exists
+ * and can retrieve it via /context-search. The marker names the dropped
+ * count and every dropped path.
+ *
+ * Under the ceiling this is the identity function (byte-identical output), so
+ * callers without the cap see today's behavior bit-for-bit. Edge case only:
+ * normal injection is ~12KB under the 16384-byte cap; this fires above it.
+ */
+export function fitBlockToCeiling(opts: {
+  /** floor-passing chunks, any order (ranked internally, never mutated) */
+  kept: RankedResult[];
+  maxTokens: number;
+  cwd?: string;
+  fallbackNotice: boolean;
+  provenanceFooter: boolean;
+  /** byte ceiling; when <= 0 the block is returned unchanged */
+  byteCeiling: number;
+}): FitResult {
+  const { kept, maxTokens, cwd, fallbackNotice, provenanceFooter, byteCeiling } = opts;
+
+  const notice = fallbackNotice
+    ? '\n\n[contextus notice] Results above are from keyword fallback (embedding provider was unreachable). Relevance may be lower than normal semantic search.'
+    : '';
+  const parts = (chunks: RankedResult[]) => {
+    const { block: rawBlock, included } = formatInjection(chunks, maxTokens, cwd);
+    const footer = provenanceFooter ? renderFooterInstruction(included) : '';
+    return { head: rawBlock + notice, footer, included };
+  };
+  const renderRefs = (list: RankedResult[]): string =>
+    list
+      .map(
+        (r) =>
+          `- ${(r.filename || r.id) + (r.heading ? ` › ${r.heading}` : '')} (${r.similarity.toFixed(2)})`
+      )
+      .join('\n');
+  const markerFor = (dropped: RankedResult[]): string =>
+    `\n\n[contextus: truncated — dropped ${dropped.length} chunk(s) to fit the ${byteCeiling}-byte host limit: ` +
+    `${dropped.map((r) => r.filename || r.id).join(', ')}. ` +
+    `References below; retrieve full text via /context-search if needed.]\n` +
+    renderRefs(dropped);
+
+  // Fast path: under the ceiling the output is byte-identical to today.
+  {
+    const { head, footer, included } = parts(kept);
+    if (byteCeiling <= 0 || Buffer.byteLength(head + footer, 'utf8') <= byteCeiling) {
+      return { block: head + footer, included, dropped: [], truncated: false };
+    }
+  }
+
+  // Lowest-ranked first. Defensive sort: rank must not depend on input order.
+  const ranked = [...kept].sort(
+    (a, b) => (b.finalScore ?? b.similarity) - (a.finalScore ?? a.similarity)
+  );
+  const dropped: RankedResult[] = [];
+  const remaining = [...ranked];
+  while (remaining.length > 0) {
+    const lowest = remaining.pop();
+    if (lowest === undefined) break;
+    dropped.unshift(lowest);
+    const { head, footer, included } = parts(remaining);
+    const candidate = head + markerFor(dropped) + footer;
+    if (Buffer.byteLength(candidate, 'utf8') <= byteCeiling) {
+      return { block: candidate, included, dropped, truncated: true };
+    }
+  }
+
+  // Pathological: even the header alone exceeds the ceiling (or every chunk
+  // was dropped). Emit refs + marker without full chunks — never a blind cut.
+  const { head, footer, included } = parts([]);
+  return { block: head + markerFor(dropped) + footer, included, dropped, truncated: true };
+}
+
 /**
  * Build the injection block from floor-passing chunks, greedily within
  * `maxTokens`. The header is always counted; at least the top chunk is included

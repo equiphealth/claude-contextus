@@ -23,7 +23,7 @@
  *   'silent' — suppresses the footer entirely (no capture prompting)
  */
 
-import crypto from 'node:crypto';
+import { projectHash } from './lib/project-hash.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,10 +51,7 @@ function emit(obj) {
   process.stdout.write(JSON.stringify(obj));
 }
 
-function projectId(cwd) {
-  const abs = path.resolve(cwd || process.cwd());
-  return crypto.createHash('sha256').update(abs).digest('hex').slice(0, 12);
-}
+
 
 /** Read contextCapture config with precedence: project > plugin. */
 function captureConfig() {
@@ -148,7 +145,7 @@ async function main() {
   if (mode === 'silent') return emit({ continue: true });
 
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
-  const recent = await recentPatterns(projectId(cwd));
+  const recent = await recentPatterns(projectHash(cwd || process.cwd()));
 
   emit({
     continue: true,

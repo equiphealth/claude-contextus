@@ -78,7 +78,8 @@ import {
   logParanoid,
   logError,
   logInfo,
-  promptHash
+  promptHash,
+  promptPreview
 } from '../lib/logger.js';
 import { rotateLogsOnStartup } from '../lib/log-rotation.js';
 import { startEvalLoop, stopEvalLoop } from './eval-loop.js';
@@ -88,17 +89,32 @@ import { writeLastInjectionDebug, type LastInjectionDebug } from '../lib/debug-s
 const PREFERRED_PORT = parseInt(process.env.CONTEXTUS_DAEMON_PORT || '37800', 10);
 let actualPort: number = PREFERRED_PORT;
 const BASE_URL = () => `http://127.0.0.1:${actualPort}`;
-/** Daemon/protocol version read from package.json at startup. */
+/**
+ * Daemon/protocol version read from package.json at startup. Two layouts:
+ * source (`daemon/server.ts` → repo root) and compiled (`dist/daemon/` →
+ * two levels up). The compiled layout is what the neutral home runs, so a
+ * missing fallback reports "unknown" there — which also trips the
+ * reuse version check on every hook run.
+ */
 const DAEMON_VERSION = (() => {
   try {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    const pkgPath = path.join(__dirname, '../package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    return pkg.version;
+    for (const pkgPath of [
+      path.join(__dirname, '../package.json'),
+      path.join(__dirname, '../../package.json')
+    ]) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        if (pkg && typeof pkg.version === 'string') return pkg.version;
+      } catch {
+        /* try next layout */
+      }
+    }
   } catch {
-    return 'unknown';
+    /* fall through */
   }
+  return 'unknown';
 })();
 const RUNTIME_DIR = expandHome('~/.contextus/runtime');
 const CAPTURES_LOG = expandHome('~/.contextus/captures.log');
@@ -194,6 +210,113 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(payload);
 }
 
+/**
+ * Host output ceiling for the request/response edge seam (Muse support).
+ * Muse caps hook stdout at 16384 bytes and kills the process past it — so the
+ * daemon truncates one byte inside the cap. Byte-accurate: counts UTF-8 bytes,
+ * never splits a multi-byte sequence. Pure function; see tests.
+ */
+export const HOST_OUTPUT_CEILING = 16383;
+
+export interface CapacityStats {
+  input_tokens?: number;
+  output_tokens?: number;
+  used_percentage?: number;
+}
+
+export interface CapacityThresholds {
+  disableAt?: number;
+  minimalAt?: number;
+  reduceAt?: number;
+  contextWindowTokens?: number;
+}
+
+export type CapacityTier = 'none' | 'reduced' | 'minimal' | 'disabled';
+
+/**
+ * Resolve a capacity percentage from hook-reported stats (Muse support).
+ * Preferred: an explicit `used_percentage` (Claude statusline path).
+ * Fallback: cumulative `input_tokens` against an explicitly configured
+ * `contextWindowTokens` — never a guessed window. Returns undefined when
+ * neither is available, which disables the guard (fail-open).
+ * Pure function, exported for direct unit testing.
+ */
+export function capacityPercent(
+  stats: CapacityStats | undefined,
+  cpCfg: CapacityThresholds | undefined
+): number | undefined {
+  // An explicit numeric report wins — including a genuine 0, which must not
+  // fall through to the token-based estimate and resurrect as a nonzero value.
+  if (typeof stats?.used_percentage === 'number') return stats.used_percentage;
+  if (
+    stats?.input_tokens &&
+    stats.input_tokens > 0 &&
+    cpCfg?.contextWindowTokens &&
+    cpCfg.contextWindowTokens > 0
+  ) {
+    return (stats.input_tokens / cpCfg.contextWindowTokens) * 100;
+  }
+  return undefined;
+}
+
+/**
+ * Map a capacity percentage to a guard tier using the configured thresholds
+ * (defaults 85/80/70 — same numbers the inline guard always used).
+ * Pure function, exported for direct unit testing.
+ */
+export function capacityTierFor(
+  pct: number | undefined,
+  cpCfg: CapacityThresholds | undefined,
+  enabled: boolean
+): CapacityTier {
+  if (pct === undefined || !enabled) return 'none';
+  if (pct > (cpCfg?.disableAt ?? 85)) return 'disabled';
+  if (pct > (cpCfg?.minimalAt ?? 80)) return 'minimal';
+  if (pct > (cpCfg?.reduceAt ?? 70)) return 'reduced';
+  return 'none';
+}
+
+export function truncateUtf8Bytes(s: string, maxBytes: number): string {
+  if (Buffer.byteLength(s, 'utf8') <= maxBytes) return s;
+  // Streaming decode holds back a trailing partial sequence instead of
+  // emitting U+FFFD, so the cut lands on a character boundary.
+  return new TextDecoder('utf-8').decode(Buffer.from(s, 'utf8').subarray(0, maxBytes), {
+    stream: true
+  });
+}
+
+/**
+ * Shape a hook output payload for the requesting host (Muse support edge seam).
+ * Pure function, exported for direct unit testing like determineSource: the
+ * branch it encodes (Claude passthrough vs host-shaped + truncated) is only
+ * otherwise reachable through a full warm-model /query.
+ *
+ * No `agent` → today's behavior bit-for-bit: literal UserPromptSubmit shape,
+ * no truncation, even over the host ceiling (Claude hosts have no such cap).
+ * With `agent` → the request's hook event plus ceiling enforcement at the edge.
+ */
+export function shapeHookOutput(
+  additionalContext: string,
+  opts: { agent?: string; hookEvent?: string } = {}
+): {
+  continue: true;
+  hookSpecificOutput: { hookEventName: string; additionalContext: string };
+} {
+  if (!opts.agent) {
+    return {
+      continue: true,
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext }
+    };
+  }
+  return {
+    continue: true,
+    hookSpecificOutput: {
+      hookEventName: opts.hookEvent || 'UserPromptSubmit',
+      additionalContext: truncateUtf8Bytes(additionalContext, HOST_OUTPUT_CEILING)
+    }
+  };
+}
+
 /** GET /health — liveness + readiness (modelLoaded is what session-start polls).
  *  ?probe=true → verify the provider is actually reachable (cheap embed). */
 async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -271,6 +394,14 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const hash = promptHash(prompt);
   const projectLabel = project ?? 'default';
 
+  // Host-neutral edge seam (Muse support): optional per-request host identity.
+  // Claude clients send neither field; absence means today's behavior bit-for-bit.
+  // When `agent` is present, the response carries the request's `hookEvent` and
+  // truncates `additionalContext` to the host output ceiling at the edge.
+  const agent = typeof body.agent === 'string' && body.agent ? body.agent : undefined;
+  const hookEvent =
+    typeof body.hookEvent === 'string' && body.hookEvent ? body.hookEvent : 'UserPromptSubmit';
+
   // Model not warm yet (still loading, or warmup failed) → degrade. Embedding
   // now would throw deep in the provider; the cold first prompt or two missing
   // context is the documented graceful-degradation behavior.
@@ -289,12 +420,25 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // consistency). Both the model id AND the dimensions must agree — a mismatch on
   // either means the query vector and the stored vectors live in different spaces,
   // so similarities are meaningless. Fail fast + degrade rather than inject noise.
-  // Project-aware: floor/topK/etc. resolve through the 3-tier merge (global →
-  // machine-local → git-committed), so each project calibrates independently.
+  //
+  // Embedding config MUST come from loadConfig() (global), NOT loadProjectConfig():
+  // lib/embedding/embedder.ts's embedQuery() reads ONLY loadConfig() internally —
+  // there is exactly one loaded model process-wide, no per-project embedding
+  // override is possible or honored. Comparing against the project-merged config
+  // here would check the WRONG thing: a stale/incorrect per-project override that
+  // happens to still match the OLD corpus meta would pass this check while the
+  // daemon actually embeds the live query with a DIFFERENT model (whatever
+  // loadConfig() really resolves to) — silently injecting garbage similarities
+  // with no error logged, which is the exact failure this check exists to catch.
+  // Verified live (2026-11-01): this project's own tier-3 config had drifted from
+  // the global default this way — see gotchas/gotcha-embedding-provider-switch.md.
+  const embeddingCfg = loadConfig().embedding;
+  // Still project-aware for everything else: floor/topK/etc. resolve through the
+  // full 3-tier merge, so each project calibrates independently.
   const cfg = loadProjectConfig(projectId, cwd);
   const meta = readTableMeta(projectId);
   const activeModel =
-    cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model;
+    embeddingCfg.provider === 'ollama' ? embeddingCfg.ollamaModel : embeddingCfg.model;
   if (meta && meta.embeddingModel !== activeModel) {
     logError('error', 'daemon', 'Embedding model mismatch (corpus vs daemon)', {
       project: projectLabel,
@@ -305,48 +449,38 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     // Degrade gracefully — a mismatched space yields garbage similarities.
     return sendJson(res, 200, { continue: true });
   }
-  if (meta && meta.dimensions !== cfg.embedding.dimensions) {
+  if (meta && meta.dimensions !== embeddingCfg.dimensions) {
     logError('error', 'daemon', 'Embedding dimension mismatch (corpus vs daemon)', {
       project: projectLabel,
       corpus: meta.dimensions,
-      daemon: cfg.embedding.dimensions,
+      daemon: embeddingCfg.dimensions,
       fix: 're-embed the corpus (pnpm run embed) so stored vectors match config.embedding.dimensions'
     });
     return sendJson(res, 200, { continue: true });
   }
 
   // --- Token capacity guard (GitHub #17) ---
-  // The statusline script writes context_window stats to a file; the query hook
-  // reads it and passes it here. When the conversation is near the model limit,
-  // suppress injection to prevent API overflow errors.
-  const contextStats = body.contextStats as
-    | {
-        input_tokens?: number;
-        output_tokens?: number;
-        used_percentage?: number;
-      }
-    | undefined;
+  // The statusline script (Claude) or PostLLMCall accumulator (Muse, cumulative
+  // input_tokens + explicit capacityProtection.contextWindowTokens) writes stats
+  // to a file; the query hook reads it and passes it here. When the conversation
+  // is near the model limit, suppress injection to prevent API overflow errors.
+  const contextStats = body.contextStats as CapacityStats | undefined;
 
   let capacityTopK: number | undefined;
   let capacityFloorMultiplier = 1.0;
-  let capacityTier: LastInjectionDebug['capacityTier'] = 'none';
-
-  if (
-    contextStats?.used_percentage &&
-    contextStats.used_percentage > 0 &&
+  const pct = capacityPercent(contextStats, cfg.capacityProtection);
+  const capacityTier: LastInjectionDebug['capacityTier'] = capacityTierFor(
+    pct,
+    cfg.capacityProtection,
     cfg.capacityProtection.enabled !== false
-  ) {
-    const pct = contextStats.used_percentage;
-    const cpCfg = cfg.capacityProtection;
-    const disableAt = cpCfg?.disableAt ?? 85;
-    const minimalAt = cpCfg?.minimalAt ?? 80;
-    const reduceAt = cpCfg?.reduceAt ?? 70;
+  );
 
-    if (pct > disableAt) {
+  if (pct !== undefined && capacityTier !== 'none') {
+    if (capacityTier === 'disabled') {
       logInfo('Token capacity exceeded — disabling injection', {
         project: projectLabel,
         used_percentage: Math.round(pct),
-        input_tokens: contextStats.input_tokens
+        input_tokens: contextStats?.input_tokens
       });
       writeLastInjectionDebug(sessionId, projectId, {
         project: projectLabel,
@@ -364,26 +498,24 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         sources: {},
         injectedFiles: []
       });
-      return sendJson(res, 200, {
-        continue: true,
-        hookSpecificOutput: {
-          hookEventName: 'UserPromptSubmit',
-          additionalContext: `[contextus: conversation at ${Math.round(pct)}% capacity (${Math.round((contextStats.input_tokens || 0) / 1000)}K tokens), injection disabled to prevent overflow]`
-        }
-      });
-    }
-    if (pct > minimalAt) {
+      return sendJson(
+        res,
+        200,
+        shapeHookOutput(
+          `[contextus: conversation at ${Math.round(pct)}% capacity (${Math.round((contextStats?.input_tokens || 0) / 1000)}K tokens), injection disabled to prevent overflow]`,
+          { agent, hookEvent }
+        )
+      );
+    } else if (capacityTier === 'minimal') {
       capacityTopK = 1;
       capacityFloorMultiplier = 1.2;
-      capacityTier = 'minimal';
       logInfo('Token capacity high — minimal injection', {
         project: projectLabel,
         used_percentage: Math.round(pct),
         adjustedTopK: 1
       });
-    } else if (pct > reduceAt) {
+    } else if (capacityTier === 'reduced') {
       capacityTopK = Math.min(cfg.retrieval.topK, 3);
-      capacityTier = 'reduced';
       logInfo('Token capacity moderate — reducing injection', {
         project: projectLabel,
         used_percentage: Math.round(pct),
@@ -510,11 +642,18 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   stats.queries++;
   let expansionStatus: LastInjectionDebug['expansion'] =
     cfg.expansion.mode === 'off' ? 'off' : 'skipped';
+  // Row id → variant index that surfaced it (-1 = original prompt).
+  // Filled during the union merge below; read at log time for attribution.
+  const variantSource = new Map<string, number>();
+  // Set only on a configured-but-broken credential (see ExpandedQueries.warning) —
+  // surfaced into the actual model-visible response below, not just daemon.log.
+  let expansionWarning: string | undefined;
   if (
     !usedKeywordFallback &&
     shouldExpand(cfg.expansion.mode, initialBest, cfg.expansion.expansionThreshold)
   ) {
     const expanded = await expandQuery(prompt, cfg.expansion, cfg.providers);
+    expansionWarning = expanded.warning;
     if (expanded.variants.length > 0) {
       stats.expansionFired++;
       expansionStatus = 'fired';
@@ -528,20 +667,28 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
         })
       );
       // Union: merge all results, dedupe by row id (keep highest similarity).
+      // variantSource tracks WHICH query surfaced each row (-1 = original
+      // prompt, N = expanded variant index) so watch can attribute winners.
       const originalCount = raw.length;
       const seen = new Map<string, (typeof raw)[0]>();
-      for (const r of raw) seen.set(r.id, r);
-      for (const results of variantSearches) {
-        for (const r of results) {
+      for (const r of raw) {
+        seen.set(r.id, r);
+        variantSource.set(r.id, -1);
+      }
+      for (let vi = 0; vi < variantSearches.length; vi++) {
+        for (const r of variantSearches[vi]) {
           const existing = seen.get(r.id);
           if (!existing || r.similarity > existing.similarity) {
             seen.set(r.id, r);
+            variantSource.set(r.id, vi);
           }
         }
       }
       raw = Array.from(seen.values());
       logInfo('Expansion fired', {
         project: projectLabel,
+        phash: hash,
+        prompt: `"${promptPreview(prompt).replace(/"/g, "'")}"`,
         variants: expanded.variants,
         provider: expanded.provider,
         latencyMs: expanded.latencyMs,
@@ -553,6 +700,8 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     stats.expansionSkipped++;
     logInfo('Expansion skipped', {
       project: projectLabel,
+      phash: hash,
+      prompt: `"${promptPreview(prompt).replace(/"/g, "'")}"`,
       initialBest: Number(initialBest.toFixed(4)),
       threshold: cfg.expansion.expansionThreshold
     });
@@ -565,7 +714,10 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       topK: capacityTopK ?? cfg.retrieval.topK,
       injectionFloor: cfg.retrieval.injectionFloor * capacityFloorMultiplier,
       maxTokens: cfg.retrieval.maxTokens,
-      provenanceFooter: cfg.retrieval.provenanceFooter
+      provenanceFooter: cfg.retrieval.provenanceFooter,
+      // Intelligent host-ceiling fit only on the Muse path; the Claude path
+      // keeps byte-identical assembly (no cap on that host).
+      byteCeiling: agent ? HOST_OUTPUT_CEILING : undefined
     },
     { cwd, usedKeywordFallback }
   );
@@ -574,10 +726,13 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     logNoInject({
       project: projectLabel,
       promptHash: hash,
+      promptPreview: promptPreview(prompt),
       bestScore: Number(outcome.bestScore.toFixed(4)),
       promptTokens: estimateTokens(prompt),
       latencyMs: Date.now() - started,
-      floorDropped: outcome.floorDropped
+      floorDropped: outcome.floorDropped,
+      // Fired but nothing injected = failed rescue; not fired = n/a.
+      rescued: expansionStatus === 'fired' ? false : null
     });
     writeLastInjectionDebug(sessionId, projectId, {
       project: projectLabel,
@@ -607,13 +762,21 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       });
     }
     if (outcome.kind === 'near-miss') {
-      return sendJson(res, 200, {
-        continue: true,
-        hookSpecificOutput: {
-          hookEventName: 'UserPromptSubmit',
-          additionalContext: outcome.notice
-        }
-      });
+      const notice = expansionWarning
+        ? `${outcome.notice}\n\n[contextus] expansion warning: ${expansionWarning}`
+        : outcome.notice;
+      return sendJson(res, 200, shapeHookOutput(notice, { agent, hookEvent }));
+    }
+    // No injection at all (floor not met) would otherwise mean the model
+    // never sees ANYTHING this call did — including a broken key file. Send
+    // a warning-only block rather than the usual bare {continue:true} so
+    // this doesn't silently vanish just because nothing else qualified.
+    if (expansionWarning) {
+      return sendJson(
+        res,
+        200,
+        shapeHookOutput(`[contextus] expansion warning: ${expansionWarning}`, { agent, hookEvent })
+      );
     }
     return sendJson(res, 200, { continue: true });
   }
@@ -639,7 +802,11 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // hook can grade usage against it (evaluation-architecture). Skipped entirely
   // when calibration is off — no disk churn on the normal hot path.
   if (readCalibrationState().evaluateUsage) {
-    recordLastInjection(projectLabel, {
+    // Key by canonical projectId (hash), not the raw caller label: the Stop
+    // hooks on both hosts look the record up by projectHash(cwd). Both hosts
+    // now send the hash, and resolveProjectId canonicalizes legacy raw paths —
+    // so this stays consistent for old and new callers alike.
+    recordLastInjection(projectId ?? projectLabel, {
       promptHash: hash,
       patterns: included.map((r) => ({
         id: r.filename || r.id,
@@ -649,15 +816,34 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     });
   }
 
+  // Attribute each injected row to the query that surfaced it (-1 = original
+  // prompt). Only meaningful when expansion fired; otherwise stays empty and
+  // the log line omits variant info entirely.
+  const variantAttribution: Record<string, number> = {};
+  if (expansionStatus === 'fired') {
+    for (const r of included) {
+      variantAttribution[r.filename || r.id] = variantSource.get(r.id) ?? -1;
+    }
+  }
+  // Rescued = expansion fired on a query that was BELOW the effective floor
+  // and got injected anyway. Comparing against the expansion threshold instead
+  // over-claims: a query above the floor but below the threshold never needed
+  // rescuing (it would have injected regardless).
+  const effectiveFloor = cfg.retrieval.injectionFloor * capacityFloorMultiplier;
+  const wasBelowFloor = expansionStatus === 'fired' && initialBest < effectiveFloor;
   logRetrieval({
     project: projectLabel,
     promptHash: hash,
+    promptPreview: promptPreview(prompt),
     retrieved: injectedNames,
     similarityScores: included.map((r) => Number(r.similarity.toFixed(4))),
     tokensInjected: tokens,
     promptTokens: estimateTokens(prompt),
     latencyMs: Date.now() - started,
-    floorDropped: outcome.floorDropped
+    floorDropped: outcome.floorDropped,
+    initialBest: expansionStatus === 'fired' ? initialBest : null,
+    rescued: expansionStatus === 'fired' ? wasBelowFloor : null,
+    variantAttribution
   });
 
   if (cfg.logging.paranoid) {
@@ -691,13 +877,10 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     injectedFiles: injectedNames
   });
 
-  sendJson(res, 200, {
-    continue: true,
-    hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
-      additionalContext: block
-    }
-  });
+  const outBlock = expansionWarning
+    ? `${block}\n\n[contextus] expansion warning: ${expansionWarning}`
+    : block;
+  sendJson(res, 200, shapeHookOutput(outBlock, { agent, hookEvent }));
 }
 
 /**

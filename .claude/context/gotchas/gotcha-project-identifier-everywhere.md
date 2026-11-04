@@ -52,9 +52,11 @@ cd ~/src/my-project && tsx ~/src/contextus/scripts/embed-contexts.ts
 # Search by name (should work after normalization fix)
 tsx ~/src/contextus/scripts/cli/context-search.ts "query" --project my-project
 
-# Search by hash (should return same results)
-HASH=$(echo -n ~/src/my-project | sha256sum | cut -c1-12)
-tsx ~/src/contextus/scripts/cli/context-search.ts "query" --project $HASH
+# Search by path (should return same results — the daemon hashes server-side)
+tsx ~/src/contextus/scripts/cli/context-search.ts "query" --project ~/src/my-project
 
-# Both should return identical results if normalization is correct
+# All three should return identical results if normalization is correct.
+# (Never hand-compute the hash with `echo -n … | sha256sum`: some shells print
+# a literal "-n" plus trailing newline, hashing the wrong bytes and registering
+# a phantom project.)
 ```

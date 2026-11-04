@@ -15,21 +15,36 @@
     "anthropic": {} // Direct Anthropic API. Requires ANTHROPIC_API_KEY env var.
   },
 
+  // DON'T actually put "embedding" in YOUR .claude/contextus.jsonc, OR in
+  // ~/.contextus/data/<project>/config.json — shown here for the field
+  // shapes only. lib/embedding/embedder.ts reads ONLY plugin.jsonc's global
+  // default; there is no per-project override at any tier, so a write here
+  // would be silently ignored by the actual embed call (worse than an
+  // error — /configure show would then lie about what's really active).
+  // Caught live (2026-11-01): a stale project override caused a model-id
+  // mismatch exactly this way on contextus's own dogfood project — see
+  // gotchas/gotcha-embedding-provider-switch.md. If your machine genuinely
+  // needs to differ from plugin.jsonc's shipped default, that's a
+  // machine-wide migration — edit plugin.jsonc directly, restart the
+  // daemon, then /rebuild-embeddings --full for every project + user scope.
   "embedding": {
     // Vector embedding for semantic search. The provider that BUILT the corpus must
     // match at query time — switching requires a full re-embed.
-    "provider": "ollama", // ollama | transformers (in-process ONNX)
-    "model": "nomic-ai/nomic-embed-text-v1.5", // HuggingFace model ID (transformers provider)
-    "ollamaModel": "nomic-embed-text", // Ollama model tag. Pull first: `ollama pull nomic-embed-text`
-    "dimensions": 768, // Must match model output dimensions
-    "batchSize": 32, // Chunks per batch. Higher = faster, more memory.
-    "transformers": {
-      // Only used when provider='transformers'. Ignored for ollama.
-      "localModelPath": "", // Pre-downloaded model dir (air-gapped installs)
-      "cacheDir": "", // Override transformers.js cache dir
-      "remoteHost": "https://huggingface.co/", // Point at internal mirror if HF is blocked
-      "allowRemoteModels": true // Set false for strict offline
-    }
+    // FIELD SHAPES ONLY — this whole object is commented out on purpose.
+    // (Uncomment to use as a template, but do NOT activate it here: the
+    // embedder ignores project-level embedding config.)
+    // "provider": "ollama", // ollama | transformers (in-process ONNX)
+    // "model": "nomic-ai/nomic-embed-text-v1.5", // HuggingFace model ID (transformers provider)
+    // "ollamaModel": "nomic-embed-text", // Ollama model tag. Pull first: `ollama pull nomic-embed-text`
+    // "dimensions": 768, // Must match model output dimensions
+    // "batchSize": 32, // Chunks per batch. Higher = faster, more memory.
+    // "transformers": {
+    //   // Only used when provider='transformers'. Ignored for ollama.
+    //   "localModelPath": "", // Pre-downloaded model dir (air-gapped installs)
+    //   "cacheDir": "", // Override transformers.js cache dir
+    //   "remoteHost": "https://huggingface.co/", // Point at internal mirror if HF is blocked
+    //   "allowRemoteModels": true // Set false for strict offline
+    // }
   },
 
   "sources": {

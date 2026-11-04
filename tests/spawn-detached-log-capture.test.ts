@@ -39,9 +39,10 @@ test("spawnDetached with logFile captures the child's stdout/stderr instead of d
   );
 
   try {
-    // Both jsPath/tsPath point at the same plain script — isDevMode() is true
-    // in this repo checkout (tsconfig.json at root), so resolveLaunch runs it
-    // via tsx regardless of the "js" name; tsx executes plain JS fine too.
+    // Both jsPath/tsPath point at the same plain script, which exists, so
+    // resolveLaunch runs it directly with node (isDevMode() is pinned off
+    // without CONTEXTUS_DEV=1; the neutral branch only matches the daemon
+    // and eval-worker constants, never ad-hoc paths).
     spawnDetached(scriptFile, scriptFile, [], { logFile });
 
     await waitFor(() => fs.existsSync(logFile) && fs.statSync(logFile).size > 0);

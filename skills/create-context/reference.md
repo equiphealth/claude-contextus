@@ -62,6 +62,68 @@ agree or the file won't embed. (Rules: see CATEGORIES_AND_TAGS.md.)
 > choose?", `gotcha-` "what bites you?", `reference-` "where/how does X work?". When
 > unsure, `reference` is the safe neutral choice. Never `pattern` (not a category).
 
+## Implementation Mechanism
+
+There is no standalone `create-context` CLI script. `/create-context` is an
+agent-side calling convention: once you've decided create-vs-update (see below),
+the actual write is a single HTTP call to the daemon's capture endpoint —
+nothing else persists the file or triggers embedding.
+
+**Don't hardcode the port.** The daemon doesn't always bind 37800 — resolve the
+base URL the same way the hooks/scripts do (`scripts/lib/daemon-control.js` /
+`lib/daemon-url.ts`, `getBaseURL()`), in this priority order:
+1. `$CONTEXTUS_DAEMON_URL` env var, if set — use it verbatim.
+2. `~/.contextus/runtime/daemon.port` — a plain-text port number the daemon
+   writes at startup. Read it and build `http://127.0.0.1:<port>`.
+3. Only if neither exists, fall back to `http://127.0.0.1:37800`.
+
+On Muse hosts, always write the payload to a temp file first, then send
+it with one fixed command — never inline `-d` there. The sandbox mangles
+quoting on real bodies (and the failure looks like a daemon error), and its
+proxy drops some responses entirely. Temp file lives under `$TMPDIR`
+(sandbox-writable), mode 0600, deleted after a confirmed capture. Other
+hosts may keep the inline form:
+```bash
+BASE_URL=$(bash ~/.contextus/scripts/daemon-url.sh)
+PAYLOAD="$(mktemp "$TMPDIR/ctx-capture-XXXXXX.json")"
+chmod 600 "$PAYLOAD"
+cat > "$PAYLOAD" <<'EOF'
+{"category":"<type>","slug":"<kebab-slug>","description":"<one line>","body":"<markdown body>","scope":"project","cwd":"<absolute-cwd>","tags":["optional"]}
+EOF
+curl -s --max-time 30 -X POST "$BASE_URL/capture" \
+  -H 'content-type: application/json' \
+  --data @"$PAYLOAD"
+```
+(`cwd` must be the literal absolute path — no `$(pwd)` interpolation inside
+the JSON. Write it out explicitly.)
+
+- **Required fields**: `category`, `slug`, `description`, `body`. `scope` defaults
+  to `project`; pass `cwd` for project scope (omit for `"scope":"user"`, which
+  writes to `~/.contextus/context/` instead of `<cwd>/.claude/context/`).
+- **Create vs update is the same call**: the target path is deterministic —
+  `<category>/<type>-<slug>.md`. Calling `/capture` again with the same
+  `category`+`slug` overwrites that file; that overwrite *is* the update path.
+  There is no separate update endpoint — the similarity-check logic below just
+  decides which slug to pass.
+- **Response**: `{ok, file, relPath, target, embedded: "pending", scope}`.
+  Embedding is async — confirm via `/query` or the daemon log, not from this
+  response.
+- **Failure**: a 400 with `{"ok": false, "error": "..."}` usually means a
+  frontmatter-unsafe field (e.g. a colon in `description`) — rephrase and
+  retry, don't assume success.
+- **If curl to 127.0.0.1 fails with "operation not permitted"**: the calling
+  shell is sandboxed (seen on Muse Code hosts) — the daemon is very likely
+  fine; escalate/re-run outside the sandbox rather than concluding it's down.
+- **If curl times out or returns empty**: the request may still have landed
+  (sandbox proxy drops responses it can't classify). Don't retry blindly —
+  verify: check whether
+  `<cwd>/.claude/context/<category>/<type>-<slug>.md` (project scope) or
+  `~/.contextus/context/<category>/<type>-<slug>.md` (user scope) exists with
+  a fresh mtime. Only delete `$PAYLOAD` after a confirmed capture.
+
+See `.claude/context/reference/reference-daemon-context-create-vs-update.md`
+for the full endpoint contract if this project has that dogfood corpus.
+
 ## How It Works
 
 ### 1. Similarity Check (automatic)

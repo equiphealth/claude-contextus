@@ -1,6 +1,6 @@
 ---
-name: use-jest-for-testing
-description: Always use Jest as test framework
+name: update-context
+description: Update an existing context file when information changes or conflicts arise. Use when a pattern is superseded, incorrect, or needs examples.
 ---
 
 # update-context

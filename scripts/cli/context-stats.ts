@@ -12,10 +12,10 @@
  * - Cost breakdown (eval spend)
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { projectHash } from '../../lib/config.js';
 
 const HOME = os.homedir();
 const CONTEXTUS_DATA = path.join(HOME, '.contextus', 'data');
@@ -59,12 +59,6 @@ interface RetrievalEvent {
   timestamp: string;
   project: string;
   retrieved: string[];
-}
-
-/** Compute project hash from absolute path (same as lib/config.ts). */
-function projectHash(absolutePath: string): string {
-  const normalized = path.resolve(absolutePath);
-  return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 12);
 }
 
 /** Resolve a --project value (name, hash, or path) to a projectId hash. */

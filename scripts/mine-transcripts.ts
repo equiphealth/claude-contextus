@@ -135,7 +135,10 @@ function buildExtractionConfig(projectPath: string): ExtractionConfig {
   return {
     ...DEFAULT_EXTRACTION_CONFIG,
     ollamaEndpoint: providers.ollama?.endpoint ?? 'http://localhost:11434',
-    bedrockRegion: providers.bedrock?.region ?? 'us-east-1'
+    bedrockRegion: providers.bedrock?.region ?? 'us-east-1',
+    metaEndpoint: providers.meta?.endpoint,
+    metaApiKeyEnv: providers.meta?.apiKeyEnv,
+    metaApiKeyFile: providers.meta?.apiKeyFile
   };
 }
 

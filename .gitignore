@@ -38,6 +38,7 @@ logs/
 
 # Temp files
 tmp/
+.tmp/
 temp/
 *.tmp
 
@@ -55,3 +56,7 @@ assets/model/
 # Local LanceDB scratch/POC data — never commit real embedded data to the repo
 .lancedb-poc/
 *.lance/
+
+# Muse port working docs (local prep notes, not tracked)
+contextus-muse-*.md
+contextus-muse-support.zip

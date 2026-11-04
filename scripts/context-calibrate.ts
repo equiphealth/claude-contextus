@@ -19,16 +19,20 @@
  *   /context-calibrate --floor              # replay → recommend a floor (print only)
  *   /context-calibrate --floor --diff       # show the plugin.json diff it would make
  *   /context-calibrate --floor --apply      # write config.retrieval.injectionFloor
- *   /context-calibrate --start [--samples N]# begin a usage-eval campaign
+ *   /context-calibrate --start [--samples N] [--eval-provider meta|bedrock|anthropic|ollama]
+ *     # begin a usage-eval campaign (default judge: bedrock Haiku)
  *   /context-calibrate --status             # campaign progress
  *   /context-calibrate --report             # aggregate quality from logged evals
  *   /context-calibrate --stop               # cancel the campaign early
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
-import { loadProjectConfig, projectLocalConfigPath, expandHome } from '../lib/config.js';
+import {
+  loadProjectConfig,
+  projectLocalConfigPath,
+  expandHome,
+  projectHash
+} from '../lib/config.js';
 import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js';
 import { printFloorReport } from '../lib/calibration/floor-report.js';
 import {
@@ -38,6 +42,8 @@ import {
   applyChanges
 } from '../lib/calibration/config-write.js';
 import { readState, startCalibration, writeState } from '../lib/calibration/calibration-state.js';
+import type { EvalModelConfig } from '../lib/calibration/eval-model.js';
+import { loadConfig } from '../lib/config.js';
 import { RATING_WEIGHTS } from '../lib/calibration/eval-calibration.js';
 
 interface Args {
@@ -51,6 +57,7 @@ interface Args {
   project?: string;
   limit?: number;
   samples?: number;
+  evalProvider?: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -75,6 +82,7 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--project' && argv[i + 1]) a.project = argv[++i];
     else if (arg === '--limit' && argv[i + 1]) a.limit = Number(argv[++i]);
     else if (arg === '--samples' && argv[i + 1]) a.samples = Number(argv[++i]);
+    else if (arg === '--eval-provider' && argv[i + 1]) a.evalProvider = argv[++i];
   }
   return a;
 }
@@ -84,9 +92,7 @@ function parseArgs(argv: string[]): Args {
 async function runFloorMode(args: Args): Promise<void> {
   // Resolve the project name the same way the replay does (cwd basename unless
   // --project given), so the floor we write is scoped to THIS project's corpus.
-  const project =
-    args.project ??
-    crypto.createHash('sha256').update(path.resolve(process.cwd())).digest('hex').slice(0, 12);
+  const project = args.project ?? projectHash(process.cwd());
   // PER-PROJECT write target: the machine-local override beside this project's
   // corpus, NOT the global plugin.json — so calibrating one project never changes
   // another's floor (the multi-project unblocker). Diff is read from the same file.
@@ -132,8 +138,26 @@ async function runFloorMode(args: Args): Promise<void> {
 
 /* ── Usage-eval campaign path ──────────────────────────────────────────────── */
 
+const EVAL_PROVIDERS = ['anthropic', 'ollama', 'bedrock', 'meta'] as const;
+
 function runStart(args: Args): void {
-  const state = startCalibration(args.samples ? { targetSamples: args.samples } : {});
+  const provider = args.evalProvider ?? 'bedrock';
+  if (!(EVAL_PROVIDERS as readonly string[]).includes(provider)) {
+    console.error(
+      `Unknown --eval-provider '${args.evalProvider}' (expected one of: ${EVAL_PROVIDERS.join(', ')})`
+    );
+    process.exit(1);
+  }
+  const model: EvalModelConfig = { provider: provider as EvalModelConfig['provider'] };
+  if (provider === 'meta') {
+    // Resolve the key file once at campaign start (same source expansion
+    // uses) so the worker never needs config access mid-campaign.
+    model.metaApiKeyFile = loadConfig().providers?.meta?.apiKeyFile;
+  }
+  const state = startCalibration({
+    ...(args.samples ? { targetSamples: args.samples } : {}),
+    model
+  });
   console.log('Contextus calibration started.');
   console.log(`  target: ${state.targetSamples} evaluated retrievals`);
   console.log(
