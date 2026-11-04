@@ -38,3 +38,5 @@ export function syncNeutralDaemon(opts?: {
   force?: boolean;
 }): { synced: boolean } & NeutralStatus;
 export function isDevMode(): boolean;
+export function resolveDaemonLaunch(extraArgs?: string[]): { cmd: string; args: string[] };
+export function ensureDaemonRunning(): Promise<boolean>;

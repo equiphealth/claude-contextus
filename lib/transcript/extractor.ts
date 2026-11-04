@@ -136,6 +136,7 @@ export async function extractFromWindow(
     region: config.bedrockRegion,
     metaEndpoint: config.metaEndpoint,
     metaApiKeyEnv: config.metaApiKeyEnv,
+    metaApiKeyFile: config.metaApiKeyFile,
     maxTokens: 2048
   };
 
@@ -152,6 +153,7 @@ export async function extractFromWindow(
         region: config.bedrockRegion,
         metaEndpoint: config.metaEndpoint,
         metaApiKeyEnv: config.metaApiKeyEnv,
+        metaApiKeyFile: config.metaApiKeyFile,
         maxTokens: 2048
       };
       response = await callEvalModel(prompt, fallbackConfig);
@@ -173,6 +175,7 @@ export interface ExtractionConfig {
   bedrockRegion?: string;
   metaEndpoint?: string;
   metaApiKeyEnv?: string;
+  metaApiKeyFile?: string;
   confidenceThreshold: number;
   includeThinking: boolean;
   maxInputTokens: number;

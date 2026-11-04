@@ -32,7 +32,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import {
   upsertStanza,
   hasStanza,
@@ -44,6 +43,7 @@ import {
   writeSetupStamp,
   syncNeutralDaemon,
   noteDaemonVersion,
+  ensureDaemonRunning,
   NEUTRAL_DIST_SERVER
 } from './lib/daemon-control.js';
 import { getDaemonURL } from '../lib/daemon-url.js';
@@ -125,11 +125,9 @@ async function ensureDaemonReady(): Promise<void> {
   if (!fs.existsSync(NEUTRAL_DIST_SERVER)) {
     throw new Error(`neutral dist entry missing after sync: ${NEUTRAL_DIST_SERVER}`);
   }
-  const child = spawn(process.execPath, [NEUTRAL_DIST_SERVER], {
-    detached: true,
-    stdio: 'ignore'
-  });
-  child.unref();
+  // Delegate evict + spawn to the shared lifecycle helper (handles a wedged
+  // PID/port that a raw spawn would EADDRINUSE-crash against), then wait warm.
+  await ensureDaemonRunning();
   console.log('  daemon           spawned, waiting for model warm…');
   const deadline = Date.now() + 90000;
   for (;;) {
@@ -439,9 +437,12 @@ async function main(): Promise<void> {
   // from "setup never ran". Written for both hosts; only the Muse hook reads
   // it today. A stamp never silences a dead daemon (the hook checks /health).
   const stamp = writeSetupStamp(args.dir, { host: args.host });
-  console.log(
-    `  setup stamp      ${stamp ? `.claude/setup.json (${args.host})` : 'FAILED to write'}`
-  );
+  if (!stamp) {
+    throw new Error(
+      'setup stamp (.claude/setup.json) could not be written — without it the SessionStart hook will keep nudging setup. Fix project-dir writability and re-run setup.'
+    );
+  }
+  console.log(`  setup stamp      .claude/setup.json (${args.host})`);
 
   console.log('\n✓ Setup complete. Context will be injected automatically on your next prompts.');
   if (!args.tune) {

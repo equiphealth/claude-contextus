@@ -46,7 +46,8 @@ function defaults(): CalibrationState {
         endpoint: cfg.providers.ollama.endpoint,
         region: cfg.providers.bedrock.region,
         metaEndpoint: cfg.providers.meta?.endpoint,
-        metaApiKeyEnv: cfg.providers.meta?.apiKeyEnv
+        metaApiKeyEnv: cfg.providers.meta?.apiKeyEnv,
+        metaApiKeyFile: cfg.providers.meta?.apiKeyFile
       }
     : DEFAULT_EVAL_MODEL;
   return {
