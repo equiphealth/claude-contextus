@@ -18,7 +18,11 @@ export const STDOUT_CEILING = 16383;
  * Writer (llm-capacity) and reader (query) must use the same mapping.
  */
 export function safeSessionKey(sessionId) {
-  return String(sessionId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 128) || 'unknown';
+  return (
+    String(sessionId)
+      .replace(/[^A-Za-z0-9_-]/g, '_')
+      .slice(0, 128) || 'unknown'
+  );
 }
 /** systemMessage is kept whole only up to 1000 chars (docs). */
 export const SYSTEM_MESSAGE_CHARS = 1000;
