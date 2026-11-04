@@ -74,7 +74,7 @@ elsewhere, while the WRONG approach was the one being followed as "the
 documented procedure." Never reimplement this a second, divergent way:
 
 ```bash
-cd <repo-root>   # wherever this plugin checkout actually lives — don't hardcode a path
+cd ~/.contextus/daemon   # neutral copy — always present post-setup, no repo checkout needed
 node --import tsx -e "
 import('./scripts/lib/daemon-control.js').then(async (m) => {
   const wasRunning = await m.ensureDaemonRunning();

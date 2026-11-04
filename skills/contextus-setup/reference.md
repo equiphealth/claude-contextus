@@ -128,6 +128,22 @@ When this skill runs under Muse Code, the host is `muse`:
    until `modelLoaded` (90 s budget, then fail loudly). Declare success only
    on `modelLoaded: true`; check Ollama/model availability here and report
    it. Hooks never build; the 15 s hook budget is never spent here.
+   On the **muse host**, a daemon spawned inside the session dies with the
+   session (sandboxed shell: no `setsid`, `disown` may silently no-op) — so
+   an in-session start is a bridge for setup only, never the permanent
+   daemon. Whenever setup starts (or needs) a daemon on muse, ALWAYS also
+   hand the user the terminal command below and say to run it in their own
+   terminal; a daemon launched there survives independently. Do not present
+   the in-session daemon as done — setup is done when the user confirms the
+   terminal-launched daemon is healthy, or explicitly defers it. Hand them
+   exactly this (installed by step 1 above, no repo checkout needed — it
+   delegates to `ensureDaemonRunning()` itself, same as `manage-daemon`):
+   ```bash
+   bash ~/.contextus/scripts/daemon-restart.sh
+   ```
+   It preflights, stops any stale daemon, spawns via neutral dist / repo
+   dist / dev tsx as appropriate, and polls `/health` until `modelLoaded`.
+   Exit 0 means serving; anything else prints the cause plus a log tail.
 6. Write the rules stanza to `AGENTS.md` (setup-owned, never hook-owned) and
    confirm `.claude/setup.json` exists — the SessionStart nudge reads that
    stamp. Never write the stamp by hand. If the engine's output includes

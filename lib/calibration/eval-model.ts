@@ -9,6 +9,8 @@
  * they used this?" rather than open-ended semantic judgement.
  */
 
+import { readApiKeyFile, describeApiKeyFileFailure } from '../config.js';
+
 /** Which model judges calibration usage. Mirrors the provider registry. */
 export interface EvalModelConfig {
   provider: 'anthropic' | 'ollama' | 'bedrock' | 'meta';
@@ -22,6 +24,8 @@ export interface EvalModelConfig {
   metaEndpoint?: string;
   /** env var holding the Meta key (resolved from providers.meta.apiKeyEnv if omitted) */
   metaApiKeyEnv?: string;
+  /** key file holding the Meta key — wins over env when configured (same contract as expansion) */
+  metaApiKeyFile?: string;
   /** max output tokens (default: 256 for calibration, higher for extraction) */
   maxTokens?: number;
 }
@@ -110,11 +114,24 @@ async function callBedrock(prompt: string, cfg: EvalModelConfig): Promise<string
  * reasoning model, so grading calls need headroom (256 is not enough).
  */
 async function callMeta(prompt: string, cfg: EvalModelConfig): Promise<string> {
-  const apiKey =
-    process.env[cfg.metaApiKeyEnv || META_KEY_ENV_DEFAULT] || process.env[META_KEY_ENV_FALLBACK];
+  // apiKeyFile wins when configured (same contract as expansion): a
+  // configured-but-broken file is a loud error, never a quiet fall-through
+  // to env. Only when unset does env resolution apply.
+  const keyFile = cfg.metaApiKeyFile;
+  let apiKey: string | undefined;
+  if (keyFile) {
+    const result = readApiKeyFile(keyFile);
+    if (!result.ok) {
+      throw new Error(`Meta eval: key file ${describeApiKeyFileFailure(result)} (${keyFile})`);
+    }
+    apiKey = result.key;
+  } else {
+    apiKey =
+      process.env[cfg.metaApiKeyEnv || META_KEY_ENV_DEFAULT] || process.env[META_KEY_ENV_FALLBACK];
+  }
   if (!apiKey) {
     throw new Error(
-      `Meta eval needs a key: set ${cfg.metaApiKeyEnv || META_KEY_ENV_DEFAULT} (or ${META_KEY_ENV_FALLBACK})`
+      `Meta eval needs a key: set ${cfg.metaApiKeyEnv || META_KEY_ENV_DEFAULT} (or ${META_KEY_ENV_FALLBACK}), or configure providers.meta.apiKeyFile`
     );
   }
   const endpoint = (cfg.metaEndpoint || META_ENDPOINT_DEFAULT).replace(/\/$/, '');

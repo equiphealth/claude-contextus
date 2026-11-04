@@ -267,10 +267,20 @@ Analyzes similarity score distribution:
 /context-calibrate                  # Show current campaign status
 /context-calibrate --start          # Begin quality evaluation (targetSamples)
 /context-calibrate --start --samples 50   # …with a custom target
+/context-calibrate --start --eval-provider meta   # Judge with Meta (muse-spark) instead of the default Bedrock Haiku
 /context-calibrate --status         # Campaign progress
 /context-calibrate --report         # Aggregate per-pattern quality from logged evals
 /context-calibrate --stop           # Cancel the campaign early
 ```
+
+When starting a campaign, ask which judge the user wants. Default is
+Bedrock Haiku (works with AWS credentials, no extra setup). `meta` uses
+muse-spark through the same key-file mechanism as expansion
+(`providers.meta.apiKeyFile`, 0600, outside env vars — never paste a live
+key): if no key file is configured the first eval fails loudly naming the
+missing piece. `ollama` (local llama3.1:8b) is the offline opt-in. The
+choice is recorded in the campaign state; switching judges mid-campaign
+restarts sampling from zero.
 
 Engine / dev entry point (prints, never applies). Run via the repo-local `tsx` by
 path — NOT `pnpm` (Node-version mismatch errors out):

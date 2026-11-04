@@ -19,7 +19,8 @@
  *   /context-calibrate --floor              # replay → recommend a floor (print only)
  *   /context-calibrate --floor --diff       # show the plugin.json diff it would make
  *   /context-calibrate --floor --apply      # write config.retrieval.injectionFloor
- *   /context-calibrate --start [--samples N]# begin a usage-eval campaign
+ *   /context-calibrate --start [--samples N] [--eval-provider meta|bedrock|anthropic|ollama]
+ *     # begin a usage-eval campaign (default judge: bedrock Haiku)
  *   /context-calibrate --status             # campaign progress
  *   /context-calibrate --report             # aggregate quality from logged evals
  *   /context-calibrate --stop               # cancel the campaign early
@@ -41,6 +42,8 @@ import {
   applyChanges
 } from '../lib/calibration/config-write.js';
 import { readState, startCalibration, writeState } from '../lib/calibration/calibration-state.js';
+import type { EvalModelConfig } from '../lib/calibration/eval-model.js';
+import { loadConfig } from '../lib/config.js';
 import { RATING_WEIGHTS } from '../lib/calibration/eval-calibration.js';
 
 interface Args {
@@ -54,6 +57,7 @@ interface Args {
   project?: string;
   limit?: number;
   samples?: number;
+  evalProvider?: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -78,6 +82,7 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--project' && argv[i + 1]) a.project = argv[++i];
     else if (arg === '--limit' && argv[i + 1]) a.limit = Number(argv[++i]);
     else if (arg === '--samples' && argv[i + 1]) a.samples = Number(argv[++i]);
+    else if (arg === '--eval-provider' && argv[i + 1]) a.evalProvider = argv[++i];
   }
   return a;
 }
@@ -133,8 +138,26 @@ async function runFloorMode(args: Args): Promise<void> {
 
 /* ── Usage-eval campaign path ──────────────────────────────────────────────── */
 
+const EVAL_PROVIDERS = ['anthropic', 'ollama', 'bedrock', 'meta'] as const;
+
 function runStart(args: Args): void {
-  const state = startCalibration(args.samples ? { targetSamples: args.samples } : {});
+  const provider = args.evalProvider ?? 'bedrock';
+  if (!(EVAL_PROVIDERS as readonly string[]).includes(provider)) {
+    console.error(
+      `Unknown --eval-provider '${args.evalProvider}' (expected one of: ${EVAL_PROVIDERS.join(', ')})`
+    );
+    process.exit(1);
+  }
+  const model: EvalModelConfig = { provider: provider as EvalModelConfig['provider'] };
+  if (provider === 'meta') {
+    // Resolve the key file once at campaign start (same source expansion
+    // uses) so the worker never needs config access mid-campaign.
+    model.metaApiKeyFile = loadConfig().providers?.meta?.apiKeyFile;
+  }
+  const state = startCalibration({
+    ...(args.samples ? { targetSamples: args.samples } : {}),
+    model
+  });
   console.log('Contextus calibration started.');
   console.log(`  target: ${state.targetSamples} evaluated retrievals`);
   console.log(

@@ -77,12 +77,25 @@ base URL the same way the hooks/scripts do (`scripts/lib/daemon-control.js` /
    writes at startup. Read it and build `http://127.0.0.1:<port>`.
 3. Only if neither exists, fall back to `http://127.0.0.1:37800`.
 
+On Muse hosts, always write the payload to a temp file first, then send
+it with one fixed command — never inline `-d` there. The sandbox mangles
+quoting on real bodies (and the failure looks like a daemon error), and its
+proxy drops some responses entirely. Temp file lives under `$TMPDIR`
+(sandbox-writable), mode 0600, deleted after a confirmed capture. Other
+hosts may keep the inline form:
 ```bash
 BASE_URL=$(bash ~/.contextus/scripts/daemon-url.sh)
-curl -s -X POST "$BASE_URL/capture" \
+PAYLOAD="$(mktemp "$TMPDIR/ctx-capture-XXXXXX.json")"
+chmod 600 "$PAYLOAD"
+cat > "$PAYLOAD" <<'EOF'
+{"category":"<type>","slug":"<kebab-slug>","description":"<one line>","body":"<markdown body>","scope":"project","cwd":"<absolute-cwd>","tags":["optional"]}
+EOF
+curl -s --max-time 30 -X POST "$BASE_URL/capture" \
   -H 'content-type: application/json' \
-  -d '{"category":"<type>","slug":"<kebab-slug>","description":"<one line>","body":"<markdown body>","scope":"project","cwd":"'"$(pwd)"'","tags":["optional"]}'
+  --data @"$PAYLOAD"
 ```
+(`cwd` must be the literal absolute path — no `$(pwd)` interpolation inside
+the JSON. Write it out explicitly.)
 
 - **Required fields**: `category`, `slug`, `description`, `body`. `scope` defaults
   to `project`; pass `cwd` for project scope (omit for `"scope":"user"`, which
@@ -101,6 +114,12 @@ curl -s -X POST "$BASE_URL/capture" \
 - **If curl to 127.0.0.1 fails with "operation not permitted"**: the calling
   shell is sandboxed (seen on Muse Code hosts) — the daemon is very likely
   fine; escalate/re-run outside the sandbox rather than concluding it's down.
+- **If curl times out or returns empty**: the request may still have landed
+  (sandbox proxy drops responses it can't classify). Don't retry blindly —
+  verify: check whether
+  `<cwd>/.claude/context/<category>/<type>-<slug>.md` (project scope) or
+  `~/.contextus/context/<category>/<type>-<slug>.md` (user scope) exists with
+  a fresh mtime. Only delete `$PAYLOAD` after a confirmed capture.
 
 See `.claude/context/reference/reference-daemon-context-create-vs-update.md`
 for the full endpoint contract if this project has that dogfood corpus.

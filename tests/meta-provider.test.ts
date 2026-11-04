@@ -9,6 +9,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { expandQuery, resolveMetaApiKey } from '../lib/retrieval/expand.js';
 import { callEvalModel } from '../lib/calibration/eval-model.js';
 
@@ -185,6 +188,54 @@ test('callEvalModel meta: posts chat completions, returns message text', async (
       assert.equal(seenAuth, 'Bearer test-meta-key');
     } finally {
       mock.restore();
+    }
+  });
+});
+
+test('callEvalModel meta: key file wins over env, posts with file key', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxus-eval-'));
+  const keyFile = path.join(dir, 'meta.key');
+  fs.writeFileSync(keyFile, 'file-key-abc\n', { mode: 0o600 });
+  try {
+    await withMetaKey('env-key-xyz', async () => {
+      const mock = mockChoices('1:helpful');
+      try {
+        const text = await callEvalModel('grade this', {
+          provider: 'meta',
+          model: 'muse-spark-1.3-contributor',
+          metaApiKeyFile: keyFile
+        });
+        assert.equal(text, '1:helpful');
+        assert.equal(mock.seen().seenAuth, 'Bearer file-key-abc');
+      } finally {
+        mock.restore();
+      }
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('callEvalModel meta: broken key file rejects naming the path, no fetch', async () => {
+  await withMetaKey('env-key-xyz', async () => {
+    const originalFetch = globalThis.fetch;
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      throw new Error('must not fetch with a broken key file');
+    }) as unknown as typeof fetch;
+    try {
+      await assert.rejects(
+        () =>
+          callEvalModel('grade this', {
+            provider: 'meta',
+            metaApiKeyFile: path.join(os.tmpdir(), 'ctxus-no-such-dir', 'meta.key')
+          }),
+        /key file.*ctxus-no-such-dir/
+      );
+      assert.equal(fetched, false);
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   });
 });
