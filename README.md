@@ -396,6 +396,12 @@ If you're not sure, start with contextus. Add claude-mem later if you find yours
 
 Issues and PRs welcome! This is a vacation project but I'm happy to collaborate.
 
+Original concept by Anthony Dawson; built using Equip Health, Inc. resources, which owns the original work.
+
+## License
+
+Licensed under the MIT License — see [LICENSE](LICENSE).
+
 ---
 
 **Status**: v0.19.1 — daemon, embedding pipeline, retrieval, hooks, skills, and transcript mining all working. See [docs/dev/V2_ROADMAP.md](docs/dev/V2_ROADMAP.md) for what's next.
