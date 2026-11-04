@@ -62,7 +62,17 @@ command -v node >/dev/null 2>&1 || fail "node not found on PATH"
 command -v curl >/dev/null 2>&1 || fail "curl not found on PATH"
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
 [ "$NODE_MAJOR" -ge 22 ] || fail "node $(node -v) < 22 — daemon requires node 22+ (repo has .nvmrc: run 'nvm use' first)"
-[ -d "${TSX_DIR}/node_modules" ] || fail "${TSX_DIR}/node_modules missing — re-run setup"
+# Resolve the launch target the same way spawnDaemon() will — a present
+# node_modules is NOT proof (stale neutral copy without dist + no dev tsx
+# still throws). Must succeed before the old daemon is touched. Runs from
+# TSX_DIR so the bare `tsx` specifier resolves there, not in the invoker's cwd.
+LAUNCH_TARGET="$(cd "${TSX_DIR}" && DC_PATH="$DC_PATH" NODE_NO_WARNINGS=1 node --import tsx -e "
+import(process.env.DC_PATH).then((m) => {
+  const l = m.resolveDaemonLaunch();
+  console.log(l.cmd + ' ' + l.args[0]);
+}).catch((e) => { console.error('NO LAUNCH TARGET: ' + (e && e.message)); process.exit(1); });
+" 2>&1)"
+[ "$?" -eq 0 ] && [ -n "$LAUNCH_TARGET" ] || fail "no runnable daemon build — ${LAUNCH_TARGET:-see above}. Fix with setup before restarting."
 OLD_PID="$(cat "${PID_FILE}" 2>/dev/null || echo '')"
 
 daemon_url() {
@@ -97,13 +107,13 @@ fi
 # dev tsx as appropriate). The spawned daemon is detached + stdio-ignored +
 # unref'd, so it survives this shell exiting.
 echo "Spawning replacement via ensureDaemonRunning()..."
-DC_PATH="$DC_PATH" node --import tsx -e "
+(cd "${TSX_DIR}" && DC_PATH="$DC_PATH" NODE_NO_WARNINGS=1 node --import tsx -e "
 import(process.env.DC_PATH).then(async (m) => {
   const wasRunning = await m.ensureDaemonRunning();
   console.log(wasRunning ? 'Daemon already healthy' : 'Spawned (resolveLaunch picked the build)');
 }).catch((e) => { console.error('SPAWN FAILED: ' + (e && e.message)); process.exit(1); });
-" 2>&1 | grep -v "Warning\|trace-warnings"
-[ "${PIPESTATUS[0]}" -eq 0 ] || fail "spawn step failed — see output above"
+" 2>&1)
+[ "$?" -eq 0 ] || fail "spawn step failed — see output above"
 
 # --- Verify: poll /health until modelLoaded, abort fast on warmupError ---
 HEALTH_URL="$(daemon_url)/health"

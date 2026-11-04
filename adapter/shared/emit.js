@@ -11,6 +11,15 @@
 
 /** One byte inside the Muse 16384-byte hook stdout kill line. */
 export const STDOUT_CEILING = 16383;
+
+/**
+ * Session IDs come from the host payload and are interpolated into a runtime
+ * filename. Sanitize so `../` (or absolute paths) can't escape RUNTIME_DIR.
+ * Writer (llm-capacity) and reader (query) must use the same mapping.
+ */
+export function safeSessionKey(sessionId) {
+  return String(sessionId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 128) || 'unknown';
+}
 /** systemMessage is kept whole only up to 1000 chars (docs). */
 export const SYSTEM_MESSAGE_CHARS = 1000;
 

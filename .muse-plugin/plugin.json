@@ -34,6 +34,7 @@
     "mcpServers": [],
     "reminders": [],
     "skills": [
+      { "enabledDefault": true, "id": "add-patterns", "path": "skills/add-patterns/SKILL.md" },
       {
         "enabledDefault": true,
         "id": "contextus-setup",
@@ -73,6 +74,11 @@
       { "enabledDefault": true, "id": "ctx", "path": "skills/ctx/SKILL.md" },
       { "enabledDefault": true, "id": "link-project", "path": "skills/link-project/SKILL.md" },
       { "enabledDefault": true, "id": "manage-daemon", "path": "skills/manage-daemon/SKILL.md" },
+      {
+        "enabledDefault": true,
+        "id": "migrate-memory",
+        "path": "skills/migrate-memory/SKILL.md"
+      },
       {
         "enabledDefault": true,
         "id": "mine-transcripts",

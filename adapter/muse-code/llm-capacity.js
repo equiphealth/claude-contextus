@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { emitEmpty } from '../shared/emit.js';
+import { emitEmpty, safeSessionKey } from '../shared/emit.js';
 
 const RUNTIME_DIR = path.join(os.homedir(), '.contextus', 'runtime');
 
@@ -40,7 +40,7 @@ async function main() {
     return;
   }
 
-  const file = path.join(RUNTIME_DIR, `${sessionId}.context-stats.json`);
+  const file = path.join(RUNTIME_DIR, `${safeSessionKey(sessionId)}.context-stats.json`);
   let prev = {};
   try {
     prev = JSON.parse(fs.readFileSync(file, 'utf8'));

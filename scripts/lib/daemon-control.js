@@ -493,6 +493,15 @@ export function isDevMode() {
  * actionable message — hook callers catch it into their normal down-path
  * (fail open), setup surfaces it loudly (fail closed).
  */
+/**
+ * Resolve the daemon's own launch target (same decision `spawnDaemon()` will
+ * make). Throws the actionable no-build error when nothing is runnable —
+ * preflight callers use this BEFORE stopping a live daemon.
+ */
+export function resolveDaemonLaunch(extraArgs = []) {
+  return resolveLaunch(DAEMON_JS, DAEMON_TS, extraArgs);
+}
+
 function resolveLaunch(jsPath, tsPath, extraArgs = []) {
   // Neutral ready + non-dev → run the setup-owned build (host-shared). Covers
   // the daemon AND the eval worker (both live in the neutral dist). Never a

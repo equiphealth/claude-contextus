@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { projectHash } from '../../scripts/lib/project-hash.js';
 import { getBaseURL, ensureDaemonRunning } from '../../scripts/lib/daemon-control.js';
 import { stripJsonComments } from '../../scripts/lib/parse-jsonc.js';
-import { emitMerged, emitEmpty } from '../shared/emit.js';
+import { emitMerged, emitEmpty, safeSessionKey } from '../shared/emit.js';
 
 const ADAPTER_DIR = path.dirname(fileURLToPath(import.meta.url));
 /** Plugin root is one level up from adapter/ — same layout as scripts/. */
@@ -81,7 +81,7 @@ function readAwarenessPrompts(mode) {
 /** Session stats for the capacity guard — Muse session_id wins, env is fallback. */
 function readContextStats(sessionId) {
   if (!sessionId) return undefined;
-  const file = path.join(RUNTIME_DIR, `${sessionId}.context-stats.json`);
+  const file = path.join(RUNTIME_DIR, `${safeSessionKey(sessionId)}.context-stats.json`);
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {

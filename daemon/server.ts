@@ -245,7 +245,9 @@ export function capacityPercent(
   stats: CapacityStats | undefined,
   cpCfg: CapacityThresholds | undefined
 ): number | undefined {
-  if (stats?.used_percentage && stats.used_percentage > 0) return stats.used_percentage;
+  // An explicit numeric report wins — including a genuine 0, which must not
+  // fall through to the token-based estimate and resurrect as a nonzero value.
+  if (typeof stats?.used_percentage === 'number') return stats.used_percentage;
   if (
     stats?.input_tokens &&
     stats.input_tokens > 0 &&
@@ -823,8 +825,12 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       variantAttribution[r.filename || r.id] = variantSource.get(r.id) ?? -1;
     }
   }
-  const wasWeakStart =
-    expansionStatus === 'fired' && initialBest < cfg.expansion.expansionThreshold;
+  // Rescued = expansion fired on a query that was BELOW the effective floor
+  // and got injected anyway. Comparing against the expansion threshold instead
+  // over-claims: a query above the floor but below the threshold never needed
+  // rescuing (it would have injected regardless).
+  const effectiveFloor = cfg.retrieval.injectionFloor * capacityFloorMultiplier;
+  const wasBelowFloor = expansionStatus === 'fired' && initialBest < effectiveFloor;
   logRetrieval({
     project: projectLabel,
     promptHash: hash,
@@ -836,7 +842,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     latencyMs: Date.now() - started,
     floorDropped: outcome.floorDropped,
     initialBest: expansionStatus === 'fired' ? initialBest : null,
-    rescued: expansionStatus === 'fired' ? wasWeakStart : null,
+    rescued: expansionStatus === 'fired' ? wasBelowFloor : null,
     variantAttribution
   });
 

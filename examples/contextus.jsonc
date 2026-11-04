@@ -30,18 +30,21 @@
   "embedding": {
     // Vector embedding for semantic search. The provider that BUILT the corpus must
     // match at query time — switching requires a full re-embed.
-    "provider": "ollama", // ollama | transformers (in-process ONNX)
-    "model": "nomic-ai/nomic-embed-text-v1.5", // HuggingFace model ID (transformers provider)
-    "ollamaModel": "nomic-embed-text", // Ollama model tag. Pull first: `ollama pull nomic-embed-text`
-    "dimensions": 768, // Must match model output dimensions
-    "batchSize": 32, // Chunks per batch. Higher = faster, more memory.
-    "transformers": {
-      // Only used when provider='transformers'. Ignored for ollama.
-      "localModelPath": "", // Pre-downloaded model dir (air-gapped installs)
-      "cacheDir": "", // Override transformers.js cache dir
-      "remoteHost": "https://huggingface.co/", // Point at internal mirror if HF is blocked
-      "allowRemoteModels": true // Set false for strict offline
-    }
+    // FIELD SHAPES ONLY — this whole object is commented out on purpose.
+    // (Uncomment to use as a template, but do NOT activate it here: the
+    // embedder ignores project-level embedding config.)
+    // "provider": "ollama", // ollama | transformers (in-process ONNX)
+    // "model": "nomic-ai/nomic-embed-text-v1.5", // HuggingFace model ID (transformers provider)
+    // "ollamaModel": "nomic-embed-text", // Ollama model tag. Pull first: `ollama pull nomic-embed-text`
+    // "dimensions": 768, // Must match model output dimensions
+    // "batchSize": 32, // Chunks per batch. Higher = faster, more memory.
+    // "transformers": {
+    //   // Only used when provider='transformers'. Ignored for ollama.
+    //   "localModelPath": "", // Pre-downloaded model dir (air-gapped installs)
+    //   "cacheDir": "", // Override transformers.js cache dir
+    //   "remoteHost": "https://huggingface.co/", // Point at internal mirror if HF is blocked
+    //   "allowRemoteModels": true // Set false for strict offline
+    // }
   },
 
   "sources": {

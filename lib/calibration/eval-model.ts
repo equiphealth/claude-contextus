@@ -122,7 +122,7 @@ async function callMeta(prompt: string, cfg: EvalModelConfig): Promise<string> {
   if (keyFile) {
     const result = readApiKeyFile(keyFile);
     if (!result.ok) {
-      throw new Error(`Meta eval: key file ${describeApiKeyFileFailure(result)} (${keyFile})`);
+      throw new Error(`Meta eval: ${describeApiKeyFileFailure(result)} (${keyFile})`);
     }
     apiKey = result.key;
   } else {

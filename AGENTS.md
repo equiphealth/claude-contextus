@@ -1,9 +1,10 @@
 # claude-contextus
 
-> Mirror of `CLAUDE.md` for Muse Code sessions — Muse reads `AGENTS.md`, not
-> `CLAUDE.md`. Keep the two in sync when project conventions change. The
-> `<!-- contextus:start -->` block at the end is setup-owned; edit around it,
-> never inside it.
+> Muse Code port of `CLAUDE.md` — Muse reads `AGENTS.md`, not `CLAUDE.md`.
+> It started as a mirror but has diverged with Muse-specific content (neutral
+> daemon path, tsx, Muse plugin install), so treat it as the port's own doc,
+> not a synced copy. The `<!-- contextus:start -->` block at the end is
+> setup-owned; edit around it, never inside it.
 
 **Proactive context delivery** — automatic semantic retrieval from `.claude/context/`, injected on every prompt without querying.
 
@@ -35,7 +36,7 @@ All config files are **JSONC** (comments supported). Config hot-reloads on every
 - `.claude/contextus.jsonc` — Per-project overrides (git-committed, highest precedence)
 - `examples/contextus.jsonc` — Annotated reference with every option explained
 
-Provider connections (ollama, bedrock, anthropic) are defined once in `providers {}` and referenced by all features.
+Provider connections (ollama, bedrock, anthropic, meta) are defined once in `providers {}` and referenced by all features.
 
 ## Working with This Codebase
 
@@ -153,7 +154,7 @@ Multi-vector query expansion generates alternate phrasings when initial search s
 - **Always**: every query (+100-200ms latency)
 - **Off**: disabled
 
-Provider chain: ollama (qwen2.5:3b, ~100-400ms) → bedrock fallback (Haiku, ~2s) on fast failures. Shared time budget — slow timeouts don't fall back.
+Provider chain (defaults; `expansion.provider` + `fallbackProvider` override): ollama (qwen2.5:3b, ~100-400ms) → bedrock fallback (Haiku, ~2s) on fast failures. anthropic and meta are supported alternatives. Shared time budget — slow timeouts don't fall back.
 
 <!-- contextus:start -->
 ## Context (claude-contextus)

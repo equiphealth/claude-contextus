@@ -740,10 +740,8 @@ If "enabled": add `"transcriptMining": { "enabled": true, "intervalHours": <chos
      },
      "expansion": {
        "mode": "<chosen>"
-       // + "provider"/"model"/"timeoutMs" ONLY if P4 changed the provider:
-       //   those three, plus the apiKeyFile PATH, go to tier-2
-       //   (~/.contextus/data/<project>/config.json), NEVER here —
-       //   keys must not be git-committed
+       // + provider fields ONLY if P4 changed the provider — see P4 for the
+       //   tier-2 routing (key paths must NEVER be committed here)
      },
      "notifications": {
        "verbosity": "<chosen>"
