@@ -123,8 +123,10 @@ async function main(): Promise<void> {
 
   const totalChunks = allEmbedTexts.length;
   console.log(`\nEmbedding ${totalChunks} chunks from ${sourced.length} files…`);
-  const vectors = await embedDocuments(allEmbedTexts, (done, total) =>
-    process.stdout.write(`\r  ${done}/${total}`)
+  const vectors = await embedDocuments(
+    allEmbedTexts,
+    (done, total) => process.stdout.write(`\r  ${done}/${total}`),
+    { projectId, cwd: process.cwd() }
   );
   process.stdout.write('\n');
 

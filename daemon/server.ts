@@ -203,7 +203,16 @@ async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse)
   const url = new URL(req.url ?? '/', BASE_URL());
   if (url.searchParams.get('probe') === 'true' && modelLoaded) {
     try {
-      await embedQuery('health');
+      const healthProject = url.searchParams.get('project') || undefined;
+      const healthCwd = url.searchParams.get('cwd') || undefined;
+      await embedQuery('health', {
+        projectId: healthProject
+          ? resolveProjectId(healthProject)
+          : healthCwd
+            ? projectHash(healthCwd)
+            : undefined,
+        cwd: healthCwd
+      });
     } catch (err) {
       modelLoaded = false;
       warmupError = err instanceof Error ? err.message : String(err);
@@ -410,7 +419,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     const fetchLimit = effectiveTopK * CHUNK_FANOUT;
 
     // Always start with semantic search (workspace-scoped)
-    const vec = await embedQuery(prompt);
+    const vec = await embedQuery(prompt, { projectId, cwd });
     raw = await search(vec, fetchLimit, undefined, projectId, projectScope);
 
     if (cfg.retrieval.hybrid === 'always') {
@@ -523,7 +532,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
       const variantLimit = cfg.retrieval.topK * 2;
       const variantSearches = await Promise.all(
         expanded.variants.map(async (variant) => {
-          const vVec = await embedQuery(variant);
+          const vVec = await embedQuery(variant, { projectId, cwd });
           return search(vVec, variantLimit, undefined, projectId, projectScope);
         })
       );
@@ -791,7 +800,7 @@ async function handleNotify(
 
   const { sourceName, sourceDir, sourceType, projectId, project } = sourceInfo;
   registerProject(projectId, cwd);
-  watchContextDir(sourceDir, project, sourceName, projectId, sourceType);
+  watchContextDir(sourceDir, project, sourceName, projectId, sourceType, cwd);
   // Deliberately embeds even if `reconcilingSources.has(sourceDir)` — i.e. even
   // while a bulk reconcile is mid-flight over this same source. embedSingleFile
   // re-reads the file from disk at call time (it doesn't consume a pre-fetched
@@ -809,7 +818,8 @@ async function handleNotify(
     project,
     sourceName,
     projectId,
-    sourceType
+    sourceType,
+    cwd
   );
   if (result.embedded) {
     invalidateCorpusCache(project);
@@ -981,7 +991,7 @@ async function executeCaptureRequest(
     // Embed async
     const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
     const source = scope === 'user' ? 'userDocs' : 'projectDocs';
-    embedSingleFile(absFile, docsDir, project, source, projectId, 'doc')
+    embedSingleFile(absFile, docsDir, project, source, projectId, 'doc', cwd)
       .then((result) => {
         if (result.embedded) invalidateCorpusCache(project);
         logInfo('Doc embedded', { file: filename, embedded: result.embedded });
@@ -1096,7 +1106,7 @@ async function executeCaptureRequest(
   // if it doesn't embed rather than only logging the boolean.
   const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
   const source = scope === 'user' ? 'userContext' : 'projectContext';
-  embedSingleFile(absFile, contextDir, project, source, projectId, 'context')
+  embedSingleFile(absFile, contextDir, project, source, projectId, 'context', cwd)
     .then((result) => {
       if (result.embedded) invalidateCorpusCache(project);
       logInfo('Capture embedded', {
@@ -1291,7 +1301,8 @@ function watchContextDir(
   project: string | undefined,
   source = 'projectContext',
   projectId = '',
-  sourceType?: string
+  sourceType?: string,
+  cwd?: string
 ): void {
   if (activeWatchers.has(contextDir)) return;
   if (!fs.existsSync(contextDir)) return;
@@ -1317,7 +1328,7 @@ function watchContextDir(
       // Only act on deletions — file gone from disk
       if (!fs.existsSync(absPath)) {
         const projectLabel = project ?? 'default';
-        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType)
+        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType, cwd)
           .then((result) => {
             if (result.reason === 'deleted') {
               invalidateCorpusCache(project);
@@ -1332,7 +1343,7 @@ function watchContextDir(
       } else {
         // File created or modified — re-embed it
         const projectLabel = project ?? 'default';
-        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType)
+        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType, cwd)
           .then((result) => {
             if (result.embedded) {
               invalidateCorpusCache(project);
@@ -1573,7 +1584,7 @@ async function handleReconcile(
 
   Promise.all(
     reconcileTasks.map((t) =>
-      runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName, t.exclude, t.sourceType)
+      runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName, t.exclude, t.sourceType, cwd)
     )
   )
     .then(async (results) => {
@@ -1598,7 +1609,7 @@ async function handleReconcile(
 
       // Watch all source directories.
       reconcileTasks.forEach((t) => {
-        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType);
+        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType, cwd);
       });
     })
     .catch((err) =>
@@ -1683,7 +1694,7 @@ export function requestHandler(req: http.IncomingMessage, res: http.ServerRespon
         }
 
         try {
-          const vec = await embedQuery(query);
+          const vec = await embedQuery(query, { projectId, cwd });
           const raw = await search(vec, limit * 4, undefined, projectId, projectScope);
 
           // Return raw results with scores, no floor filtering

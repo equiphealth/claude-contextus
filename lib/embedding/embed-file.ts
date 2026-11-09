@@ -45,7 +45,8 @@ export async function embedSingleFile(
   projectName?: string,
   source = 'projectContext',
   projectId = '',
-  sourceType?: string
+  sourceType?: string,
+  cwd?: string
 ): Promise<EmbedFileResult> {
   const normFile = path.resolve(absFile);
   const normDir = path.resolve(contextDir);
@@ -109,7 +110,7 @@ export async function embedSingleFile(
   const pending = planChunks(ctx);
   if (pending.length === 0) return { embedded: false, id: ctx.id, reason: 'empty' };
   const vectors = [];
-  for (const p of pending) vectors.push(await embedDocument(p.embedText));
+  for (const p of pending) vectors.push(await embedDocument(p.embedText, { projectId, cwd }));
   const rows = buildRows(ctx, pending, vectors, source, new Date().toISOString(), projectId);
   await deleteByFilename(ctx.relPath, projectName, projectId || undefined);
   await upsertRows(rows, projectName);

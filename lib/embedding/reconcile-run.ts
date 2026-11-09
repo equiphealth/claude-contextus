@@ -58,7 +58,8 @@ export async function runReconcile(
   projectId = '',
   source = 'projectContext',
   exclude?: string[],
-  sourceType?: string
+  sourceType?: string,
+  cwd?: string
 ): Promise<ReconcileResult> {
   const { contexts: allContexts, failed: loadFailed } = await loadContexts(contextDir, exclude);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
@@ -94,7 +95,14 @@ export async function runReconcile(
     for (const c of contexts) {
       const pending = planChunks(c);
       if (pending.length === 0) continue;
-      const vectors = await embedDocuments(pending.map((p) => p.embedText));
+      const vectors = await embedDocuments(
+        pending.map((p) => p.embedText),
+        undefined,
+        {
+          projectId,
+          cwd
+        }
+      );
       rows.push(...buildRows(c, pending, vectors, source, now, projectId));
     }
     if (rows.length === 0)
@@ -113,7 +121,8 @@ export async function runReconcile(
       projectName,
       source,
       projectId,
-      sourceType
+      sourceType,
+      cwd
     );
     if (r.embedded) embedded++;
     else if (r.reason?.startsWith('yaml_parse_error')) {

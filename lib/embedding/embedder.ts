@@ -23,7 +23,7 @@
  */
 
 import { pipeline, type FeatureExtractionPipeline } from '@xenova/transformers';
-import { loadConfig } from '../config.js';
+import { loadProjectConfig } from '../config.js';
 import {
   configureTransformersEnv,
   modelUnavailableError,
@@ -33,6 +33,15 @@ import {
 /** nomic instruction prefixes (asymmetric retrieval). */
 export const DOCUMENT_PREFIX = 'search_document: ';
 export const QUERY_PREFIX = 'search_query: ';
+
+export interface EmbeddingContext {
+  projectId?: string;
+  cwd?: string;
+}
+
+function embeddingConfig(context?: EmbeddingContext) {
+  return loadProjectConfig(context?.projectId, context?.cwd).embedding;
+}
 
 /** Whether to apply nomic task prefixes (default on; off via env for A/B). */
 function prefixesEnabled(): boolean {
@@ -92,10 +101,12 @@ function fakeEmbedEnabled(): boolean {
 /* ── Transformers.js provider ─────────────────────────────────────────────── */
 
 let _pipe: Promise<FeatureExtractionPipeline> | null = null;
+let _pipeModel: string | null = null;
 
-function getPipeline(): Promise<FeatureExtractionPipeline> {
-  if (!_pipe) {
-    const { model } = loadConfig().embedding;
+function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipeline> {
+  const { model } = embeddingConfig(context);
+  if (!_pipe || _pipeModel !== model) {
+    _pipeModel = model;
     // Apply localModelPath / cacheDir / remoteHost before the first load so a
     // bundled or mirrored model is sourced correctly (see lib/model-resolver).
     configureTransformersEnv();
@@ -113,8 +124,8 @@ function getPipeline(): Promise<FeatureExtractionPipeline> {
   return _pipe;
 }
 
-async function embedTransformers(text: string): Promise<number[]> {
-  const pipe = await getPipeline();
+async function embedTransformers(text: string, context?: EmbeddingContext): Promise<number[]> {
+  const pipe = await getPipeline(context);
   const output = await pipe(text, { pooling: 'mean', normalize: true });
   return Array.from(output.data as Float32Array);
 }
@@ -125,10 +136,12 @@ interface OllamaEmbeddingResponse {
   embedding: number[];
 }
 
-async function embedOllama(text: string): Promise<number[]> {
-  const cfg = loadConfig();
-  const { ollamaModel } = cfg.embedding;
-  const ollamaEndpoint = cfg.embedding.ollamaEndpoint || cfg.providers.ollama.endpoint;
+async function embedOllama(text: string, context?: EmbeddingContext): Promise<number[]> {
+  const cfg = embeddingConfig(context);
+  const { ollamaModel } = cfg;
+  const ollamaEndpoint =
+    cfg.ollamaEndpoint ||
+    loadProjectConfig(context?.projectId, context?.cwd).providers.ollama.endpoint;
   const res = await fetch(`${ollamaEndpoint}/api/embeddings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -148,10 +161,10 @@ async function embedOllama(text: string): Promise<number[]> {
 /* ── Public API (provider-dispatching) ────────────────────────────────────── */
 
 /** Embed text exactly as given (no prefix). Mean-pooled + L2-normalized. */
-async function embedRaw(text: string): Promise<number[]> {
-  const { provider, dimensions } = loadConfig().embedding;
+async function embedRaw(text: string, context?: EmbeddingContext): Promise<number[]> {
+  const { provider, dimensions } = embeddingConfig(context);
   if (fakeEmbedEnabled()) return fakeDeterministicVector(text, dimensions);
-  return provider === 'ollama' ? embedOllama(text) : embedTransformers(text);
+  return provider === 'ollama' ? embedOllama(text, context) : embedTransformers(text, context);
 }
 
 /**
@@ -159,13 +172,13 @@ async function embedRaw(text: string): Promise<number[]> {
  * Call at daemon start so the first real query isn't slow — and so a
  * model/dimension mismatch fails fast (DESIGN.md §"dimensions must match").
  */
-export async function warmup(): Promise<void> {
-  const { dimensions, provider, model, ollamaModel } = loadConfig().embedding;
+export async function warmup(context?: EmbeddingContext): Promise<void> {
+  const { dimensions, provider, model, ollamaModel } = embeddingConfig(context);
   // Transformers.js: fail fast with an actionable message if the model is
   // neither bundled nor reachable, instead of a slow opaque pipeline() error.
   // Skipped under the fake-embed test seam — there's no real model to preflight.
   if (provider === 'transformers' && !fakeEmbedEnabled()) await preflightTransformers(model);
-  const vec = await embedRaw('warmup');
+  const vec = await embedRaw('warmup', context);
   if (vec.length !== dimensions) {
     const id = provider === 'ollama' ? ollamaModel : model;
     throw new Error(
@@ -176,13 +189,13 @@ export async function warmup(): Promise<void> {
 }
 
 /** Embed a single stored passage (document side — `search_document:` prefix). */
-export function embedDocument(text: string): Promise<number[]> {
-  return embedRaw(prefixesEnabled() ? DOCUMENT_PREFIX + text : text);
+export function embedDocument(text: string, context?: EmbeddingContext): Promise<number[]> {
+  return embedRaw(prefixesEnabled() ? DOCUMENT_PREFIX + text : text, context);
 }
 
 /** Embed a single query (query side — `search_query:` prefix). */
-export function embedQuery(text: string): Promise<number[]> {
-  return embedRaw(prefixesEnabled() ? QUERY_PREFIX + text : text);
+export function embedQuery(text: string, context?: EmbeddingContext): Promise<number[]> {
+  return embedRaw(prefixesEnabled() ? QUERY_PREFIX + text : text, context);
 }
 
 /**
@@ -192,11 +205,12 @@ export function embedQuery(text: string): Promise<number[]> {
  */
 export async function embedDocuments(
   texts: string[],
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  context?: EmbeddingContext
 ): Promise<number[][]> {
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i++) {
-    out.push(await embedDocument(texts[i]));
+    out.push(await embedDocument(texts[i], context));
     onProgress?.(i + 1, texts.length);
   }
   return out;
@@ -215,4 +229,5 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 /** Reset the memoized pipeline (tests / model swap). */
 export function resetEmbedder(): void {
   _pipe = null;
+  _pipeModel = null;
 }
