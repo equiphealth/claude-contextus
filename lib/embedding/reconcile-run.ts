@@ -18,7 +18,11 @@
 
 import path from 'node:path';
 import { loadContexts, quarantineMismatches } from './context-loader.js';
-import { embedDocuments } from './embedder.js';
+import {
+  assertEmbeddingDimensions,
+  assertSharedEmbeddingConfigCompatible,
+  embedDocuments
+} from './embedder.js';
 import { embedSingleFile } from './embed-file.js';
 import { planChunks, buildRows } from './file-to-rows.js';
 import { planReconcile, type DiskFile, type ReconcilePlan } from '../storage/reconcile.js';
@@ -29,7 +33,7 @@ import {
   upsertRows,
   type ContextRow
 } from '../storage/lance-client.js';
-import { loadConfig, loadProjectConfig } from '../config.js';
+import { loadConfig, loadProjectConfig, projectHash } from '../config.js';
 
 /** Outcome of a reconcile, for logging + the session-start systemMessage. */
 export interface ReconcileResult {
@@ -63,7 +67,10 @@ export async function runReconcile(
   cwd?: string
 ): Promise<ReconcileResult> {
   const sharedSource = source === 'userContext' || source === 'userDocs';
-  if (sharedSource) projectId = '__user__';
+  if (sharedSource) {
+    assertSharedEmbeddingConfigCompatible(projectId || (cwd ? projectHash(cwd) : undefined), cwd);
+    projectId = '__user__';
+  }
   const { contexts: allContexts, failed: loadFailed } = await loadContexts(contextDir, exclude);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
   // so if reconcile kept them in the disk set planReconcile would mark them "new"
@@ -93,6 +100,7 @@ export async function runReconcile(
 
   // Cold start: no table yet → chunk + build it from every file in one shot.
   if (plan.state === 'missing') {
+    const cfg = (sharedSource ? loadConfig() : loadProjectConfig(projectId, cwd)).embedding;
     const now = new Date().toISOString();
     const rows: ContextRow[] = [];
     for (const c of contexts) {
@@ -103,11 +111,11 @@ export async function runReconcile(
         undefined,
         sharedSource ? undefined : { projectId, cwd }
       );
+      assertEmbeddingDimensions(vectors, cfg.dimensions);
       rows.push(...buildRows(c, pending, vectors, source, now, projectId));
     }
     if (rows.length === 0)
       return { state: plan.state, embedded: 0, removed: 0, unchanged: 0, failed };
-    const cfg = (sharedSource ? loadConfig() : loadProjectConfig(projectId, cwd)).embedding;
     await upsertRows(rows, projectName, cfg);
     return { state: plan.state, embedded: contexts.length, removed: 0, unchanged: 0, failed };
   }

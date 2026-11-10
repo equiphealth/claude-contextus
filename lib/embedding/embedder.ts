@@ -23,7 +23,7 @@
  */
 
 import { pipeline, type FeatureExtractionPipeline } from '@xenova/transformers';
-import { loadProjectConfig } from '../config.js';
+import { loadConfig, loadProjectConfig } from '../config.js';
 import {
   configureTransformersEnv,
   modelUnavailableError,
@@ -41,6 +41,36 @@ export interface EmbeddingContext {
 
 function embeddingConfig(context?: EmbeddingContext) {
   return loadProjectConfig(context?.projectId, context?.cwd).embedding;
+}
+
+/** Fail before persistence when a provider emits vectors outside the configured space. */
+export function assertEmbeddingDimensions(
+  vectors: readonly number[][],
+  expectedDimensions: number
+): void {
+  const mismatch = vectors.find((vector) => vector.length !== expectedDimensions);
+  if (mismatch) {
+    throw new Error(
+      `Embedding provider returned a vector with unexpected dimensions (${mismatch.length}; expected ${expectedDimensions})`
+    );
+  }
+}
+
+/** Shared rows use global settings, so a project that reconciles them must be compatible. */
+export function assertSharedEmbeddingConfigCompatible(projectId?: string, cwd?: string): void {
+  const project = embeddingConfig({ projectId, cwd });
+  const shared = loadConfig().embedding;
+  const projectModel = project.provider === 'ollama' ? project.ollamaModel : project.model;
+  const sharedModel = shared.provider === 'ollama' ? shared.ollamaModel : shared.model;
+  if (
+    project.provider !== shared.provider ||
+    projectModel !== sharedModel ||
+    project.dimensions !== shared.dimensions
+  ) {
+    throw new Error(
+      'Project and shared user sources must use the same embedding provider, model, and dimensions.'
+    );
+  }
 }
 
 /** Whether to apply nomic task prefixes (default on; off via env for A/B). */
@@ -115,7 +145,10 @@ function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipel
       configureTransformersEnv(context?.projectId, context?.cwd);
       return pipeline('feature-extraction', model, { quantized: true });
     });
-    _pipelineLoadQueue = loading.then(() => undefined, () => undefined);
+    _pipelineLoadQueue = loading.then(
+      () => undefined,
+      () => undefined
+    );
     _pipe = loading.catch((err: unknown) => {
       if (_pipeModel === key) _pipe = null;
       // Network/HF failures surface as opaque fetch/parse errors — replace with

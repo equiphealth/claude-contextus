@@ -23,10 +23,14 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
-import { loadConfig, loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
+import { loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
-import { embedDocuments } from '../lib/embedding/embedder.js';
+import {
+  assertEmbeddingDimensions,
+  assertSharedEmbeddingConfigCompatible,
+  embedDocuments
+} from '../lib/embedding/embedder.js';
 import { createTable, type ContextRow } from '../lib/storage/lance-client.js';
 import { planChunks, buildRows, type PendingChunk } from '../lib/embedding/file-to-rows.js';
 
@@ -45,15 +49,7 @@ async function main(): Promise<void> {
   // nature.
   const sources = resolveSources(cfg.sources);
   if (sources.some((s) => s.name === 'userContext' || s.name === 'userDocs')) {
-    const shared = loadConfig().embedding;
-    const sharedModel = shared.provider === 'ollama' ? shared.ollamaModel : shared.model;
-    if (
-      provider !== shared.provider ||
-      modelId !== sharedModel ||
-      cfg.embedding.dimensions !== shared.dimensions
-    ) {
-      throw new Error('Project and shared user sources must use the same embedding provider, model, and dimensions.');
-    }
+    assertSharedEmbeddingConfigCompatible(projectId, process.cwd());
   }
   if (sources.length === 0) {
     console.error(`\n✗ No enabled sources resolved from plugin.json config.sources`);
@@ -146,6 +142,7 @@ async function main(): Promise<void> {
       (done) => process.stdout.write(`\r  ${embeddedCount + done}/${totalChunks}`),
       context
     );
+    assertEmbeddingDimensions(batch, cfg.embedding.dimensions);
     vectors.push(...batch);
     embeddedCount += batch.length;
   }

@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { embedDocument, resetEmbedder } from '../lib/embedding/embedder.js';
+import {
+  assertEmbeddingDimensions,
+  embedDocument,
+  resetEmbedder
+} from '../lib/embedding/embedder.js';
 import { projectLocalConfigPath, resetConfigCache } from '../lib/config.js';
 
 test('embedDocument resolves project-level embedding dimensions', async () => {
@@ -30,4 +34,25 @@ test('embedDocument resolves project-level embedding dimensions', async () => {
     resetConfigCache();
     resetEmbedder();
   }
+});
+
+test('assertEmbeddingDimensions rejects provider vectors outside the configured size', () => {
+  assertEmbeddingDimensions(
+    [
+      [0, 0],
+      [1, 1]
+    ],
+    2
+  );
+  assert.throws(
+    () =>
+      assertEmbeddingDimensions(
+        [
+          [0, 0],
+          [1, 1, 1]
+        ],
+        2
+      ),
+    /3; expected 2/
+  );
 });

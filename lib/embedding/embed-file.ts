@@ -16,8 +16,13 @@ import {
   categoryPrefix,
   quarantineMismatches
 } from './context-loader.js';
-import { embedDocument } from './embedder.js';
-import { upsertRows, deleteByFilename, getContentHashes, tableExists } from '../storage/lance-client.js';
+import { assertEmbeddingDimensions, embedDocument } from './embedder.js';
+import {
+  upsertRows,
+  deleteByFilename,
+  getContentHashes,
+  tableExists
+} from '../storage/lance-client.js';
 import { isStale } from '../storage/staleness.js';
 import { planChunks, buildRows } from './file-to-rows.js';
 import { loadConfig, loadProjectConfig } from '../config.js';
@@ -117,9 +122,7 @@ export async function embedSingleFile(
   const vectors = [];
   for (const p of pending) vectors.push(await embedDocument(p.embedText, embeddingContext));
   const cfg = (sharedSource ? loadConfig() : loadProjectConfig(projectId, cwd)).embedding;
-  if (vectors.some((vector) => vector.length !== cfg.dimensions)) {
-    throw new Error('Embedding provider returned a vector with unexpected dimensions');
-  }
+  assertEmbeddingDimensions(vectors, cfg.dimensions);
   assertTableMetaCompatible(cfg, cfg.dimensions, projectName, await tableExists(projectName));
   const rows = buildRows(ctx, pending, vectors, source, new Date().toISOString(), projectId);
   await deleteByFilename(ctx.relPath, projectName, projectId || undefined);
