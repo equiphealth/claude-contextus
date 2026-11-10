@@ -19,13 +19,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from '@xenova/transformers';
-import { expandHome, loadConfig, type TransformersConfig } from '../config.js';
+import { expandHome, loadProjectConfig, type TransformersConfig } from '../config.js';
 
-let _configured = false;
+let _configuredKey: string | null = null;
+const defaultEnv = {
+  localModelPath: env.localModelPath,
+  allowLocalModels: env.allowLocalModels,
+  cacheDir: env.cacheDir,
+  remoteHost: env.remoteHost,
+  useFSCache: env.useFSCache,
+  useBrowserCache: env.useBrowserCache
+};
 
 /** Resolve the transformers config block with home-expansion applied. */
-function tConfig(): TransformersConfig {
-  const t = loadConfig().embedding.transformers!;
+function tConfig(projectId?: string, cwd?: string): TransformersConfig {
+  const t = loadProjectConfig(projectId, cwd).embedding.transformers!;
   return {
     localModelPath: t.localModelPath ? expandHome(t.localModelPath) : '',
     cacheDir: t.cacheDir ? expandHome(t.cacheDir) : '',
@@ -38,9 +46,11 @@ function tConfig(): TransformersConfig {
  * Apply the resolver settings to the global transformers.js `env`. Idempotent —
  * call before the first pipeline() load (the embedder does this lazily).
  */
-export function configureTransformersEnv(): void {
-  if (_configured) return;
-  const t = tConfig();
+export function configureTransformersEnv(projectId?: string, cwd?: string): void {
+  const t = tConfig(projectId, cwd);
+  const key = JSON.stringify(t);
+  if (_configuredKey === key) return;
+  Object.assign(env, defaultEnv);
 
   if (t.localModelPath) {
     env.localModelPath = t.localModelPath;
@@ -65,20 +75,25 @@ export function configureTransformersEnv(): void {
   if (t.remoteHost) env.remoteHost = t.remoteHost;
   env.allowRemoteModels = t.allowRemoteModels;
 
-  _configured = true;
+  _configuredKey = key;
 }
 
 /** True if a bundled model for `modelId` exists under localModelPath. */
-export function hasLocalModel(modelId: string): boolean {
-  const { localModelPath } = tConfig();
+export function hasLocalModel(modelId: string, projectId?: string, cwd?: string): boolean {
+  const { localModelPath } = tConfig(projectId, cwd);
   if (!localModelPath) return false;
   // transformers.js looks for <localModelPath>/<modelId>/config.json
   return fs.existsSync(path.join(localModelPath, modelId, 'config.json'));
 }
 
 /** Probe whether the configured remote host is reachable for this model. */
-export async function isRemoteReachable(modelId: string, timeoutMs = 5000): Promise<boolean> {
-  const { remoteHost } = tConfig();
+export async function isRemoteReachable(
+  modelId: string,
+  timeoutMs = 5000,
+  projectId?: string,
+  cwd?: string
+): Promise<boolean> {
+  const { remoteHost } = tConfig(projectId, cwd);
   const url = `${remoteHost.replace(/\/$/, '')}/${modelId}/resolve/main/config.json`;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -101,8 +116,8 @@ export async function isRemoteReachable(modelId: string, timeoutMs = 5000): Prom
  * Build the actionable error shown when the Transformers.js model can't be
  * sourced. Lists every escape hatch in priority order.
  */
-export function modelUnavailableError(modelId: string): Error {
-  const { localModelPath, remoteHost } = tConfig();
+export function modelUnavailableError(modelId: string, projectId?: string, cwd?: string): Error {
+  const { localModelPath, remoteHost } = tConfig(projectId, cwd);
   return new Error(
     [
       `Could not load embedding model '${modelId}' via Transformers.js.`,
@@ -130,15 +145,18 @@ export function modelUnavailableError(modelId: string): Error {
  * exists or the remote is reachable; throws `modelUnavailableError` otherwise.
  * Skipped entirely when remote is allowed AND reachable, or a bundle is present.
  */
-export async function preflightTransformers(modelId: string): Promise<void> {
-  configureTransformersEnv();
-  if (hasLocalModel(modelId)) return;
-  const { allowRemoteModels } = tConfig();
-  if (allowRemoteModels && (await isRemoteReachable(modelId))) return;
-  throw modelUnavailableError(modelId);
+export async function preflightTransformers(
+  modelId: string,
+  projectId?: string,
+  cwd?: string
+): Promise<void> {
+  if (hasLocalModel(modelId, projectId, cwd)) return;
+  const { allowRemoteModels } = tConfig(projectId, cwd);
+  if (allowRemoteModels && (await isRemoteReachable(modelId, 5000, projectId, cwd))) return;
+  throw modelUnavailableError(modelId, projectId, cwd);
 }
 
 /** Reset memoized env state (tests). */
 export function resetResolver(): void {
-  _configured = false;
+  _configuredKey = null;
 }

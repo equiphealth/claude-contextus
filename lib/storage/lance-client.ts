@@ -38,6 +38,37 @@ export interface TableMeta {
   createdAt: string;
 }
 
+export interface ProviderInfo {
+  provider: string;
+  model: string;
+  ollamaModel?: string;
+}
+
+export function assertTableMetaCompatible(
+  info: ProviderInfo,
+  dimensions: number,
+  projectName?: string,
+  requireMeta = false
+): void {
+  const meta = readTableMeta(projectName);
+  if (!meta) {
+    if (requireMeta) throw new Error('Existing corpus has no readable embedding metadata; rebuild it before writing.');
+    return;
+  }
+  const expectedModel = info.provider === 'ollama' ? info.ollamaModel ?? info.model : info.model;
+  if (
+    meta.provider !== info.provider ||
+    meta.embeddingModel !== expectedModel ||
+    meta.dimensions !== dimensions
+  ) {
+    throw new Error(
+      `Embedding configuration conflicts with the existing corpus: ` +
+        `existing ${meta.provider}/${meta.embeddingModel}/${meta.dimensions}, ` +
+        `requested ${info.provider}/${expectedModel}/${dimensions}. Rebuild the corpus with one shared embedding configuration.`
+    );
+  }
+}
+
 /** A row stored in the contextus table. */
 export interface ContextRow {
   /** stable id: '<projectHash>:<relative-path>:<chunk_index>' */
@@ -119,7 +150,7 @@ export async function createTable(
     projectName?: string;
     replace?: boolean;
     /** Embedding provider info for metadata (falls back to loadConfig() if omitted) */
-    providerInfo?: { provider: string; model: string; ollamaModel?: string };
+    providerInfo?: ProviderInfo;
   } = {}
 ): Promise<Table> {
   if (rows.length === 0) {
@@ -138,6 +169,7 @@ export async function createTable(
       // here as "it doesn't really exist yet" and fall through to create it
       // for real, rather than propagating a transient error for a table
       // that functionally never existed from the caller's point of view.
+      assertTableMetaCompatible(opts.providerInfo || loadConfig().embedding, rows[0].vector.length, opts.projectName, true);
       try {
         return await conn.openTable(TABLE_NAME);
       } catch {
@@ -145,10 +177,14 @@ export async function createTable(
       }
     }
   }
+  const providerInfo = opts.providerInfo || loadConfig().embedding;
+  if (!opts.replace) {
+    assertTableMetaCompatible(providerInfo, rows[0].vector.length, opts.projectName);
+  }
   const table = await conn.createTable(TABLE_NAME, rows as unknown as Record<string, unknown>[]);
 
   // Use provided providerInfo (from caller's 3-tier config) or fall back to loadConfig()
-  const { provider, model, ollamaModel } = opts.providerInfo || loadConfig().embedding;
+  const { provider, model, ollamaModel } = providerInfo;
   writeTableMeta(
     {
       provider,
@@ -200,7 +236,15 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function upsertRows(rows: ContextRow[], projectName?: string): Promise<void> {
+let writeQueue: Promise<void> = Promise.resolve();
+
+export function upsertRows(rows: ContextRow[], projectName?: string, providerInfo?: ProviderInfo): Promise<void> {
+  const operation = writeQueue.then(() => upsertRowsUnlocked(rows, projectName, providerInfo));
+  writeQueue = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+async function upsertRowsUnlocked(rows: ContextRow[], projectName?: string, providerInfo?: ProviderInfo): Promise<void> {
   if (rows.length === 0) return;
   // Reuse the Table handle createTable() already returns when it just
   // created the table — do NOT discard it and immediately re-open via a
@@ -226,9 +270,11 @@ export async function upsertRows(rows: ContextRow[], projectName?: string): Prom
   let lastErr: unknown;
   for (let attempt = 0; attempt < 6; attempt++) {
     try {
-      const table = (await tableExists(projectName))
+      const exists = await tableExists(projectName);
+      if (exists) assertTableMetaCompatible(providerInfo || loadConfig().embedding, rows[0].vector.length, projectName, true);
+      const table = exists
         ? await openTable(projectName)
-        : await createTable(rows, { projectName });
+        : await createTable(rows, { projectName, providerInfo });
       await table
         .mergeInsert('id')
         .whenMatchedUpdateAll()

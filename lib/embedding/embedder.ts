@@ -102,21 +102,27 @@ function fakeEmbedEnabled(): boolean {
 
 let _pipe: Promise<FeatureExtractionPipeline> | null = null;
 let _pipeModel: string | null = null;
+let _pipelineLoadQueue: Promise<void> = Promise.resolve();
 
 function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipeline> {
-  const { model } = embeddingConfig(context);
-  if (!_pipe || _pipeModel !== model) {
-    _pipeModel = model;
+  const { model, transformers } = embeddingConfig(context);
+  const key = JSON.stringify([model, transformers]);
+  if (!_pipe || _pipeModel !== key) {
+    _pipeModel = key;
     // Apply localModelPath / cacheDir / remoteHost before the first load so a
     // bundled or mirrored model is sourced correctly (see lib/model-resolver).
-    configureTransformersEnv();
-    _pipe = pipeline('feature-extraction', model, { quantized: true }).catch((err: unknown) => {
-      _pipe = null; // allow retry after the user fixes config
+    const loading = _pipelineLoadQueue.then(() => {
+      configureTransformersEnv(context?.projectId, context?.cwd);
+      return pipeline('feature-extraction', model, { quantized: true });
+    });
+    _pipelineLoadQueue = loading.then(() => undefined, () => undefined);
+    _pipe = loading.catch((err: unknown) => {
+      if (_pipeModel === key) _pipe = null;
       // Network/HF failures surface as opaque fetch/parse errors — replace with
       // the actionable escape-hatch message.
       const msg = err instanceof Error ? err.message : String(err);
       if (/fetch|JSON|Unexpected token|ENOTFOUND|ECONNREFUSED|certificate/i.test(msg)) {
-        throw modelUnavailableError(model);
+        throw modelUnavailableError(model, context?.projectId, context?.cwd);
       }
       throw err;
     });
@@ -177,7 +183,8 @@ export async function warmup(context?: EmbeddingContext): Promise<void> {
   // Transformers.js: fail fast with an actionable message if the model is
   // neither bundled nor reachable, instead of a slow opaque pipeline() error.
   // Skipped under the fake-embed test seam — there's no real model to preflight.
-  if (provider === 'transformers' && !fakeEmbedEnabled()) await preflightTransformers(model);
+  if (provider === 'transformers' && !fakeEmbedEnabled())
+    await preflightTransformers(model, context?.projectId, context?.cwd);
   const vec = await embedRaw('warmup', context);
   if (vec.length !== dimensions) {
     const id = provider === 'ollama' ? ollamaModel : model;

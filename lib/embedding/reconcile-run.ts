@@ -23,12 +23,13 @@ import { embedSingleFile } from './embed-file.js';
 import { planChunks, buildRows } from './file-to-rows.js';
 import { planReconcile, type DiskFile, type ReconcilePlan } from '../storage/reconcile.js';
 import {
-  createTable,
   deleteByFilename,
   getContentHashes,
   tableExists,
+  upsertRows,
   type ContextRow
 } from '../storage/lance-client.js';
+import { loadConfig, loadProjectConfig } from '../config.js';
 
 /** Outcome of a reconcile, for logging + the session-start systemMessage. */
 export interface ReconcileResult {
@@ -61,6 +62,8 @@ export async function runReconcile(
   sourceType?: string,
   cwd?: string
 ): Promise<ReconcileResult> {
+  const sharedSource = source === 'userContext' || source === 'userDocs';
+  if (sharedSource) projectId = '__user__';
   const { contexts: allContexts, failed: loadFailed } = await loadContexts(contextDir, exclude);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
   // so if reconcile kept them in the disk set planReconcile would mark them "new"
@@ -98,16 +101,14 @@ export async function runReconcile(
       const vectors = await embedDocuments(
         pending.map((p) => p.embedText),
         undefined,
-        {
-          projectId,
-          cwd
-        }
+        sharedSource ? undefined : { projectId, cwd }
       );
       rows.push(...buildRows(c, pending, vectors, source, now, projectId));
     }
     if (rows.length === 0)
       return { state: plan.state, embedded: 0, removed: 0, unchanged: 0, failed };
-    await createTable(rows, { projectName, replace: true });
+    const cfg = (sharedSource ? loadConfig() : loadProjectConfig(projectId, cwd)).embedding;
+    await upsertRows(rows, projectName, cfg);
     return { state: plan.state, embedded: contexts.length, removed: 0, unchanged: 0, failed };
   }
 

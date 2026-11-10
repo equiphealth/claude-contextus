@@ -201,7 +201,10 @@ async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse)
 
   // Liveness probe: if model appears warm, verify the provider is still up.
   const url = new URL(req.url ?? '/', BASE_URL());
-  if (url.searchParams.get('probe') === 'true' && modelLoaded) {
+  if (
+    url.searchParams.get('probe') === 'true' &&
+    (modelLoaded || url.searchParams.has('project') || url.searchParams.has('cwd'))
+  ) {
     try {
       const healthProject = url.searchParams.get('project') || undefined;
       const healthCwd = url.searchParams.get('cwd') || undefined;
@@ -214,6 +217,12 @@ async function handleHealth(req: http.IncomingMessage, res: http.ServerResponse)
         cwd: healthCwd
       });
     } catch (err) {
+      if (url.searchParams.get('project') || url.searchParams.get('cwd')) {
+        return sendJson(res, 503, {
+          status: 'degraded',
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
       modelLoaded = false;
       warmupError = err instanceof Error ? err.message : String(err);
       logError('warn', 'embedder', 'Health probe failed — provider down, triggering re-warmup', {
@@ -283,7 +292,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // Model not warm yet (still loading, or warmup failed) → degrade. Embedding
   // now would throw deep in the provider; the cold first prompt or two missing
   // context is the documented graceful-degradation behavior.
-  if (!modelLoaded) {
+  if (!modelLoaded && !projectId) {
     logInfo('Query before model warm — skipping', { project: projectLabel });
     return sendJson(res, 200, { continue: true });
   }
@@ -304,7 +313,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   const meta = readTableMeta(projectId);
   const activeModel =
     cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model;
-  if (meta && meta.embeddingModel !== activeModel) {
+  if (meta && (meta.provider !== cfg.embedding.provider || meta.embeddingModel !== activeModel)) {
     logError('error', 'daemon', 'Embedding model mismatch (corpus vs daemon)', {
       project: projectLabel,
       corpus: meta.embeddingModel,
@@ -446,19 +455,24 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   } catch (embedErr) {
     // Provider dropped mid-session — mark down and trigger re-warmup so the
     // daemon recovers automatically once the provider comes back.
-    modelLoaded = false;
-    warmupError = embedErr instanceof Error ? embedErr.message : String(embedErr);
+    const failure = embedErr instanceof Error ? embedErr.message : String(embedErr);
+    if (!projectId) {
+      modelLoaded = false;
+      warmupError = failure;
+    }
     logError(
       'warn',
       'embedder',
       'Embedding failed, attempting keyword fallback + triggering re-warmup',
       {
         project: projectLabel,
-        message: warmupError
+        message: failure
       }
     );
-    if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
-    attemptWarmup();
+    if (!projectId) {
+      if (warmupRetryTimer) clearTimeout(warmupRetryTimer);
+      attemptWarmup();
+    }
 
     // Try keyword fallback before giving up entirely
     const corpus = await loadCorpusForKeyword(projectId, projectScope);
@@ -1573,7 +1587,7 @@ async function handleReconcile(
   if (reconcileTasks.some((t) => reconcilingSources.has(t.sourcePath))) {
     return sendJson(res, 200, { state: 'busy' });
   }
-  if (!modelLoaded) {
+  if (!modelLoaded && !projectId) {
     // Can't embed without the model; the caller can retry once /health is warm.
     return sendJson(res, 200, { state: 'cold', reason: 'model_not_loaded' });
   }
@@ -1685,12 +1699,19 @@ export function requestHandler(req: http.IncomingMessage, res: http.ServerRespon
           return sendJson(res, 200, { results: [] });
         }
 
-        if (!modelLoaded) {
+        if (!modelLoaded && !projectId) {
           return sendJson(res, 503, { error: 'Model not loaded yet' });
         }
 
         if (!(await tableExists(projectId))) {
           return sendJson(res, 200, { results: [] });
+        }
+
+        const searchCfg = loadProjectConfig(projectId, cwd).embedding;
+        const searchMeta = readTableMeta(projectId);
+        const searchModel = searchCfg.provider === 'ollama' ? searchCfg.ollamaModel : searchCfg.model;
+        if (searchMeta && (searchMeta.provider !== searchCfg.provider || searchMeta.embeddingModel !== searchModel || searchMeta.dimensions !== searchCfg.dimensions)) {
+          return sendJson(res, 409, { error: 'Embedding configuration does not match the corpus' });
         }
 
         try {

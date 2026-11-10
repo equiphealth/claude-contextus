@@ -17,9 +17,11 @@ import {
   quarantineMismatches
 } from './context-loader.js';
 import { embedDocument } from './embedder.js';
-import { upsertRows, deleteByFilename, getContentHashes } from '../storage/lance-client.js';
+import { upsertRows, deleteByFilename, getContentHashes, tableExists } from '../storage/lance-client.js';
 import { isStale } from '../storage/staleness.js';
 import { planChunks, buildRows } from './file-to-rows.js';
+import { loadConfig, loadProjectConfig } from '../config.js';
+import { assertTableMetaCompatible } from '../storage/lance-client.js';
 
 /** Outcome of an incremental embed attempt. */
 export interface EmbedFileResult {
@@ -48,6 +50,9 @@ export async function embedSingleFile(
   sourceType?: string,
   cwd?: string
 ): Promise<EmbedFileResult> {
+  const sharedSource = source === 'userContext' || source === 'userDocs';
+  if (sharedSource) projectId = '__user__';
+  const embeddingContext = sharedSource ? undefined : { projectId, cwd };
   const normFile = path.resolve(absFile);
   const normDir = path.resolve(contextDir);
   if (!normFile.startsWith(normDir + path.sep)) {
@@ -110,9 +115,14 @@ export async function embedSingleFile(
   const pending = planChunks(ctx);
   if (pending.length === 0) return { embedded: false, id: ctx.id, reason: 'empty' };
   const vectors = [];
-  for (const p of pending) vectors.push(await embedDocument(p.embedText, { projectId, cwd }));
+  for (const p of pending) vectors.push(await embedDocument(p.embedText, embeddingContext));
+  const cfg = (sharedSource ? loadConfig() : loadProjectConfig(projectId, cwd)).embedding;
+  if (vectors.some((vector) => vector.length !== cfg.dimensions)) {
+    throw new Error('Embedding provider returned a vector with unexpected dimensions');
+  }
+  assertTableMetaCompatible(cfg, cfg.dimensions, projectName, await tableExists(projectName));
   const rows = buildRows(ctx, pending, vectors, source, new Date().toISOString(), projectId);
   await deleteByFilename(ctx.relPath, projectName, projectId || undefined);
-  await upsertRows(rows, projectName);
+  await upsertRows(rows, projectName, cfg);
   return { embedded: true, id: ctx.id };
 }

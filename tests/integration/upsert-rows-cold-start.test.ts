@@ -73,3 +73,18 @@ test('upsertRows still updates existing rows once the table exists (unchanged be
   const hashes = await getContentHashes(PROJECT, 'projectDocs', PROJECT);
   assert.equal(hashes.get('GUIDE.md'), 'hash-v2', 'mergeInsert should update, not duplicate');
 });
+
+test('rejects a different embedding model before writing into the shared table', async () => {
+  const meta = (await import('../../lib/storage/lance-client.js')).readTableMeta(PROJECT);
+  assert.ok(meta);
+  await assert.rejects(
+    upsertRows([row('OTHER.md#0', 'OTHER.md')], PROJECT, {
+      provider: meta.provider,
+      model: 'different-model',
+      ollamaModel: 'different-model'
+    }),
+    /Embedding configuration conflicts/
+  );
+  const hashes = await getContentHashes(PROJECT, 'projectDocs', PROJECT);
+  assert.equal(hashes.has('OTHER.md'), false);
+});

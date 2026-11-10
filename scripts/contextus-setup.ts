@@ -33,7 +33,7 @@ import { tableExists, countRows } from '../lib/storage/lance-client.js';
 import { runFloorReplay, ReplayError } from '../lib/calibration/floor-replay.js';
 import { printFloorReport } from '../lib/calibration/floor-report.js';
 import { buildChanges, renderDiff, hasRealChanges } from '../lib/calibration/config-write.js';
-import { loadConfig, projectLocalConfigPath } from '../lib/config.js';
+import { loadConfig, projectHash, projectLocalConfigPath } from '../lib/config.js';
 import { mineProject } from './mine-transcripts.js';
 
 interface Args {
@@ -132,7 +132,15 @@ async function main(): Promise<void> {
   if (args.embed) {
     const ctxDir = path.join(args.dir, '.claude', 'context');
     try {
-      const r = await runReconcile(ctxDir, project);
+      const r = await runReconcile(
+        ctxDir,
+        project,
+        projectHash(args.dir),
+        undefined,
+        undefined,
+        undefined,
+        args.dir
+      );
       if (r.state === 'empty') {
         console.log(
           '  embed              skipped (no context files yet — add some, then /rebuild)'

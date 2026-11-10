@@ -23,7 +23,7 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
-import { loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
+import { loadConfig, loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
 import { embedDocuments } from '../lib/embedding/embedder.js';
@@ -44,6 +44,17 @@ async function main(): Promise<void> {
   // sources refresh here, on a full rebuild — matching their slower-changing, noisier
   // nature.
   const sources = resolveSources(cfg.sources);
+  if (sources.some((s) => s.name === 'userContext' || s.name === 'userDocs')) {
+    const shared = loadConfig().embedding;
+    const sharedModel = shared.provider === 'ollama' ? shared.ollamaModel : shared.model;
+    if (
+      provider !== shared.provider ||
+      modelId !== sharedModel ||
+      cfg.embedding.dimensions !== shared.dimensions
+    ) {
+      throw new Error('Project and shared user sources must use the same embedding provider, model, and dimensions.');
+    }
+  }
   if (sources.length === 0) {
     console.error(`\n✗ No enabled sources resolved from plugin.json config.sources`);
     process.exit(1);
@@ -123,11 +134,21 @@ async function main(): Promise<void> {
 
   const totalChunks = allEmbedTexts.length;
   console.log(`\nEmbedding ${totalChunks} chunks from ${sourced.length} files…`);
-  const vectors = await embedDocuments(
-    allEmbedTexts,
-    (done, total) => process.stdout.write(`\r  ${done}/${total}`),
-    { projectId, cwd: process.cwd() }
-  );
+  const vectors: number[][] = [];
+  let embeddedCount = 0;
+  for (const { pending, source } of planned) {
+    const context =
+      source === 'userContext' || source === 'userDocs'
+        ? undefined
+        : { projectId, cwd: process.cwd() };
+    const batch = await embedDocuments(
+      pending.map((p) => p.embedText),
+      (done) => process.stdout.write(`\r  ${embeddedCount + done}/${totalChunks}`),
+      context
+    );
+    vectors.push(...batch);
+    embeddedCount += batch.length;
+  }
   process.stdout.write('\n');
 
   // Slice the flat vector array back per file and assemble rows.
