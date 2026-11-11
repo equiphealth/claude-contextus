@@ -200,9 +200,13 @@ All config files support comments and trailing commas. The system strips JSONC b
 - `timeoutMs` — Total timeout for expansion (default: 5000)
 
 **Embedding:**
-- `provider` — `ollama` (recommended) or `transformers` (in-process)
-- `model` — Embedding model identifier
-- `dimensions` — Vector dimensions (must match model, default: 768)
+- `provider` — Global embedding provider: `ollama` (recommended) or `transformers` (in-process)
+- `model` / `ollamaModel` — Global embedding model identifier
+- `dimensions` — Global vector dimensions (must match the model, default: 768)
+
+These embedding-space settings are configured in `plugin.json`. Project-level overrides
+of `provider`, `model`, `ollamaModel`, or `dimensions` are rejected because all projects
+share one LanceDB corpus. Other embedding settings can still be overridden per project.
 
 **Sources:**
 - `projectContext.enabled` — Enable project `.claude/context/` (default: `true`)
