@@ -16,7 +16,13 @@ import {
   categoryPrefix,
   quarantineMismatches
 } from './context-loader.js';
-import { assertEmbeddingDimensions, embedDocument } from './embedder.js';
+import {
+  assertEmbeddingDimensions,
+  assertSharedEmbeddingConfigCompatible,
+  embedDocuments,
+  snapshotEmbeddingContext,
+  type EmbeddingContext
+} from './embedder.js';
 import {
   upsertRows,
   deleteByFilename,
@@ -25,7 +31,7 @@ import {
 } from '../storage/lance-client.js';
 import { isStale } from '../storage/staleness.js';
 import { planChunks, buildRows } from './file-to-rows.js';
-import { loadConfig, loadProjectConfig } from '../config.js';
+import { projectHash } from '../config.js';
 import { assertTableMetaCompatible } from '../storage/lance-client.js';
 
 /** Outcome of an incremental embed attempt. */
@@ -53,11 +59,19 @@ export async function embedSingleFile(
   source = 'projectContext',
   projectId = '',
   sourceType?: string,
-  cwd?: string
+  cwd?: string,
+  scope?: 'project' | 'user',
+  snapshot?: EmbeddingContext
 ): Promise<EmbedFileResult> {
-  const sharedSource = source === 'userContext' || source === 'userDocs';
+  const sharedSource = scope
+    ? scope === 'user'
+    : source === 'userContext' || source === 'userDocs' || source === 'userMemory';
+  if (sharedSource)
+    assertSharedEmbeddingConfigCompatible(projectId || (cwd ? projectHash(cwd) : undefined), cwd);
   if (sharedSource) projectId = '__user__';
-  const embeddingContext = sharedSource ? undefined : { projectId, cwd };
+  const embeddingContext = snapshotEmbeddingContext(
+    snapshot ?? (sharedSource ? undefined : { projectId, cwd })
+  );
   const normFile = path.resolve(absFile);
   const normDir = path.resolve(contextDir);
   if (!normFile.startsWith(normDir + path.sep)) {
@@ -119,9 +133,12 @@ export async function embedSingleFile(
   // high-index rows behind (upsert-by-id alone wouldn't remove them).
   const pending = planChunks(ctx);
   if (pending.length === 0) return { embedded: false, id: ctx.id, reason: 'empty' };
-  const vectors = [];
-  for (const p of pending) vectors.push(await embedDocument(p.embedText, embeddingContext));
-  const cfg = (sharedSource ? loadConfig() : loadProjectConfig(projectId, cwd)).embedding;
+  const vectors = await embedDocuments(
+    pending.map((p) => p.embedText),
+    undefined,
+    embeddingContext
+  );
+  const cfg = embeddingContext.config.embedding;
   assertEmbeddingDimensions(vectors, cfg.dimensions);
   assertTableMetaCompatible(cfg, cfg.dimensions, projectName, await tableExists(projectName));
   const rows = buildRows(ctx, pending, vectors, source, new Date().toISOString(), projectId);

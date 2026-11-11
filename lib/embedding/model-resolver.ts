@@ -32,8 +32,12 @@ const defaultEnv = {
 };
 
 /** Resolve the transformers config block with home-expansion applied. */
-function tConfig(projectId?: string, cwd?: string): TransformersConfig {
-  const t = loadProjectConfig(projectId, cwd).embedding.transformers!;
+function tConfig(
+  projectId?: string,
+  cwd?: string,
+  override?: TransformersConfig
+): TransformersConfig {
+  const t = override ?? loadProjectConfig(projectId, cwd).embedding.transformers!;
   return {
     localModelPath: t.localModelPath ? expandHome(t.localModelPath) : '',
     cacheDir: t.cacheDir ? expandHome(t.cacheDir) : '',
@@ -46,8 +50,12 @@ function tConfig(projectId?: string, cwd?: string): TransformersConfig {
  * Apply the resolver settings to the global transformers.js `env`. Idempotent —
  * call before the first pipeline() load (the embedder does this lazily).
  */
-export function configureTransformersEnv(projectId?: string, cwd?: string): void {
-  const t = tConfig(projectId, cwd);
+export function configureTransformersEnv(
+  projectId?: string,
+  cwd?: string,
+  override?: TransformersConfig
+): void {
+  const t = tConfig(projectId, cwd, override);
   const key = JSON.stringify(t);
   if (_configuredKey === key) return;
   Object.assign(env, defaultEnv);
@@ -116,8 +124,13 @@ export async function isRemoteReachable(
  * Build the actionable error shown when the Transformers.js model can't be
  * sourced. Lists every escape hatch in priority order.
  */
-export function modelUnavailableError(modelId: string, projectId?: string, cwd?: string): Error {
-  const { localModelPath, remoteHost } = tConfig(projectId, cwd);
+export function modelUnavailableError(
+  modelId: string,
+  projectId?: string,
+  cwd?: string,
+  override?: TransformersConfig
+): Error {
+  const { localModelPath, remoteHost } = tConfig(projectId, cwd, override);
   return new Error(
     [
       `Could not load embedding model '${modelId}' via Transformers.js.`,

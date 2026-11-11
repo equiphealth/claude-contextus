@@ -21,7 +21,8 @@ import { loadContexts, quarantineMismatches } from './context-loader.js';
 import {
   assertEmbeddingDimensions,
   assertSharedEmbeddingConfigCompatible,
-  embedDocuments
+  embedDocuments,
+  snapshotEmbeddingContext
 } from './embedder.js';
 import { embedSingleFile } from './embed-file.js';
 import { planChunks, buildRows } from './file-to-rows.js';
@@ -33,7 +34,7 @@ import {
   upsertRows,
   type ContextRow
 } from '../storage/lance-client.js';
-import { loadConfig, loadProjectConfig, projectHash } from '../config.js';
+import { projectHash } from '../config.js';
 
 /** Outcome of a reconcile, for logging + the session-start systemMessage. */
 export interface ReconcileResult {
@@ -64,13 +65,18 @@ export async function runReconcile(
   source = 'projectContext',
   exclude?: string[],
   sourceType?: string,
-  cwd?: string
+  cwd?: string,
+  scope?: 'project' | 'user'
 ): Promise<ReconcileResult> {
-  const sharedSource = source === 'userContext' || source === 'userDocs';
+  const sharedSource = scope
+    ? scope === 'user'
+    : source === 'userContext' || source === 'userDocs' || source === 'userMemory';
+  const configProjectId = projectId || (cwd ? projectHash(cwd) : undefined);
   if (sharedSource) {
-    assertSharedEmbeddingConfigCompatible(projectId || (cwd ? projectHash(cwd) : undefined), cwd);
+    assertSharedEmbeddingConfigCompatible(configProjectId, cwd);
     projectId = '__user__';
   }
+  const embeddingContext = snapshotEmbeddingContext(sharedSource ? undefined : { projectId, cwd });
   const { contexts: allContexts, failed: loadFailed } = await loadContexts(contextDir, exclude);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
   // so if reconcile kept them in the disk set planReconcile would mark them "new"
@@ -100,7 +106,7 @@ export async function runReconcile(
 
   // Cold start: no table yet → chunk + build it from every file in one shot.
   if (plan.state === 'missing') {
-    const cfg = (sharedSource ? loadConfig() : loadProjectConfig(projectId, cwd)).embedding;
+    const cfg = embeddingContext.config.embedding;
     const now = new Date().toISOString();
     const rows: ContextRow[] = [];
     for (const c of contexts) {
@@ -109,7 +115,7 @@ export async function runReconcile(
       const vectors = await embedDocuments(
         pending.map((p) => p.embedText),
         undefined,
-        sharedSource ? undefined : { projectId, cwd }
+        embeddingContext
       );
       assertEmbeddingDimensions(vectors, cfg.dimensions);
       rows.push(...buildRows(c, pending, vectors, source, now, projectId));
@@ -129,9 +135,11 @@ export async function runReconcile(
       contextDir,
       projectName,
       source,
-      projectId,
+      sharedSource ? configProjectId : projectId,
       sourceType,
-      cwd
+      cwd,
+      sharedSource ? 'user' : 'project',
+      embeddingContext
     );
     if (r.embedded) embedded++;
     else if (r.reason?.startsWith('yaml_parse_error')) {

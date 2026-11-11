@@ -44,10 +44,70 @@ test('shared sources use shared embedding settings and the shared row scope', as
     fs.writeFileSync(path.join(docs, 'guide.md'), '# Shared guide\ncontent');
     resetConfigCache();
     const dimensions = loadConfig().embedding.dimensions;
-    const result = await runReconcile(docs, undefined, '', 'userDocs', undefined, 'doc', project);
+    const result = await runReconcile(
+      docs,
+      undefined,
+      '',
+      'customShared',
+      undefined,
+      'doc',
+      project,
+      'user'
+    );
     assert.equal(result.embedded, 1);
     assert.equal(readTableMeta()?.dimensions, dimensions);
-    assert.equal((await getContentHashes(undefined, 'userDocs', '__user__')).has('guide.md'), true);
+    assert.equal(
+      (await getContentHashes(undefined, 'customShared', '__user__')).has('guide.md'),
+      true
+    );
+    assert.equal(
+      (await getContentHashes(undefined, 'customShared', 'another-project')).has('guide.md'),
+      false
+    );
+    const { embedSingleFile } = await import('../../lib/embedding/embed-file.js');
+    fs.writeFileSync(path.join(docs, 'guide.md'), '# Shared guide\nupdated');
+    const updated = await embedSingleFile(
+      path.join(docs, 'guide.md'),
+      docs,
+      undefined,
+      'customShared',
+      '',
+      'doc',
+      project,
+      'user'
+    );
+    assert.equal(updated.embedded, true);
+    assert.equal(
+      (await getContentHashes(undefined, 'customShared', '__user__')).has('guide.md'),
+      true
+    );
+    const repeated = await runReconcile(
+      docs,
+      undefined,
+      '',
+      'customShared',
+      undefined,
+      'doc',
+      project,
+      'user'
+    );
+    assert.equal(repeated.state, 'fresh');
+    fs.unlinkSync(path.join(docs, 'guide.md'));
+    const removed = await embedSingleFile(
+      path.join(docs, 'guide.md'),
+      docs,
+      undefined,
+      'customShared',
+      '',
+      'doc',
+      project,
+      'user'
+    );
+    assert.equal(removed.reason, 'deleted');
+    assert.equal(
+      (await getContentHashes(undefined, 'customShared', '__user__')).has('guide.md'),
+      false
+    );
   } finally {
     resetConnection();
     resetConfigCache();
@@ -83,7 +143,7 @@ test('shared source reconcile rejects incompatible project embedding settings be
 
     await assert.rejects(
       runReconcile(docs, undefined, '', 'userDocs', undefined, 'doc', project),
-      /same embedding provider, model, and dimensions/
+      /cannot override embedding settings: dimensions/
     );
     assert.equal(await tableExists(), false);
   } finally {
@@ -98,13 +158,68 @@ test('shared source reconcile rejects incompatible project embedding settings be
   }
 });
 
+test('full rebuild stores a custom user-scoped source under the shared project', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-rebuild-shared-home-'));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-rebuild-shared-project-'));
+  const docs = path.join(home, 'shared-docs');
+  const oldHome = process.env.HOME;
+  const oldProfile = process.env.USERPROFILE;
+  const { resetConfigCache } = await import('../../lib/config.js');
+  const { getContentHashes, resetConnection } = await import('../../lib/storage/lance-client.js');
+  try {
+    fs.mkdirSync(docs);
+    fs.writeFileSync(path.join(docs, 'guide.md'), '# Shared guide\ncontent');
+    fs.mkdirSync(path.join(project, '.claude'), { recursive: true });
+    fs.writeFileSync(
+      path.join(project, '.claude', 'contextus.jsonc'),
+      JSON.stringify({
+        sources: {
+          projectMemory: { enabled: false },
+          projectContext: { enabled: false },
+          projectDocs: { enabled: false },
+          userMemory: { enabled: false },
+          userContext: { enabled: false },
+          userDocs: { enabled: false },
+          customShared: { enabled: true, scope: 'user', type: 'doc', path: docs }
+        }
+      })
+    );
+    const script = path.join(process.cwd(), 'scripts', 'embed-contexts.ts');
+    await runNode(['--import', import.meta.resolve('tsx'), script], project, {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CONTEXTUS_TEST_FAKE_EMBED: '1'
+    });
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    resetConfigCache();
+    assert.equal(
+      (await getContentHashes(undefined, 'customShared', '__user__')).has('guide.md'),
+      true
+    );
+    assert.equal((await getContentHashes(undefined, 'customShared', 'another-project')).size, 0);
+  } finally {
+    resetConnection();
+    resetConfigCache();
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = oldProfile;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
 test('cold-start reconcile rejects mismatched provider vectors before creating the table', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-reconcile-dim-'));
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-project-dim-'));
   const oldHome = process.env.HOME;
   const oldFake = process.env.CONTEXTUS_TEST_FAKE_EMBED;
   const oldFetch = globalThis.fetch;
+  const oldPluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   process.env.HOME = home;
+  process.env.CLAUDE_PLUGIN_ROOT = home;
   delete process.env.CONTEXTUS_TEST_FAKE_EMBED;
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ embedding: Array.from({ length: 768 }, () => 1) }), {
@@ -118,8 +233,8 @@ test('cold-start reconcile rejects mismatched provider vectors before creating t
     const contextDir = path.join(project, '.claude', 'context');
     fs.mkdirSync(contextDir, { recursive: true });
     fs.writeFileSync(
-      path.join(project, '.claude', 'contextus.jsonc'),
-      JSON.stringify({ embedding: { provider: 'ollama', dimensions: 7 } })
+      path.join(home, 'plugin.json'),
+      JSON.stringify({ config: { embedding: { provider: 'ollama', dimensions: 7 } } })
     );
     fs.writeFileSync(
       path.join(contextDir, 'decision-test.md'),
@@ -144,6 +259,8 @@ test('cold-start reconcile rejects mismatched provider vectors before creating t
     resetConnection();
     resetConfigCache();
     globalThis.fetch = oldFetch;
+    if (oldPluginRoot === undefined) delete process.env.CLAUDE_PLUGIN_ROOT;
+    else process.env.CLAUDE_PLUGIN_ROOT = oldPluginRoot;
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;
     if (oldFake === undefined) delete process.env.CONTEXTUS_TEST_FAKE_EMBED;
@@ -160,8 +277,10 @@ test('incremental embedding rejects mismatched provider vectors before creating 
   const oldUserProfile = process.env.USERPROFILE;
   const oldFake = process.env.CONTEXTUS_TEST_FAKE_EMBED;
   const oldFetch = globalThis.fetch;
+  const oldPluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.CLAUDE_PLUGIN_ROOT = home;
   delete process.env.CONTEXTUS_TEST_FAKE_EMBED;
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ embedding: Array.from({ length: 768 }, () => 1) }), {
@@ -175,8 +294,8 @@ test('incremental embedding rejects mismatched provider vectors before creating 
     const contextDir = path.join(project, '.claude', 'context');
     fs.mkdirSync(contextDir, { recursive: true });
     fs.writeFileSync(
-      path.join(project, '.claude', 'contextus.jsonc'),
-      JSON.stringify({ embedding: { provider: 'ollama', dimensions: 7 } })
+      path.join(home, 'plugin.json'),
+      JSON.stringify({ config: { embedding: { provider: 'ollama', dimensions: 7 } } })
     );
     const file = path.join(contextDir, 'decision-test.md');
     fs.writeFileSync(
@@ -202,6 +321,8 @@ test('incremental embedding rejects mismatched provider vectors before creating 
     resetConnection();
     resetConfigCache();
     globalThis.fetch = oldFetch;
+    if (oldPluginRoot === undefined) delete process.env.CLAUDE_PLUGIN_ROOT;
+    else process.env.CLAUDE_PLUGIN_ROOT = oldPluginRoot;
     if (oldHome === undefined) delete process.env.HOME;
     else process.env.HOME = oldHome;
     if (oldUserProfile === undefined) delete process.env.USERPROFILE;
@@ -231,9 +352,12 @@ test('full rebuild rejects mismatched provider vectors before creating the table
   try {
     fs.mkdirSync(contextDir, { recursive: true });
     fs.writeFileSync(
+      path.join(home, 'plugin.json'),
+      JSON.stringify({ config: { embedding: { provider: 'ollama', dimensions: 7 } } })
+    );
+    fs.writeFileSync(
       configPath,
       JSON.stringify({
-        embedding: { provider: 'ollama', dimensions: 7 },
         providers: { ollama: { endpoint: `http://127.0.0.1:${address.port}` } },
         sources: {
           projectContext: { enabled: true, path: contextDir },
@@ -256,6 +380,7 @@ test('full rebuild rejects mismatched provider vectors before creating the table
       ...process.env,
       HOME: home,
       USERPROFILE: home,
+      CLAUDE_PLUGIN_ROOT: home,
       CONTEXTUS_TEST_FAKE_EMBED: undefined
     }).catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
 

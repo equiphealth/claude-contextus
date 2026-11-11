@@ -29,7 +29,8 @@ import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
 import {
   assertEmbeddingDimensions,
   assertSharedEmbeddingConfigCompatible,
-  embedDocuments
+  embedDocuments,
+  snapshotEmbeddingContext
 } from '../lib/embedding/embedder.js';
 import { createTable, type ContextRow } from '../lib/storage/lance-client.js';
 import { planChunks, buildRows, type PendingChunk } from '../lib/embedding/file-to-rows.js';
@@ -40,6 +41,12 @@ async function main(): Promise<void> {
 
   // Load config with 3-tier merge (plugin.json → ~/.contextus/data/<project>/config.json → .claude/contextus.jsonc)
   const cfg = loadProjectConfig(projectId, process.cwd());
+  const projectEmbeddingContext = snapshotEmbeddingContext({
+    projectId,
+    cwd: process.cwd(),
+    config: cfg
+  });
+  const sharedEmbeddingContext = snapshotEmbeddingContext();
   const { provider, model, ollamaModel } = cfg.embedding;
   const modelId = provider === 'ollama' ? ollamaModel : model;
 
@@ -48,7 +55,7 @@ async function main(): Promise<void> {
   // sources refresh here, on a full rebuild — matching their slower-changing, noisier
   // nature.
   const sources = resolveSources(cfg.sources);
-  if (sources.some((s) => s.name === 'userContext' || s.name === 'userDocs')) {
+  if (sources.some((s) => s.scope === 'user')) {
     assertSharedEmbeddingConfigCompatible(projectId, process.cwd());
   }
   if (sources.length === 0) {
@@ -119,12 +126,13 @@ async function main(): Promise<void> {
     pending: PendingChunk[];
     ctx: (typeof sourced)[number]['context'];
     source: string;
+    scope: 'project' | 'user';
   }[] = [];
 
   for (const s of sourced) {
     if (s.source !== 'projectContext') s.context.id = `${s.source}:${s.context.id}`;
     const pending = planChunks(s.context);
-    planned.push({ pending, ctx: s.context, source: s.source });
+    planned.push({ pending, ctx: s.context, source: s.source, scope: s.scope });
     for (const p of pending) allEmbedTexts.push(p.embedText);
   }
 
@@ -132,11 +140,8 @@ async function main(): Promise<void> {
   console.log(`\nEmbedding ${totalChunks} chunks from ${sourced.length} files…`);
   const vectors: number[][] = [];
   let embeddedCount = 0;
-  for (const { pending, source } of planned) {
-    const context =
-      source === 'userContext' || source === 'userDocs'
-        ? undefined
-        : { projectId, cwd: process.cwd() };
+  for (const { pending, scope } of planned) {
+    const context = scope === 'user' ? sharedEmbeddingContext : projectEmbeddingContext;
     const batch = await embedDocuments(
       pending.map((p) => p.embedText),
       (done) => process.stdout.write(`\r  ${embeddedCount + done}/${totalChunks}`),
@@ -152,10 +157,10 @@ async function main(): Promise<void> {
   // User-scoped sources (userContext, userDocs) get stamped '__user__' so they're
   // visible to all projects via resolveProjectScope() which always includes '__user__'.
   let cursor = 0;
-  for (const { pending, ctx, source } of planned) {
+  for (const { pending, ctx, source, scope } of planned) {
     const slice = vectors.slice(cursor, cursor + pending.length);
     cursor += pending.length;
-    const rowProject = source === 'userContext' || source === 'userDocs' ? '__user__' : projectId;
+    const rowProject = scope === 'user' ? '__user__' : projectId;
     allRows.push(...buildRows(ctx, pending, slice, source, now, rowProject));
   }
 

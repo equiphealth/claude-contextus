@@ -23,7 +23,7 @@
  */
 
 import { pipeline, type FeatureExtractionPipeline } from '@xenova/transformers';
-import { loadConfig, loadProjectConfig } from '../config.js';
+import { loadConfig, loadProjectConfig, type ContextusConfig } from '../config.js';
 import {
   configureTransformersEnv,
   modelUnavailableError,
@@ -37,10 +37,20 @@ export const QUERY_PREFIX = 'search_query: ';
 export interface EmbeddingContext {
   projectId?: string;
   cwd?: string;
+  config?: ContextusConfig;
 }
 
 function embeddingConfig(context?: EmbeddingContext) {
-  return loadProjectConfig(context?.projectId, context?.cwd).embedding;
+  return (context?.config ?? loadProjectConfig(context?.projectId, context?.cwd)).embedding;
+}
+
+export function snapshotEmbeddingContext(
+  context?: EmbeddingContext
+): EmbeddingContext & { config: ContextusConfig } {
+  return {
+    ...context,
+    config: structuredClone(context?.config ?? loadProjectConfig(context?.projectId, context?.cwd))
+  };
 }
 
 /** Fail before persistence when a provider emits vectors outside the configured space. */
@@ -142,7 +152,11 @@ function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipel
     // Apply localModelPath / cacheDir / remoteHost before the first load so a
     // bundled or mirrored model is sourced correctly (see lib/model-resolver).
     const loading = _pipelineLoadQueue.then(() => {
-      configureTransformersEnv(context?.projectId, context?.cwd);
+      configureTransformersEnv(
+        context?.projectId,
+        context?.cwd,
+        context?.config?.embedding.transformers
+      );
       return pipeline('feature-extraction', model, { quantized: true });
     });
     _pipelineLoadQueue = loading.then(
@@ -155,7 +169,12 @@ function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipel
       // the actionable escape-hatch message.
       const msg = err instanceof Error ? err.message : String(err);
       if (/fetch|JSON|Unexpected token|ENOTFOUND|ECONNREFUSED|certificate/i.test(msg)) {
-        throw modelUnavailableError(model, context?.projectId, context?.cwd);
+        throw modelUnavailableError(
+          model,
+          context?.projectId,
+          context?.cwd,
+          context?.config?.embedding.transformers
+        );
       }
       throw err;
     });
@@ -180,7 +199,8 @@ async function embedOllama(text: string, context?: EmbeddingContext): Promise<nu
   const { ollamaModel } = cfg;
   const ollamaEndpoint =
     cfg.ollamaEndpoint ||
-    loadProjectConfig(context?.projectId, context?.cwd).providers.ollama.endpoint;
+    (context?.config ?? loadProjectConfig(context?.projectId, context?.cwd)).providers.ollama
+      .endpoint;
   const res = await fetch(`${ollamaEndpoint}/api/embeddings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -248,9 +268,10 @@ export async function embedDocuments(
   onProgress?: (done: number, total: number) => void,
   context?: EmbeddingContext
 ): Promise<number[][]> {
+  const snapshot = snapshotEmbeddingContext(context);
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i++) {
-    out.push(await embedDocument(texts[i], context));
+    out.push(await embedDocument(texts[i], snapshot));
     onProgress?.(i + 1, texts.length);
   }
   return out;

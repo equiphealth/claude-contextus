@@ -6,11 +6,12 @@ import path from 'node:path';
 import {
   assertEmbeddingDimensions,
   embedDocument,
+  embedDocuments,
   resetEmbedder
 } from '../lib/embedding/embedder.js';
-import { projectLocalConfigPath, resetConfigCache } from '../lib/config.js';
+import { loadConfig, projectLocalConfigPath, resetConfigCache } from '../lib/config.js';
 
-test('embedDocument resolves project-level embedding dimensions', async () => {
+test('project-level embedding dimensions are rejected', async () => {
   const projectId = `embedder-project-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-embedder-'));
   const localConfig = projectLocalConfigPath(projectId);
@@ -23,8 +24,10 @@ test('embedDocument resolves project-level embedding dimensions', async () => {
     resetConfigCache();
     resetEmbedder();
 
-    const vector = await embedDocument('project-specific embedding', { projectId, cwd });
-    assert.equal(vector.length, 7);
+    await assert.rejects(
+      () => embedDocument('project-specific embedding', { projectId, cwd }),
+      /cannot override embedding settings: dimensions/
+    );
   } finally {
     if (previousFake === undefined) delete process.env.CONTEXTUS_TEST_FAKE_EMBED;
     else process.env.CONTEXTUS_TEST_FAKE_EMBED = previousFake;
@@ -33,6 +36,29 @@ test('embedDocument resolves project-level embedding dimensions', async () => {
     fs.rmSync(cwd, { recursive: true, force: true });
     resetConfigCache();
     resetEmbedder();
+  }
+});
+
+test('a batch retains its embedding configuration when the original changes', async () => {
+  const previousFake = process.env.CONTEXTUS_TEST_FAKE_EMBED;
+  process.env.CONTEXTUS_TEST_FAKE_EMBED = '1';
+  const config = structuredClone(loadConfig());
+  config.embedding.dimensions = 3;
+  try {
+    const vectors = await embedDocuments(
+      ['first', 'second'],
+      (done) => {
+        if (done === 1) config.embedding.dimensions = 5;
+      },
+      { config }
+    );
+    assert.deepEqual(
+      vectors.map((vector) => vector.length),
+      [3, 3]
+    );
+  } finally {
+    if (previousFake === undefined) delete process.env.CONTEXTUS_TEST_FAKE_EMBED;
+    else process.env.CONTEXTUS_TEST_FAKE_EMBED = previousFake;
   }
 });
 

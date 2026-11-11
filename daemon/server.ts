@@ -750,6 +750,7 @@ export function determineSource(
   sourceName: string;
   sourceDir: string;
   sourceType?: string;
+  scope: 'project' | 'user';
   projectId: string;
   project: string | undefined;
 } | null {
@@ -768,7 +769,8 @@ export function determineSource(
   for (const [sourceName, s] of Object.entries(sources)) {
     if (s.enabled === false) continue;
 
-    const sourceDir = s.scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
+    const scope = s.scope === 'user' ? 'user' : 'project';
+    const sourceDir = scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
 
     if (absFile.startsWith(sourceDir + path.sep) || absFile === sourceDir) {
       // Reuse the already-canonicalized projectIdForConfig (resolveProjectId()/
@@ -778,9 +780,16 @@ export function determineSource(
       // scoped under two different projectId strings depending on how the
       // caller referred to it (GH issue #56 — same normalization gap that hit
       // reconcilingProjects's dedup key).
-      const pid = s.scope === 'project' ? projectIdForConfig : '';
-      const proj = s.scope === 'project' ? project : undefined;
-      return { sourceName, sourceDir, sourceType: s.type, projectId: pid, project: proj };
+      const pid = projectIdForConfig;
+      const proj = scope === 'project' ? project : undefined;
+      return {
+        sourceName,
+        sourceDir,
+        sourceType: s.type,
+        scope,
+        projectId: pid,
+        project: proj
+      };
     }
   }
 
@@ -812,9 +821,9 @@ async function handleNotify(
     return sendJson(res, 200, { ok: true, embedded: false, reason: 'not_in_any_source' });
   }
 
-  const { sourceName, sourceDir, sourceType, projectId, project } = sourceInfo;
+  const { sourceName, sourceDir, sourceType, scope, projectId, project } = sourceInfo;
   registerProject(projectId, cwd);
-  watchContextDir(sourceDir, project, sourceName, projectId, sourceType, cwd);
+  watchContextDir(sourceDir, project, sourceName, projectId, sourceType, cwd, scope);
   // Deliberately embeds even if `reconcilingSources.has(sourceDir)` — i.e. even
   // while a bulk reconcile is mid-flight over this same source. embedSingleFile
   // re-reads the file from disk at call time (it doesn't consume a pre-fetched
@@ -833,7 +842,8 @@ async function handleNotify(
     sourceName,
     projectId,
     sourceType,
-    cwd
+    cwd,
+    scope
   );
   if (result.embedded) {
     invalidateCorpusCache(project);
@@ -952,7 +962,7 @@ async function executeCaptureRequest(
 
   // Lazy-register for hash→name reverse lookup
   if (cwd) {
-    const id = project ? resolveProjectId(project) : projectHash(cwd);
+    const id = projectHash(cwd);
     registerProject(id, cwd);
   }
 
@@ -1003,9 +1013,18 @@ async function executeCaptureRequest(
     });
 
     // Embed async
-    const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
+    const projectId = cwd ? projectHash(cwd) : project ? resolveProjectId(project) : '__user__';
     const source = scope === 'user' ? 'userDocs' : 'projectDocs';
-    embedSingleFile(absFile, docsDir, project, source, projectId, 'doc', cwd)
+    embedSingleFile(
+      absFile,
+      docsDir,
+      project,
+      source,
+      projectId,
+      'doc',
+      cwd,
+      scope === 'user' ? 'user' : 'project'
+    )
       .then((result) => {
         if (result.embedded) invalidateCorpusCache(project);
         logInfo('Doc embedded', { file: filename, embedded: result.embedded });
@@ -1118,9 +1137,18 @@ async function executeCaptureRequest(
   // Embed async (fire-and-forget) — the frontmatter is already YAML-validated
   // above, so this shouldn't hit a parse error, but log the reason either way
   // if it doesn't embed rather than only logging the boolean.
-  const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
+  const projectId = cwd ? projectHash(cwd) : project ? resolveProjectId(project) : '__user__';
   const source = scope === 'user' ? 'userContext' : 'projectContext';
-  embedSingleFile(absFile, contextDir, project, source, projectId, 'context', cwd)
+  embedSingleFile(
+    absFile,
+    contextDir,
+    project,
+    source,
+    projectId,
+    'context',
+    cwd,
+    scope === 'user' ? 'user' : 'project'
+  )
     .then((result) => {
       if (result.embedded) invalidateCorpusCache(project);
       logInfo('Capture embedded', {
@@ -1243,7 +1271,14 @@ async function handleDelete(
   // Drop embeddings. Check first so the response can report whether there was
   // anything to remove (a file that was never embedded — e.g. prefix/type
   // mismatch quarantine — archives fine but has nothing to delete here).
-  const projectId = project ?? (cwd ? projectHash(cwd) : '__user__');
+  const projectId =
+    scope === 'user'
+      ? '__user__'
+      : cwd
+        ? projectHash(cwd)
+        : project
+          ? resolveProjectId(project)
+          : '__user__';
   let embeddingsRemoved = false;
   try {
     const hashes = await getContentHashes(project, undefined, projectId);
@@ -1316,7 +1351,8 @@ function watchContextDir(
   source = 'projectContext',
   projectId = '',
   sourceType?: string,
-  cwd?: string
+  cwd?: string,
+  scope?: 'project' | 'user'
 ): void {
   if (activeWatchers.has(contextDir)) return;
   if (!fs.existsSync(contextDir)) return;
@@ -1342,7 +1378,7 @@ function watchContextDir(
       // Only act on deletions — file gone from disk
       if (!fs.existsSync(absPath)) {
         const projectLabel = project ?? 'default';
-        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType, cwd)
+        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType, cwd, scope)
           .then((result) => {
             if (result.reason === 'deleted') {
               invalidateCorpusCache(project);
@@ -1357,7 +1393,7 @@ function watchContextDir(
       } else {
         // File created or modified — re-embed it
         const projectLabel = project ?? 'default';
-        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType, cwd)
+        embedSingleFile(absPath, contextDir, project, source, projectId, sourceType, cwd, scope)
           .then((result) => {
             if (result.embedded) {
               invalidateCorpusCache(project);
@@ -1366,11 +1402,11 @@ function watchContextDir(
                 project: projectLabel,
                 source
               });
-              const scope =
-                source === 'userContext' || source === 'userDocs'
+              const captureScope =
+                scope === 'user' || (!scope && (source === 'userContext' || source === 'userDocs'))
                   ? 'user'
                   : `project:${projectLabel}`;
-              logCapture(scope, result.id ?? filename, 'auto-captured via watcher');
+              logCapture(captureScope, result.id ?? filename, 'auto-captured via watcher');
             } else if (result.reason?.startsWith('yaml_parse_error')) {
               // A hand-edit (or anything outside /capture) can write invalid
               // frontmatter directly to disk — the live watcher is often the
@@ -1495,8 +1531,9 @@ async function handleReconcile(
 
     for (const [sourceName, s] of Object.entries(sources)) {
       if (s.enabled === false) continue;
-      const sourcePath = s.scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
-      const sourceProjectId = s.scope === 'project' ? projectId : '';
+      const scope = s.scope === 'user' ? 'user' : 'project';
+      const sourcePath = scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
+      const sourceProjectId = scope === 'project' ? projectId : '__user__';
 
       const { contexts: allContexts, failed: loadFailed } = await loadContexts(
         sourcePath,
@@ -1568,17 +1605,18 @@ async function handleReconcile(
   const reconcileTasks = Object.entries(sources)
     .filter(([, s]) => s.enabled !== false)
     .map(([sourceName, s]) => {
-      const sourcePath = s.scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
+      const scope: 'project' | 'user' = s.scope === 'user' ? 'user' : 'project';
+      const sourcePath = scope === 'project' ? path.join(cwd, s.path) : expandHome(s.path);
 
-      const pid = s.scope === 'project' ? projectId : '';
-      const proj = s.scope === 'project' ? project : undefined;
+      const pid = projectId;
+      const proj = scope === 'project' ? project : undefined;
 
       return {
         sourceName,
         sourcePath,
         pid,
         proj,
-        scope: s.scope,
+        scope,
         exclude: s.exclude,
         sourceType: s.type
       };
@@ -1598,7 +1636,7 @@ async function handleReconcile(
 
   Promise.all(
     reconcileTasks.map((t) =>
-      runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName, t.exclude, t.sourceType, cwd)
+      runReconcile(t.sourcePath, t.proj, t.pid, t.sourceName, t.exclude, t.sourceType, cwd, t.scope)
     )
   )
     .then(async (results) => {
@@ -1623,7 +1661,7 @@ async function handleReconcile(
 
       // Watch all source directories.
       reconcileTasks.forEach((t) => {
-        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType, cwd);
+        watchContextDir(t.sourcePath, t.proj, t.sourceName, t.pid, t.sourceType, cwd, t.scope);
       });
     })
     .catch((err) =>
@@ -1709,8 +1747,14 @@ export function requestHandler(req: http.IncomingMessage, res: http.ServerRespon
 
         const searchCfg = loadProjectConfig(projectId, cwd).embedding;
         const searchMeta = readTableMeta(projectId);
-        const searchModel = searchCfg.provider === 'ollama' ? searchCfg.ollamaModel : searchCfg.model;
-        if (searchMeta && (searchMeta.provider !== searchCfg.provider || searchMeta.embeddingModel !== searchModel || searchMeta.dimensions !== searchCfg.dimensions)) {
+        const searchModel =
+          searchCfg.provider === 'ollama' ? searchCfg.ollamaModel : searchCfg.model;
+        if (
+          searchMeta &&
+          (searchMeta.provider !== searchCfg.provider ||
+            searchMeta.embeddingModel !== searchModel ||
+            searchMeta.dimensions !== searchCfg.dimensions)
+        ) {
           return sendJson(res, 409, { error: 'Embedding configuration does not match the corpus' });
         }
 
