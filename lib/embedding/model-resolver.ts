@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from '@xenova/transformers';
-import { expandHome, loadProjectConfig, type TransformersConfig } from '../config.js';
+import { expandHome, loadConfig, type TransformersConfig } from '../config.js';
 
 let _configuredKey: string | null = null;
 const defaultEnv = {
@@ -32,12 +32,8 @@ const defaultEnv = {
 };
 
 /** Resolve the transformers config block with home-expansion applied. */
-function tConfig(
-  projectId?: string,
-  cwd?: string,
-  override?: TransformersConfig
-): TransformersConfig {
-  const t = override ?? loadProjectConfig(projectId, cwd).embedding.transformers!;
+function tConfig(override?: TransformersConfig): TransformersConfig {
+  const t = override ?? loadConfig().embedding.transformers!;
   return {
     localModelPath: t.localModelPath ? expandHome(t.localModelPath) : '',
     cacheDir: t.cacheDir ? expandHome(t.cacheDir) : '',
@@ -50,12 +46,8 @@ function tConfig(
  * Apply the resolver settings to the global transformers.js `env`. Idempotent —
  * call before the first pipeline() load (the embedder does this lazily).
  */
-export function configureTransformersEnv(
-  projectId?: string,
-  cwd?: string,
-  override?: TransformersConfig
-): void {
-  const t = tConfig(projectId, cwd, override);
+export function configureTransformersEnv(override?: TransformersConfig): void {
+  const t = tConfig(override);
   const key = JSON.stringify(t);
   if (_configuredKey === key) return;
   Object.assign(env, defaultEnv);
@@ -87,8 +79,8 @@ export function configureTransformersEnv(
 }
 
 /** True if a bundled model for `modelId` exists under localModelPath. */
-export function hasLocalModel(modelId: string, projectId?: string, cwd?: string): boolean {
-  const { localModelPath } = tConfig(projectId, cwd);
+export function hasLocalModel(modelId: string, override?: TransformersConfig): boolean {
+  const { localModelPath } = tConfig(override);
   if (!localModelPath) return false;
   // transformers.js looks for <localModelPath>/<modelId>/config.json
   return fs.existsSync(path.join(localModelPath, modelId, 'config.json'));
@@ -98,10 +90,9 @@ export function hasLocalModel(modelId: string, projectId?: string, cwd?: string)
 export async function isRemoteReachable(
   modelId: string,
   timeoutMs = 5000,
-  projectId?: string,
-  cwd?: string
+  override?: TransformersConfig
 ): Promise<boolean> {
-  const { remoteHost } = tConfig(projectId, cwd);
+  const { remoteHost } = tConfig(override);
   const url = `${remoteHost.replace(/\/$/, '')}/${modelId}/resolve/main/config.json`;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -124,13 +115,8 @@ export async function isRemoteReachable(
  * Build the actionable error shown when the Transformers.js model can't be
  * sourced. Lists every escape hatch in priority order.
  */
-export function modelUnavailableError(
-  modelId: string,
-  projectId?: string,
-  cwd?: string,
-  override?: TransformersConfig
-): Error {
-  const { localModelPath, remoteHost } = tConfig(projectId, cwd, override);
+export function modelUnavailableError(modelId: string, override?: TransformersConfig): Error {
+  const { localModelPath, remoteHost } = tConfig(override);
   return new Error(
     [
       `Could not load embedding model '${modelId}' via Transformers.js.`,
@@ -160,13 +146,12 @@ export function modelUnavailableError(
  */
 export async function preflightTransformers(
   modelId: string,
-  projectId?: string,
-  cwd?: string
+  override?: TransformersConfig
 ): Promise<void> {
-  if (hasLocalModel(modelId, projectId, cwd)) return;
-  const { allowRemoteModels } = tConfig(projectId, cwd);
-  if (allowRemoteModels && (await isRemoteReachable(modelId, 5000, projectId, cwd))) return;
-  throw modelUnavailableError(modelId, projectId, cwd);
+  if (hasLocalModel(modelId, override)) return;
+  const { allowRemoteModels } = tConfig(override);
+  if (allowRemoteModels && (await isRemoteReachable(modelId, 5000, override))) return;
+  throw modelUnavailableError(modelId, override);
 }
 
 /** Reset memoized env state (tests). */

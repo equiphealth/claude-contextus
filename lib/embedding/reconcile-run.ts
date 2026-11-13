@@ -18,12 +18,7 @@
 
 import path from 'node:path';
 import { loadContexts, quarantineMismatches } from './context-loader.js';
-import {
-  assertEmbeddingDimensions,
-  assertSharedEmbeddingConfigCompatible,
-  embedDocuments,
-  snapshotEmbeddingContext
-} from './embedder.js';
+import { assertEmbeddingDimensions, embedDocuments, snapshotEmbeddingContext } from './embedder.js';
 import { embedSingleFile } from './embed-file.js';
 import { planChunks, buildRows } from './file-to-rows.js';
 import { planReconcile, type DiskFile, type ReconcilePlan } from '../storage/reconcile.js';
@@ -34,7 +29,7 @@ import {
   upsertRows,
   type ContextRow
 } from '../storage/lance-client.js';
-import { projectHash } from '../config.js';
+import { loadConfig } from '../config.js';
 
 /** Outcome of a reconcile, for logging + the session-start systemMessage. */
 export interface ReconcileResult {
@@ -71,11 +66,7 @@ export async function runReconcile(
   const sharedSource = scope
     ? scope === 'user'
     : source === 'userContext' || source === 'userDocs' || source === 'userMemory';
-  const configProjectId = projectId || (cwd ? projectHash(cwd) : undefined);
-  if (sharedSource) {
-    assertSharedEmbeddingConfigCompatible(configProjectId, cwd);
-    projectId = '__user__';
-  }
+  if (sharedSource) projectId = '__user__';
   const embeddingContext = snapshotEmbeddingContext(sharedSource ? undefined : { projectId, cwd });
   const { contexts: allContexts, failed: loadFailed } = await loadContexts(contextDir, exclude);
   // Quarantine prefix/type-mismatch files: they can't embed (the gate rejects them),
@@ -106,7 +97,7 @@ export async function runReconcile(
 
   // Cold start: no table yet → chunk + build it from every file in one shot.
   if (plan.state === 'missing') {
-    const cfg = embeddingContext.config.embedding;
+    const cfg = loadConfig().embedding;
     const now = new Date().toISOString();
     const rows: ContextRow[] = [];
     for (const c of contexts) {
@@ -135,7 +126,7 @@ export async function runReconcile(
       contextDir,
       projectName,
       source,
-      sharedSource ? configProjectId : projectId,
+      projectId,
       sourceType,
       cwd,
       sharedSource ? 'user' : 'project',

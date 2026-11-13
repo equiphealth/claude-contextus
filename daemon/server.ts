@@ -311,9 +311,9 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
   // machine-local → git-committed), so each project calibrates independently.
   const cfg = loadProjectConfig(projectId, cwd);
   const meta = readTableMeta(projectId);
-  const activeModel =
-    cfg.embedding.provider === 'ollama' ? cfg.embedding.ollamaModel : cfg.embedding.model;
-  if (meta && (meta.provider !== cfg.embedding.provider || meta.embeddingModel !== activeModel)) {
+  const embedding = loadConfig().embedding;
+  const activeModel = embedding.provider === 'ollama' ? embedding.ollamaModel : embedding.model;
+  if (meta && (meta.provider !== embedding.provider || meta.embeddingModel !== activeModel)) {
     logError('error', 'daemon', 'Embedding model mismatch (corpus vs daemon)', {
       project: projectLabel,
       corpus: meta.embeddingModel,
@@ -323,7 +323,7 @@ async function handleQuery(body: Record<string, unknown>, res: http.ServerRespon
     // Degrade gracefully — a mismatched space yields garbage similarities.
     return sendJson(res, 200, { continue: true });
   }
-  if (meta && meta.dimensions !== cfg.embedding.dimensions) {
+  if (meta && meta.dimensions !== embedding.dimensions) {
     logError('error', 'daemon', 'Embedding dimension mismatch (corpus vs daemon)', {
       project: projectLabel,
       corpus: meta.dimensions,
@@ -1745,7 +1745,7 @@ export function requestHandler(req: http.IncomingMessage, res: http.ServerRespon
           return sendJson(res, 200, { results: [] });
         }
 
-        const searchCfg = loadProjectConfig(projectId, cwd).embedding;
+        const searchCfg = loadConfig().embedding;
         const searchMeta = readTableMeta(projectId);
         const searchModel =
           searchCfg.provider === 'ollama' ? searchCfg.ollamaModel : searchCfg.model;

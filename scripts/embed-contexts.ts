@@ -23,12 +23,11 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
-import { loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
+import { loadConfig, loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
 import {
   assertEmbeddingDimensions,
-  assertSharedEmbeddingConfigCompatible,
   embedDocuments,
   snapshotEmbeddingContext
 } from '../lib/embedding/embedder.js';
@@ -41,13 +40,10 @@ async function main(): Promise<void> {
 
   // Load config with 3-tier merge (plugin.json → ~/.contextus/data/<project>/config.json → .claude/contextus.jsonc)
   const cfg = loadProjectConfig(projectId, process.cwd());
-  const projectEmbeddingContext = snapshotEmbeddingContext({
-    projectId,
-    cwd: process.cwd(),
-    config: cfg
-  });
+  const projectEmbeddingContext = snapshotEmbeddingContext({ projectId, cwd: process.cwd() });
   const sharedEmbeddingContext = snapshotEmbeddingContext();
-  const { provider, model, ollamaModel } = cfg.embedding;
+  const embedding = loadConfig().embedding;
+  const { provider, model, ollamaModel } = embedding;
   const modelId = provider === 'ollama' ? ollamaModel : model;
 
   // Resolve every ENABLED source from merged config (includes project overrides like
@@ -55,9 +51,6 @@ async function main(): Promise<void> {
   // sources refresh here, on a full rebuild — matching their slower-changing, noisier
   // nature.
   const sources = resolveSources(cfg.sources);
-  if (sources.some((s) => s.scope === 'user')) {
-    assertSharedEmbeddingConfigCompatible(projectId, process.cwd());
-  }
   if (sources.length === 0) {
     console.error(`\n✗ No enabled sources resolved from plugin.json config.sources`);
     process.exit(1);
@@ -65,7 +58,7 @@ async function main(): Promise<void> {
 
   console.log(`contextus embed`);
   console.log(`  sources:  ${sources.map((s) => `${s.name}(${s.dir})`).join(', ')}`);
-  console.log(`  provider: ${provider} (${modelId}, ${cfg.embedding.dimensions}d)`);
+  console.log(`  provider: ${provider} (${modelId}, ${embedding.dimensions}d)`);
   console.log(`  target:   ${resolveDBPath()}`);
 
   const { items: sourced, failed: loadFailed } = await loadAllSources(sources);
@@ -147,7 +140,7 @@ async function main(): Promise<void> {
       (done) => process.stdout.write(`\r  ${embeddedCount + done}/${totalChunks}`),
       context
     );
-    assertEmbeddingDimensions(batch, cfg.embedding.dimensions);
+    assertEmbeddingDimensions(batch, embedding.dimensions);
     vectors.push(...batch);
     embeddedCount += batch.length;
   }
@@ -170,7 +163,7 @@ async function main(): Promise<void> {
   }
   await createTable(allRows, {
     replace: true,
-    providerInfo: { provider, model, ollamaModel }
+    providerInfo: embedding
   });
 
   // Summary: counts by source + type so the corpus shape is visible at a glance.

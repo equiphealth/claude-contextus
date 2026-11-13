@@ -120,44 +120,6 @@ test('shared sources use shared embedding settings and the shared row scope', as
   }
 });
 
-test('shared source reconcile rejects incompatible project embedding settings before writing', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-shared-config-'));
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-project-config-'));
-  const oldHome = process.env.HOME;
-  const oldFake = process.env.CONTEXTUS_TEST_FAKE_EMBED;
-  process.env.HOME = home;
-  process.env.CONTEXTUS_TEST_FAKE_EMBED = '1';
-  const { resetConfigCache } = await import('../../lib/config.js');
-  const { runReconcile } = await import('../../lib/embedding/reconcile-run.js');
-  const { resetConnection, tableExists } = await import('../../lib/storage/lance-client.js');
-  try {
-    fs.mkdirSync(path.join(project, '.claude'), { recursive: true });
-    fs.writeFileSync(
-      path.join(project, '.claude', 'contextus.jsonc'),
-      JSON.stringify({ embedding: { dimensions: 7 } })
-    );
-    const docs = path.join(home, 'docs');
-    fs.mkdirSync(docs);
-    fs.writeFileSync(path.join(docs, 'guide.md'), '# Shared guide\ncontent');
-    resetConfigCache();
-
-    await assert.rejects(
-      runReconcile(docs, undefined, '', 'userDocs', undefined, 'doc', project),
-      /cannot override embedding settings: dimensions/
-    );
-    assert.equal(await tableExists(), false);
-  } finally {
-    resetConnection();
-    resetConfigCache();
-    if (oldHome === undefined) delete process.env.HOME;
-    else process.env.HOME = oldHome;
-    if (oldFake === undefined) delete process.env.CONTEXTUS_TEST_FAKE_EMBED;
-    else process.env.CONTEXTUS_TEST_FAKE_EMBED = oldFake;
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.rmSync(project, { recursive: true, force: true });
-  }
-});
-
 test('full rebuild stores a custom user-scoped source under the shared project', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-rebuild-shared-home-'));
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'contextus-rebuild-shared-project-'));

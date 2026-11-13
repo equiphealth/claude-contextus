@@ -37,19 +37,38 @@ export const QUERY_PREFIX = 'search_query: ';
 export interface EmbeddingContext {
   projectId?: string;
   cwd?: string;
-  config?: ContextusConfig;
 }
 
-function embeddingConfig(context?: EmbeddingContext) {
-  return (context?.config ?? loadProjectConfig(context?.projectId, context?.cwd)).embedding;
+export interface EmbeddingContextSnapshot extends EmbeddingContext {
+  config: ContextusConfig;
+}
+
+type EmbeddingContextInput = EmbeddingContext | EmbeddingContextSnapshot;
+
+function contextConfig(context?: EmbeddingContextInput): ContextusConfig {
+  return context && 'config' in context
+    ? context.config
+    : loadProjectConfig(context?.projectId, context?.cwd);
+}
+
+function embeddingConfig(context?: EmbeddingContext | EmbeddingContextSnapshot) {
+  const project = contextConfig(context).embedding;
+  const shared = loadConfig().embedding;
+  return {
+    ...project,
+    provider: shared.provider,
+    model: shared.model,
+    ollamaModel: shared.ollamaModel,
+    dimensions: shared.dimensions
+  };
 }
 
 export function snapshotEmbeddingContext(
-  context?: EmbeddingContext
-): EmbeddingContext & { config: ContextusConfig } {
+  context?: EmbeddingContextInput
+): EmbeddingContextSnapshot {
   return {
     ...context,
-    config: structuredClone(context?.config ?? loadProjectConfig(context?.projectId, context?.cwd))
+    config: structuredClone(contextConfig(context))
   };
 }
 
@@ -62,23 +81,6 @@ export function assertEmbeddingDimensions(
   if (mismatch) {
     throw new Error(
       `Embedding provider returned a vector with unexpected dimensions (${mismatch.length}; expected ${expectedDimensions})`
-    );
-  }
-}
-
-/** Shared rows use global settings, so a project that reconciles them must be compatible. */
-export function assertSharedEmbeddingConfigCompatible(projectId?: string, cwd?: string): void {
-  const project = embeddingConfig({ projectId, cwd });
-  const shared = loadConfig().embedding;
-  const projectModel = project.provider === 'ollama' ? project.ollamaModel : project.model;
-  const sharedModel = shared.provider === 'ollama' ? shared.ollamaModel : shared.model;
-  if (
-    project.provider !== shared.provider ||
-    projectModel !== sharedModel ||
-    project.dimensions !== shared.dimensions
-  ) {
-    throw new Error(
-      'Project and shared user sources must use the same embedding provider, model, and dimensions.'
     );
   }
 }
@@ -144,7 +146,7 @@ let _pipe: Promise<FeatureExtractionPipeline> | null = null;
 let _pipeModel: string | null = null;
 let _pipelineLoadQueue: Promise<void> = Promise.resolve();
 
-function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipeline> {
+function getPipeline(context?: EmbeddingContextInput): Promise<FeatureExtractionPipeline> {
   const { model, transformers } = embeddingConfig(context);
   const key = JSON.stringify([model, transformers]);
   if (!_pipe || _pipeModel !== key) {
@@ -152,11 +154,7 @@ function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipel
     // Apply localModelPath / cacheDir / remoteHost before the first load so a
     // bundled or mirrored model is sourced correctly (see lib/model-resolver).
     const loading = _pipelineLoadQueue.then(() => {
-      configureTransformersEnv(
-        context?.projectId,
-        context?.cwd,
-        context?.config?.embedding.transformers
-      );
+      configureTransformersEnv(transformers);
       return pipeline('feature-extraction', model, { quantized: true });
     });
     _pipelineLoadQueue = loading.then(
@@ -169,12 +167,7 @@ function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipel
       // the actionable escape-hatch message.
       const msg = err instanceof Error ? err.message : String(err);
       if (/fetch|JSON|Unexpected token|ENOTFOUND|ECONNREFUSED|certificate/i.test(msg)) {
-        throw modelUnavailableError(
-          model,
-          context?.projectId,
-          context?.cwd,
-          context?.config?.embedding.transformers
-        );
+        throw modelUnavailableError(model, transformers);
       }
       throw err;
     });
@@ -182,7 +175,7 @@ function getPipeline(context?: EmbeddingContext): Promise<FeatureExtractionPipel
   return _pipe;
 }
 
-async function embedTransformers(text: string, context?: EmbeddingContext): Promise<number[]> {
+async function embedTransformers(text: string, context?: EmbeddingContextInput): Promise<number[]> {
   const pipe = await getPipeline(context);
   const output = await pipe(text, { pooling: 'mean', normalize: true });
   return Array.from(output.data as Float32Array);
@@ -194,13 +187,10 @@ interface OllamaEmbeddingResponse {
   embedding: number[];
 }
 
-async function embedOllama(text: string, context?: EmbeddingContext): Promise<number[]> {
+async function embedOllama(text: string, context?: EmbeddingContextInput): Promise<number[]> {
   const cfg = embeddingConfig(context);
   const { ollamaModel } = cfg;
-  const ollamaEndpoint =
-    cfg.ollamaEndpoint ||
-    (context?.config ?? loadProjectConfig(context?.projectId, context?.cwd)).providers.ollama
-      .endpoint;
+  const ollamaEndpoint = cfg.ollamaEndpoint || contextConfig(context).providers.ollama.endpoint;
   const res = await fetch(`${ollamaEndpoint}/api/embeddings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -220,7 +210,7 @@ async function embedOllama(text: string, context?: EmbeddingContext): Promise<nu
 /* ── Public API (provider-dispatching) ────────────────────────────────────── */
 
 /** Embed text exactly as given (no prefix). Mean-pooled + L2-normalized. */
-async function embedRaw(text: string, context?: EmbeddingContext): Promise<number[]> {
+async function embedRaw(text: string, context?: EmbeddingContextInput): Promise<number[]> {
   const { provider, dimensions } = embeddingConfig(context);
   if (fakeEmbedEnabled()) return fakeDeterministicVector(text, dimensions);
   return provider === 'ollama' ? embedOllama(text, context) : embedTransformers(text, context);
@@ -231,13 +221,13 @@ async function embedRaw(text: string, context?: EmbeddingContext): Promise<numbe
  * Call at daemon start so the first real query isn't slow — and so a
  * model/dimension mismatch fails fast (DESIGN.md §"dimensions must match").
  */
-export async function warmup(context?: EmbeddingContext): Promise<void> {
+export async function warmup(context?: EmbeddingContextInput): Promise<void> {
   const { dimensions, provider, model, ollamaModel } = embeddingConfig(context);
   // Transformers.js: fail fast with an actionable message if the model is
   // neither bundled nor reachable, instead of a slow opaque pipeline() error.
   // Skipped under the fake-embed test seam — there's no real model to preflight.
   if (provider === 'transformers' && !fakeEmbedEnabled())
-    await preflightTransformers(model, context?.projectId, context?.cwd);
+    await preflightTransformers(model, embeddingConfig(context).transformers);
   const vec = await embedRaw('warmup', context);
   if (vec.length !== dimensions) {
     const id = provider === 'ollama' ? ollamaModel : model;
@@ -249,12 +239,12 @@ export async function warmup(context?: EmbeddingContext): Promise<void> {
 }
 
 /** Embed a single stored passage (document side — `search_document:` prefix). */
-export function embedDocument(text: string, context?: EmbeddingContext): Promise<number[]> {
+export function embedDocument(text: string, context?: EmbeddingContextInput): Promise<number[]> {
   return embedRaw(prefixesEnabled() ? DOCUMENT_PREFIX + text : text, context);
 }
 
 /** Embed a single query (query side — `search_query:` prefix). */
-export function embedQuery(text: string, context?: EmbeddingContext): Promise<number[]> {
+export function embedQuery(text: string, context?: EmbeddingContextInput): Promise<number[]> {
   return embedRaw(prefixesEnabled() ? QUERY_PREFIX + text : text, context);
 }
 
@@ -266,7 +256,7 @@ export function embedQuery(text: string, context?: EmbeddingContext): Promise<nu
 export async function embedDocuments(
   texts: string[],
   onProgress?: (done: number, total: number) => void,
-  context?: EmbeddingContext
+  context?: EmbeddingContextInput
 ): Promise<number[][]> {
   const snapshot = snapshotEmbeddingContext(context);
   const out: number[][] = [];

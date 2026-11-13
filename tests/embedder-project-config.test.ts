@@ -7,6 +7,7 @@ import {
   assertEmbeddingDimensions,
   embedDocument,
   embedDocuments,
+  snapshotEmbeddingContext,
   resetEmbedder
 } from '../lib/embedding/embedder.js';
 import { loadConfig, projectLocalConfigPath, resetConfigCache } from '../lib/config.js';
@@ -39,22 +40,20 @@ test('project-level embedding dimensions are rejected', async () => {
   }
 });
 
-test('a batch retains its embedding configuration when the original changes', async () => {
+test('project snapshots cannot change the shared embedding space', async () => {
   const previousFake = process.env.CONTEXTUS_TEST_FAKE_EMBED;
   process.env.CONTEXTUS_TEST_FAKE_EMBED = '1';
-  const config = structuredClone(loadConfig());
-  config.embedding.dimensions = 3;
+  const globalDimensions = loadConfig().embedding.dimensions;
+  const context = snapshotEmbeddingContext();
+  context.config.embedding.provider = 'ollama';
+  context.config.embedding.model = 'project-model';
+  context.config.embedding.ollamaModel = 'project-ollama-model';
+  context.config.embedding.dimensions = 3;
   try {
-    const vectors = await embedDocuments(
-      ['first', 'second'],
-      (done) => {
-        if (done === 1) config.embedding.dimensions = 5;
-      },
-      { config }
-    );
+    const vectors = await embedDocuments(['project embedding'], undefined, context);
     assert.deepEqual(
       vectors.map((vector) => vector.length),
-      [3, 3]
+      [globalDimensions]
     );
   } finally {
     if (previousFake === undefined) delete process.env.CONTEXTUS_TEST_FAKE_EMBED;
