@@ -23,7 +23,7 @@
  */
 
 import { pipeline, type FeatureExtractionPipeline } from '@xenova/transformers';
-import { loadConfig } from '../config.js';
+import { loadConfig, loadProjectConfig, type ContextusConfig } from '../config.js';
 import {
   configureTransformersEnv,
   modelUnavailableError,
@@ -33,6 +33,57 @@ import {
 /** nomic instruction prefixes (asymmetric retrieval). */
 export const DOCUMENT_PREFIX = 'search_document: ';
 export const QUERY_PREFIX = 'search_query: ';
+
+export interface EmbeddingContext {
+  projectId?: string;
+  cwd?: string;
+}
+
+export interface EmbeddingContextSnapshot extends EmbeddingContext {
+  config: ContextusConfig;
+}
+
+type EmbeddingContextInput = EmbeddingContext | EmbeddingContextSnapshot;
+
+function contextConfig(context?: EmbeddingContextInput): ContextusConfig {
+  return context && 'config' in context
+    ? context.config
+    : loadProjectConfig(context?.projectId, context?.cwd);
+}
+
+function embeddingConfig(context?: EmbeddingContext | EmbeddingContextSnapshot) {
+  const project = contextConfig(context).embedding;
+  const shared = loadConfig().embedding;
+  return {
+    ...project,
+    provider: shared.provider,
+    model: shared.model,
+    ollamaModel: shared.ollamaModel,
+    dimensions: shared.dimensions
+  };
+}
+
+export function snapshotEmbeddingContext(
+  context?: EmbeddingContextInput
+): EmbeddingContextSnapshot {
+  return {
+    ...context,
+    config: structuredClone(contextConfig(context))
+  };
+}
+
+/** Fail before persistence when a provider emits vectors outside the configured space. */
+export function assertEmbeddingDimensions(
+  vectors: readonly number[][],
+  expectedDimensions: number
+): void {
+  const mismatch = vectors.find((vector) => vector.length !== expectedDimensions);
+  if (mismatch) {
+    throw new Error(
+      `Embedding provider returned a vector with unexpected dimensions (${mismatch.length}; expected ${expectedDimensions})`
+    );
+  }
+}
 
 /** Whether to apply nomic task prefixes (default on; off via env for A/B). */
 function prefixesEnabled(): boolean {
@@ -92,20 +143,31 @@ function fakeEmbedEnabled(): boolean {
 /* ── Transformers.js provider ─────────────────────────────────────────────── */
 
 let _pipe: Promise<FeatureExtractionPipeline> | null = null;
+let _pipeModel: string | null = null;
+let _pipelineLoadQueue: Promise<void> = Promise.resolve();
 
-function getPipeline(): Promise<FeatureExtractionPipeline> {
-  if (!_pipe) {
-    const { model } = loadConfig().embedding;
+function getPipeline(context?: EmbeddingContextInput): Promise<FeatureExtractionPipeline> {
+  const { model, transformers } = embeddingConfig(context);
+  const key = JSON.stringify([model, transformers]);
+  if (!_pipe || _pipeModel !== key) {
+    _pipeModel = key;
     // Apply localModelPath / cacheDir / remoteHost before the first load so a
     // bundled or mirrored model is sourced correctly (see lib/model-resolver).
-    configureTransformersEnv();
-    _pipe = pipeline('feature-extraction', model, { quantized: true }).catch((err: unknown) => {
-      _pipe = null; // allow retry after the user fixes config
+    const loading = _pipelineLoadQueue.then(() => {
+      configureTransformersEnv(transformers);
+      return pipeline('feature-extraction', model, { quantized: true });
+    });
+    _pipelineLoadQueue = loading.then(
+      () => undefined,
+      () => undefined
+    );
+    _pipe = loading.catch((err: unknown) => {
+      if (_pipeModel === key) _pipe = null;
       // Network/HF failures surface as opaque fetch/parse errors — replace with
       // the actionable escape-hatch message.
       const msg = err instanceof Error ? err.message : String(err);
       if (/fetch|JSON|Unexpected token|ENOTFOUND|ECONNREFUSED|certificate/i.test(msg)) {
-        throw modelUnavailableError(model);
+        throw modelUnavailableError(model, transformers);
       }
       throw err;
     });
@@ -113,8 +175,8 @@ function getPipeline(): Promise<FeatureExtractionPipeline> {
   return _pipe;
 }
 
-async function embedTransformers(text: string): Promise<number[]> {
-  const pipe = await getPipeline();
+async function embedTransformers(text: string, context?: EmbeddingContextInput): Promise<number[]> {
+  const pipe = await getPipeline(context);
   const output = await pipe(text, { pooling: 'mean', normalize: true });
   return Array.from(output.data as Float32Array);
 }
@@ -125,10 +187,10 @@ interface OllamaEmbeddingResponse {
   embedding: number[];
 }
 
-async function embedOllama(text: string): Promise<number[]> {
-  const cfg = loadConfig();
-  const { ollamaModel } = cfg.embedding;
-  const ollamaEndpoint = cfg.embedding.ollamaEndpoint || cfg.providers.ollama.endpoint;
+async function embedOllama(text: string, context?: EmbeddingContextInput): Promise<number[]> {
+  const cfg = embeddingConfig(context);
+  const { ollamaModel } = cfg;
+  const ollamaEndpoint = cfg.ollamaEndpoint || contextConfig(context).providers.ollama.endpoint;
   const res = await fetch(`${ollamaEndpoint}/api/embeddings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -148,10 +210,10 @@ async function embedOllama(text: string): Promise<number[]> {
 /* ── Public API (provider-dispatching) ────────────────────────────────────── */
 
 /** Embed text exactly as given (no prefix). Mean-pooled + L2-normalized. */
-async function embedRaw(text: string): Promise<number[]> {
-  const { provider, dimensions } = loadConfig().embedding;
+async function embedRaw(text: string, context?: EmbeddingContextInput): Promise<number[]> {
+  const { provider, dimensions } = embeddingConfig(context);
   if (fakeEmbedEnabled()) return fakeDeterministicVector(text, dimensions);
-  return provider === 'ollama' ? embedOllama(text) : embedTransformers(text);
+  return provider === 'ollama' ? embedOllama(text, context) : embedTransformers(text, context);
 }
 
 /**
@@ -159,13 +221,14 @@ async function embedRaw(text: string): Promise<number[]> {
  * Call at daemon start so the first real query isn't slow — and so a
  * model/dimension mismatch fails fast (DESIGN.md §"dimensions must match").
  */
-export async function warmup(): Promise<void> {
-  const { dimensions, provider, model, ollamaModel } = loadConfig().embedding;
+export async function warmup(context?: EmbeddingContextInput): Promise<void> {
+  const { dimensions, provider, model, ollamaModel } = embeddingConfig(context);
   // Transformers.js: fail fast with an actionable message if the model is
   // neither bundled nor reachable, instead of a slow opaque pipeline() error.
   // Skipped under the fake-embed test seam — there's no real model to preflight.
-  if (provider === 'transformers' && !fakeEmbedEnabled()) await preflightTransformers(model);
-  const vec = await embedRaw('warmup');
+  if (provider === 'transformers' && !fakeEmbedEnabled())
+    await preflightTransformers(model, embeddingConfig(context).transformers);
+  const vec = await embedRaw('warmup', context);
   if (vec.length !== dimensions) {
     const id = provider === 'ollama' ? ollamaModel : model;
     throw new Error(
@@ -176,13 +239,13 @@ export async function warmup(): Promise<void> {
 }
 
 /** Embed a single stored passage (document side — `search_document:` prefix). */
-export function embedDocument(text: string): Promise<number[]> {
-  return embedRaw(prefixesEnabled() ? DOCUMENT_PREFIX + text : text);
+export function embedDocument(text: string, context?: EmbeddingContextInput): Promise<number[]> {
+  return embedRaw(prefixesEnabled() ? DOCUMENT_PREFIX + text : text, context);
 }
 
 /** Embed a single query (query side — `search_query:` prefix). */
-export function embedQuery(text: string): Promise<number[]> {
-  return embedRaw(prefixesEnabled() ? QUERY_PREFIX + text : text);
+export function embedQuery(text: string, context?: EmbeddingContextInput): Promise<number[]> {
+  return embedRaw(prefixesEnabled() ? QUERY_PREFIX + text : text, context);
 }
 
 /**
@@ -192,11 +255,13 @@ export function embedQuery(text: string): Promise<number[]> {
  */
 export async function embedDocuments(
   texts: string[],
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  context?: EmbeddingContextInput
 ): Promise<number[][]> {
+  const snapshot = snapshotEmbeddingContext(context);
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i++) {
-    out.push(await embedDocument(texts[i]));
+    out.push(await embedDocument(texts[i], snapshot));
     onProgress?.(i + 1, texts.length);
   }
   return out;
@@ -215,4 +280,5 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 /** Reset the memoized pipeline (tests / model swap). */
 export function resetEmbedder(): void {
   _pipe = null;
+  _pipeModel = null;
 }

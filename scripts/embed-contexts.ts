@@ -23,10 +23,14 @@
  * gets the nomic `search_document:` prefix automatically (see lib/embedder).
  */
 
-import { loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
+import { loadConfig, loadProjectConfig, resolveDBPath, projectHash } from '../lib/config.js';
 import { findPrefixTypeMismatches } from '../lib/embedding/context-loader.js';
 import { resolveSources, loadAllSources } from '../lib/embedding/sources.js';
-import { embedDocuments } from '../lib/embedding/embedder.js';
+import {
+  assertEmbeddingDimensions,
+  embedDocuments,
+  snapshotEmbeddingContext
+} from '../lib/embedding/embedder.js';
 import { createTable, type ContextRow } from '../lib/storage/lance-client.js';
 import { planChunks, buildRows, type PendingChunk } from '../lib/embedding/file-to-rows.js';
 
@@ -36,7 +40,10 @@ async function main(): Promise<void> {
 
   // Load config with 3-tier merge (plugin.json → ~/.contextus/data/<project>/config.json → .claude/contextus.jsonc)
   const cfg = loadProjectConfig(projectId, process.cwd());
-  const { provider, model, ollamaModel } = cfg.embedding;
+  const projectEmbeddingContext = snapshotEmbeddingContext({ projectId, cwd: process.cwd() });
+  const sharedEmbeddingContext = snapshotEmbeddingContext();
+  const embedding = loadConfig().embedding;
+  const { provider, model, ollamaModel } = embedding;
   const modelId = provider === 'ollama' ? ollamaModel : model;
 
   // Resolve every ENABLED source from merged config (includes project overrides like
@@ -51,7 +58,7 @@ async function main(): Promise<void> {
 
   console.log(`contextus embed`);
   console.log(`  sources:  ${sources.map((s) => `${s.name}(${s.dir})`).join(', ')}`);
-  console.log(`  provider: ${provider} (${modelId}, ${cfg.embedding.dimensions}d)`);
+  console.log(`  provider: ${provider} (${modelId}, ${embedding.dimensions}d)`);
   console.log(`  target:   ${resolveDBPath()}`);
 
   const { items: sourced, failed: loadFailed } = await loadAllSources(sources);
@@ -112,30 +119,41 @@ async function main(): Promise<void> {
     pending: PendingChunk[];
     ctx: (typeof sourced)[number]['context'];
     source: string;
+    scope: 'project' | 'user';
   }[] = [];
 
   for (const s of sourced) {
     if (s.source !== 'projectContext') s.context.id = `${s.source}:${s.context.id}`;
     const pending = planChunks(s.context);
-    planned.push({ pending, ctx: s.context, source: s.source });
+    planned.push({ pending, ctx: s.context, source: s.source, scope: s.scope });
     for (const p of pending) allEmbedTexts.push(p.embedText);
   }
 
   const totalChunks = allEmbedTexts.length;
   console.log(`\nEmbedding ${totalChunks} chunks from ${sourced.length} files…`);
-  const vectors = await embedDocuments(allEmbedTexts, (done, total) =>
-    process.stdout.write(`\r  ${done}/${total}`)
-  );
+  const vectors: number[][] = [];
+  let embeddedCount = 0;
+  for (const { pending, scope } of planned) {
+    const context = scope === 'user' ? sharedEmbeddingContext : projectEmbeddingContext;
+    const batch = await embedDocuments(
+      pending.map((p) => p.embedText),
+      (done) => process.stdout.write(`\r  ${embeddedCount + done}/${totalChunks}`),
+      context
+    );
+    assertEmbeddingDimensions(batch, embedding.dimensions);
+    vectors.push(...batch);
+    embeddedCount += batch.length;
+  }
   process.stdout.write('\n');
 
   // Slice the flat vector array back per file and assemble rows.
   // User-scoped sources (userContext, userDocs) get stamped '__user__' so they're
   // visible to all projects via resolveProjectScope() which always includes '__user__'.
   let cursor = 0;
-  for (const { pending, ctx, source } of planned) {
+  for (const { pending, ctx, source, scope } of planned) {
     const slice = vectors.slice(cursor, cursor + pending.length);
     cursor += pending.length;
-    const rowProject = source === 'userContext' || source === 'userDocs' ? '__user__' : projectId;
+    const rowProject = scope === 'user' ? '__user__' : projectId;
     allRows.push(...buildRows(ctx, pending, slice, source, now, rowProject));
   }
 
@@ -145,7 +163,7 @@ async function main(): Promise<void> {
   }
   await createTable(allRows, {
     replace: true,
-    providerInfo: { provider, model, ollamaModel }
+    providerInfo: embedding
   });
 
   // Summary: counts by source + type so the corpus shape is visible at a glance.

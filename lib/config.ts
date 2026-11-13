@@ -563,6 +563,19 @@ function readConfigFile(filePath: string): Record<string, any> | null {
   }
 }
 
+function validateProjectEmbeddingConfig(config: Record<string, unknown>, filePath: string): void {
+  const embedding = config.embedding;
+  if (!embedding || typeof embedding !== 'object') return;
+  const restricted = ['provider', 'model', 'ollamaModel', 'dimensions'].filter((key) =>
+    Object.prototype.hasOwnProperty.call(embedding, key)
+  );
+  if (restricted.length > 0) {
+    throw new Error(
+      `Project configuration ${filePath} cannot override embedding settings: ${restricted.join(', ')}. Configure them globally because the embedding database is shared.`
+    );
+  }
+}
+
 /**
  * Load merged GLOBAL config (plugin.json over defaults). Cached after first call.
  * Project-agnostic — use loadProjectConfig() when a project's overrides matter
@@ -626,11 +639,17 @@ export function loadProjectConfig(project?: string, cwd?: string): ContextusConf
   const merged: ContextusConfig = structuredClone(loadConfig());
   // Tier 2: machine-local override beside the corpus.
   const local = readConfigFile(localPath);
-  if (local) mergeConfigInto(merged, local);
+  if (local) {
+    validateProjectEmbeddingConfig(local, localPath);
+    mergeConfigInto(merged, local);
+  }
   // Tier 3: git-committed repo override wins.
   if (repoPath) {
     const repo = readConfigFile(repoPath);
-    if (repo) mergeConfigInto(merged, repo);
+    if (repo) {
+      validateProjectEmbeddingConfig(repo, repoPath);
+      mergeConfigInto(merged, repo);
+    }
   }
 
   const mtimes = new Map<string, number>();

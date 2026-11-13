@@ -35,12 +35,14 @@ export interface ResolvedSource {
   dir: string;
   /** glob patterns to skip (index file, READMEs) */
   exclude: string[];
+  scope: 'project' | 'user';
 }
 
 /** A loaded file plus the source it came from (for the `source` column). */
 export interface SourcedContext {
   context: LoadedContext;
   source: string;
+  scope: 'project' | 'user';
 }
 
 /**
@@ -57,6 +59,7 @@ function sourceWeightKey(configKey: string): string {
 
 interface RawSource {
   type?: string;
+  scope?: string;
   path?: string;
   enabled?: boolean;
   indexFile?: string;
@@ -77,7 +80,8 @@ export function resolveSources(sources: Record<string, RawSource>): ResolvedSour
     const dir = path.resolve(expandHome(s.path));
     if (!fs.existsSync(dir)) continue;
     const exclude = s.exclude ?? ['**/CONTEXT.md', '**/DOCS.md', '**/README.md'];
-    out.push({ name: sourceWeightKey(key), dir, exclude });
+    const scope = s.scope === 'user' ? 'user' : 'project';
+    out.push({ name: sourceWeightKey(key), dir, exclude, scope });
   }
   return out;
 }
@@ -102,7 +106,7 @@ export async function loadSource(src: ResolvedSource): Promise<SourceLoadResult>
   for (const f of rel.sort()) {
     const result = loadContextSafe(path.join(src.dir, f), src.dir);
     if (isLoadFailure(result)) failed.push({ ...result, source: src.name });
-    else items.push({ context: result, source: src.name });
+    else items.push({ context: result, source: src.name, scope: src.scope });
   }
   return { items, failed };
 }
